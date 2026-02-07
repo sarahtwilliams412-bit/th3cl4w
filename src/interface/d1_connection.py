@@ -7,6 +7,8 @@ Handles low-level communication with the Unitree D1 arm over Ethernet.
 import logging
 import socket
 import struct
+import threading
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -16,11 +18,11 @@ logger = logging.getLogger(__name__)
 
 NUM_JOINTS = 7  # 6 arm + 1 gripper
 
-# State packet layout: 7 positions + 7 velocities + 7 torques + 1 gripper + 1 timestamp = 23 floats
+# State packet layout: 7 positions + 7 velocities + 7 torques + 1 gripper + 1 timestamp
 STATE_PACKET_FORMAT = f"<{NUM_JOINTS}f{NUM_JOINTS}f{NUM_JOINTS}f1f1d"
 STATE_PACKET_SIZE = struct.calcsize(STATE_PACKET_FORMAT)
 
-# Command packet layout: 1 mode byte + 7 positions + 7 velocities + 7 torques + 1 gripper = 22 floats + 1 int
+# Command packet layout: 1 mode int + 7 positions + 7 velocities + 7 torques + 1 gripper
 COMMAND_PACKET_FORMAT = f"<i{NUM_JOINTS}f{NUM_JOINTS}f{NUM_JOINTS}f1f"
 COMMAND_PACKET_SIZE = struct.calcsize(COMMAND_PACKET_FORMAT)
 
@@ -50,6 +52,13 @@ class D1Connection:
     Low-level connection to Unitree D1 arm.
 
     Uses UDP communication on the standard Unitree port.
+    Thread-safe and usable as a context manager.
+
+    Usage::
+
+        with D1Connection() as conn:
+            state = conn.get_state()
+            conn.send_command(D1Command(mode=0))
     """
 
     DEFAULT_IP = "192.168.123.18"  # D1 default IP
@@ -70,33 +79,50 @@ class D1Connection:
         self._cmd_socket: Optional[socket.socket] = None
         self._state_socket: Optional[socket.socket] = None
         self._connected = False
+        self._lock = threading.Lock()
+        self._last_command_time: float = 0.0
+
+    # -- Context manager --
+
+    def __enter__(self) -> "D1Connection":
+        if not self.connect():
+            raise ConnectionError(f"Failed to connect to D1 at {self.ip}")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.disconnect()
+
+    # -- Connection lifecycle --
 
     def connect(self) -> bool:
         """Establish connection to D1 arm."""
-        try:
-            # Command socket (UDP)
-            self._cmd_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self._cmd_socket.settimeout(1.0)
+        with self._lock:
+            try:
+                self._cmd_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self._cmd_socket.settimeout(1.0)
 
-            # State socket (UDP, bind to receive)
-            self._state_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self._state_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self._state_socket.bind(("0.0.0.0", self.state_port))
-            self._state_socket.settimeout(0.1)
+                self._state_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self._state_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                self._state_socket.bind(("0.0.0.0", self.state_port))
+                self._state_socket.settimeout(0.1)
 
-            # Test connection with ping
-            self._connected = self._ping()
-            if not self._connected:
-                self.disconnect()
-            return self._connected
+                self._connected = self._ping()
+                if not self._connected:
+                    self._cleanup_sockets()
+                return self._connected
 
-        except Exception as e:
-            logger.error("Connection failed: %s", e)
-            self.disconnect()
-            return False
+            except Exception as e:
+                logger.error("Connection failed: %s", e)
+                self._cleanup_sockets()
+                return False
 
     def disconnect(self):
         """Close connection to D1 arm."""
+        with self._lock:
+            self._cleanup_sockets()
+
+    def _cleanup_sockets(self):
+        """Close sockets and reset state. Caller must hold self._lock."""
         if self._cmd_socket:
             self._cmd_socket.close()
             self._cmd_socket = None
@@ -106,12 +132,10 @@ class D1Connection:
         self._connected = False
 
     def _ping(self) -> bool:
-        """Test if arm is reachable by sending a zero-length probe packet."""
+        """Test if arm is reachable by sending a probe packet."""
         if not self._cmd_socket:
             return False
         try:
-            # Send a zero-byte probe to the command port and wait for any
-            # UDP response (or ICMP port-unreachable) within the timeout.
             self._cmd_socket.sendto(b"\x00", (self.ip, self.command_port))
             self._cmd_socket.settimeout(self.PING_TIMEOUT)
             self._cmd_socket.recvfrom(1024)
@@ -123,29 +147,39 @@ class D1Connection:
             logger.warning("Ping failed: %s", e)
             return False
 
-    def get_state(self) -> Optional[D1State]:
-        """Read current arm state."""
-        if not self._connected or not self._state_socket:
-            return None
+    # -- I/O --
 
-        try:
-            data, addr = self._state_socket.recvfrom(STATE_PACKET_SIZE + 64)
-            return self._parse_state(data)
-        except socket.timeout:
-            return None
+    def get_state(self) -> Optional[D1State]:
+        """Read current arm state. Thread-safe."""
+        with self._lock:
+            if not self._connected or not self._state_socket:
+                return None
+            try:
+                data, addr = self._state_socket.recvfrom(STATE_PACKET_SIZE + 64)
+                return self._parse_state(data)
+            except socket.timeout:
+                return None
 
     def send_command(self, cmd: D1Command) -> bool:
-        """Send command to arm."""
-        if not self._connected or not self._cmd_socket:
-            return False
+        """Send command to arm. Thread-safe."""
+        with self._lock:
+            if not self._connected or not self._cmd_socket:
+                return False
+            try:
+                data = self._encode_command(cmd)
+                self._cmd_socket.sendto(data, (self.ip, self.command_port))
+                self._last_command_time = time.monotonic()
+                return True
+            except Exception as e:
+                logger.error("Send failed: %s", e)
+                return False
 
-        try:
-            data = self._encode_command(cmd)
-            self._cmd_socket.sendto(data, (self.ip, self.command_port))
-            return True
-        except Exception as e:
-            logger.error("Send failed: %s", e)
-            return False
+    @property
+    def last_command_time(self) -> float:
+        """Monotonic timestamp of the last successfully sent command."""
+        return self._last_command_time
+
+    # -- Serialization --
 
     def _parse_state(self, data: bytes) -> D1State:
         """Parse state packet from arm.
@@ -158,11 +192,6 @@ class D1Connection:
           1 double  — timestamp
         """
         if len(data) < STATE_PACKET_SIZE:
-            logger.warning(
-                "State packet too short: got %d bytes, expected %d",
-                len(data),
-                STATE_PACKET_SIZE,
-            )
             raise ValueError(
                 f"State packet too short: got {len(data)} bytes, expected {STATE_PACKET_SIZE}"
             )
