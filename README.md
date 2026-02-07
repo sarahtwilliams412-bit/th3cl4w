@@ -41,11 +41,8 @@ th3cl4w/
 │   ├── planning/      # Motion planning
 │   ├── interface/     # Communication with D1
 │   └── safety/        # Safety monitors
-├── ros2/              # ROS2 packages
 ├── examples/          # Usage examples
-├── tests/             # Unit tests
-├── config/            # Configuration files
-└── docs/              # Documentation
+└── tests/             # Unit tests
 ```
 
 ## Quick Start
@@ -55,11 +52,11 @@ th3cl4w/
 git clone https://github.com/sarahtwilliams412-bit/th3cl4w.git
 cd th3cl4w
 
-# Install dependencies
-pip install -r requirements.txt
+# Install in development mode
+pip install -e ".[dev]"
 
-# Run basic example
-python examples/joint_control.py
+# Run connection test
+python examples/connection_test.py
 ```
 
 ## Requirements
