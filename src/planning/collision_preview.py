@@ -77,6 +77,7 @@ class CollisionPreview:
             PreviewResult with collision details.
         """
         import time
+
         t0 = time.monotonic()
 
         hits: list[CollisionHit] = []
@@ -101,16 +102,18 @@ class CollisionPreview:
                 checked += 1
 
                 if status == "occupied":
-                    hits.append(CollisionHit(
-                        trajectory_index=i,
-                        time_s=pt.time,
-                        joint_angles_deg=[round(float(a), 1) for a in angles_deg],
-                        link_index=link_idx,
-                        link_point_mm=[round(float(x), 1) for x in link_mm],
-                        obstacle_point_mm=[round(float(x), 1) for x in link_mm],
-                        distance_mm=0.0,
-                        severity="collision",
-                    ))
+                    hits.append(
+                        CollisionHit(
+                            trajectory_index=i,
+                            time_s=pt.time,
+                            joint_angles_deg=[round(float(a), 1) for a in angles_deg],
+                            link_index=link_idx,
+                            link_point_mm=[round(float(x), 1) for x in link_mm],
+                            obstacle_point_mm=[round(float(x), 1) for x in link_mm],
+                            distance_mm=0.0,
+                            severity="collision",
+                        )
+                    )
 
             # Also check midpoints between links for better coverage
             for link_idx in range(len(joint_positions) - 1):
@@ -121,16 +124,18 @@ class CollisionPreview:
                 checked += 1
 
                 if status == "occupied":
-                    hits.append(CollisionHit(
-                        trajectory_index=i,
-                        time_s=pt.time,
-                        joint_angles_deg=[round(float(a), 1) for a in angles_deg],
-                        link_index=link_idx,
-                        link_point_mm=[round(float(x), 1) for x in mid_mm],
-                        obstacle_point_mm=[round(float(x), 1) for x in mid_mm],
-                        distance_mm=0.0,
-                        severity="collision",
-                    ))
+                    hits.append(
+                        CollisionHit(
+                            trajectory_index=i,
+                            time_s=pt.time,
+                            joint_angles_deg=[round(float(a), 1) for a in angles_deg],
+                            link_index=link_idx,
+                            link_point_mm=[round(float(x), 1) for x in mid_mm],
+                            obstacle_point_mm=[round(float(x), 1) for x in mid_mm],
+                            distance_mm=0.0,
+                            severity="collision",
+                        )
+                    )
 
         elapsed_ms = (time.monotonic() - t0) * 1000
 
@@ -168,6 +173,7 @@ class CollisionPreview:
     ) -> PreviewResult:
         """Quick check of a single arm pose against the workspace map."""
         import time
+
         t0 = time.monotonic()
 
         angles_rad = np.deg2rad(np.asarray(joint_angles_deg[:NUM_ARM_JOINTS]))
@@ -185,16 +191,18 @@ class CollisionPreview:
             checked += 1
 
             if status == "occupied":
-                hits.append(CollisionHit(
-                    trajectory_index=0,
-                    time_s=0.0,
-                    joint_angles_deg=[round(float(a), 1) for a in joint_angles_deg[:6]],
-                    link_index=link_idx,
-                    link_point_mm=[round(float(x), 1) for x in pos_mm],
-                    obstacle_point_mm=[round(float(x), 1) for x in pos_mm],
-                    distance_mm=0.0,
-                    severity="collision",
-                ))
+                hits.append(
+                    CollisionHit(
+                        trajectory_index=0,
+                        time_s=0.0,
+                        joint_angles_deg=[round(float(a), 1) for a in joint_angles_deg[:6]],
+                        link_index=link_idx,
+                        link_point_mm=[round(float(x), 1) for x in pos_mm],
+                        obstacle_point_mm=[round(float(x), 1) for x in pos_mm],
+                        distance_mm=0.0,
+                        severity="collision",
+                    )
+                )
 
         elapsed_ms = (time.monotonic() - t0) * 1000
 
@@ -204,7 +212,7 @@ class CollisionPreview:
             checked_points=checked,
             elapsed_ms=round(elapsed_ms, 1),
             trajectory_points=1,
-            summary=f"{'Clear' if not hits else f'{len(hits)} collision(s)'}"
+            summary=f"{'Clear' if not hits else f'{len(hits)} collision(s)'}",
         )
 
     def get_arm_envelope(
