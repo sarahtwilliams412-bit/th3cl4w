@@ -631,7 +631,17 @@ function drawArm() {
   const ctx = offCtx;
   ctx.clearRect(0, 0, W, H);
 
-  const joints = armState.joints || [0,0,0,0,0,0];
+  const rawJoints = armState.joints || [0,0,0,0,0,0];
+  // Smooth viz joints — lerp toward target to reduce jitter
+  for (let i = 0; i < 6; i++) {
+    const diff = rawJoints[i] - vizJoints[i];
+    if (Math.abs(diff) > 0.05) {
+      vizJoints[i] += diff * 0.4; // smooth factor
+    } else {
+      vizJoints[i] = rawJoints[i];
+    }
+  }
+  const joints = vizJoints;
   const deg2rad = Math.PI / 180;
 
   // --- Grid ---
