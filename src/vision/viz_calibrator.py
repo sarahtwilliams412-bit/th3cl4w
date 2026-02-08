@@ -437,7 +437,10 @@ def solve_calibration(observations: List[PoseObservation],
         method='trf',
         loss='huber',
         f_scale=10.0,
-        max_nfev=5000,
+        max_nfev=2000,
+        ftol=1e-6,
+        xtol=1e-6,
+        gtol=1e-6,
         verbose=0,
     )
     
