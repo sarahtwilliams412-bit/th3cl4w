@@ -165,6 +165,18 @@ class CameraThread:
         with self._lock:
             return self._frame if self._frame else self._no_signal_frame
 
+    def get_raw_frame(self) -> Optional[np.ndarray]:
+        """Get the latest frame as a decoded numpy BGR array.
+
+        Returns None if no frame is available or camera is disconnected.
+        Used by the arm tracker and grasp planner for vision processing.
+        """
+        jpeg_bytes = self.get_frame()
+        if jpeg_bytes is None or jpeg_bytes == self._no_signal_frame:
+            return None
+        frame = cv2.imdecode(np.frombuffer(jpeg_bytes, np.uint8), cv2.IMREAD_COLOR)
+        return frame
+
     @property
     def connected(self) -> bool:
         return self._connected
