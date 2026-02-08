@@ -57,7 +57,7 @@ class AsciiConverter:
         self.invert = invert
         self.color = color
 
-    def frame_to_ascii(self, frame: np.ndarray) -> str:
+    def frame_to_ascii(self, frame) -> str:
         """Convert a BGR frame to a plain ASCII string.
 
         Parameters
@@ -73,7 +73,7 @@ class AsciiConverter:
         gray = self._preprocess(frame)
         return self._map_to_chars(gray)
 
-    def frame_to_color_data(self, frame: np.ndarray) -> dict:
+    def frame_to_color_data(self, frame) -> dict:
         """Convert a BGR frame to structured data with per-character color.
 
         Returns a dict with:
@@ -81,9 +81,14 @@ class AsciiConverter:
           - "colors": list of lists of [r, g, b] per character (only if self.color)
           - "width": output width
           - "height": output height
+
+        Accepts numpy array or cv2.UMat input.
         """
         small = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
         gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        # Convert back to numpy for pixel-level access
+        gray = gray.get() if isinstance(gray, cv2.UMat) else gray
+        small = small.get() if isinstance(small, cv2.UMat) else small
 
         lines = []
         colors = []
@@ -116,14 +121,15 @@ class AsciiConverter:
             result["colors"] = colors
         return result
 
-    def _preprocess(self, frame: np.ndarray) -> np.ndarray:
-        """Resize and convert to grayscale."""
+    def _preprocess(self, frame):
+        """Resize and convert to grayscale. Accepts numpy array or cv2.UMat."""
         small = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
         gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         return gray
 
-    def _map_to_chars(self, gray: np.ndarray) -> str:
+    def _map_to_chars(self, gray) -> str:
         """Map grayscale pixel values to ASCII characters."""
+        gray = gray.get() if isinstance(gray, cv2.UMat) else gray
         n = len(self.charset) - 1
         if self.invert:
             indices = (gray.astype(np.float32) / 255.0 * n).astype(np.int32)

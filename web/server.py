@@ -2366,6 +2366,18 @@ _ASCII_CHARSETS = {
 }
 
 
+@app.get("/api/gpu/status")
+async def gpu_status_endpoint():
+    """Return GPU compute (OpenCL) availability and status."""
+    if _HAS_GPU_PREPROCESS:
+        return JSONResponse(_gpu_status())
+    return JSONResponse({
+        "opencl_available": False,
+        "opencl_enabled": False,
+        "device": None,
+    })
+
+
 @app.get("/ascii")
 async def ascii_page():
     from fastapi.responses import FileResponse
