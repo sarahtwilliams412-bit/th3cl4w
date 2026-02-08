@@ -308,8 +308,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="ascii-controls-bar">
     <label>CHARS</label>
     <select id="ascCharset"><option value="standard">Standard</option><option value="detailed">Detailed</option><option value="blocks">Blocks</option><option value="minimal">Minimal</option></select>
-    <label>W</label><input type="number" id="ascWidth" value="160" min="20" max="300" step="10">
-    <label>H</label><input type="number" id="ascHeight" value="70" min="10" max="150" step="5">
+    <label>W</label><input type="number" id="ascWidth" value="320" min="20" max="500" step="10">
+    <label>H</label><input type="number" id="ascHeight" value="140" min="10" max="300" step="5">
     <button class="ascii-toggle" id="ascColor">COLOR</button>
     <button class="ascii-toggle on" id="ascInvert">INVERT</button>
     <button class="ascii-toggle" id="ascPause">PAUSE</button>
@@ -1344,8 +1344,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       type: 'settings',
       cam: camId,
       charset: document.getElementById('ascCharset').value,
-      width: parseInt(document.getElementById('ascWidth').value) || 160,
-      height: parseInt(document.getElementById('ascHeight').value) || 70,
+      width: parseInt(document.getElementById('ascWidth').value) || 320,
+      height: parseInt(document.getElementById('ascHeight').value) || 140,
       color: ascColorMode,
       invert: ascInvertMode
     };
@@ -1443,8 +1443,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   function ascFitFont() {
     const vp = document.getElementById('asciiViewport');
     if (!vp) return;
-    const w = parseInt(document.getElementById('ascWidth').value) || 160;
-    const h = parseInt(document.getElementById('ascHeight').value) || 70;
+    const w = parseInt(document.getElementById('ascWidth').value) || 320;
+    const h = parseInt(document.getElementById('ascHeight').value) || 140;
     // Each pane gets half the viewport width (minus divider + gaps)
     const maxW = (vp.clientWidth - 40) / 2;
     const maxH = vp.clientHeight - 40;
