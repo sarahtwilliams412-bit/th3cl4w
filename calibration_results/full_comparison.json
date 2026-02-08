@@ -1,0 +1,4416 @@
+{
+  "session_start": "2026-02-08T14:23:35-0800",
+  "poses": [
+    {
+      "index": 0,
+      "commanded": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        0.4,
+        0.7,
+        0.7,
+        0.3,
+        0.1,
+        -2.4
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          0.0025,
+          0.0,
+          0.33
+        ],
+        [
+          0.211,
+          0.0015,
+          0.3249
+        ],
+        [
+          0.3239,
+          0.0023,
+          0.3219
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.48,
+            "ny": 0.94,
+            "px": 921,
+            "py": 1015,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.5,
+            "px": 768,
+            "py": 540,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.35,
+            "px": 384,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2500,
+        "llm_latency_ms": 1749.3,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 960.0,
+            "py": 545.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 965.0,
+            "py": 553.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 968.0,
+            "py": 558.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 719.0,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.35,
+            "px": 480,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2610,
+        "llm_latency_ms": 1574.2,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 960.0,
+            "py": 534.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 965.0,
+            "py": 84.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 968.0,
+            "py": -159.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 670.4,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 1,
+      "commanded": [
+        30,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        29.5,
+        0.7,
+        0.7,
+        -0.1,
+        0.3,
+        0.0
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          0.0022,
+          0.0013,
+          0.33
+        ],
+        [
+          0.1836,
+          0.1039,
+          0.3249
+        ],
+        [
+          0.2819,
+          0.1595,
+          0.3215
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.48,
+            "ny": 0.97,
+            "px": 921,
+            "py": 1047,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.49,
+            "ny": 0.75,
+            "px": 940,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.23,
+            "ny": 0.33,
+            "px": 441,
+            "py": 356,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2496,
+        "llm_latency_ms": 1789.7,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 964.0,
+            "py": 545.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 1358.0,
+            "py": 553.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 1572.0,
+            "py": 559.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 853.4,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.35,
+            "px": 384,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2593,
+        "llm_latency_ms": 1544.3,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 964.0,
+            "py": 535.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 1358.0,
+            "py": 143.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 1572.0,
+            "py": -68.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 668.4,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 2,
+      "commanded": [
+        -30,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        -29.4,
+        0.7,
+        0.7,
+        0.0,
+        0.3,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          0.0022,
+          -0.0013,
+          0.33
+        ],
+        [
+          0.1838,
+          -0.1036,
+          0.3249
+        ],
+        [
+          0.2822,
+          -0.159,
+          0.3215
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.48,
+            "ny": 0.97,
+            "px": 921,
+            "py": 1047,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.48,
+            "ny": 0.75,
+            "px": 921,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.38,
+            "ny": 0.53,
+            "px": 729,
+            "py": 572,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.28,
+            "ny": 0.38,
+            "px": 537,
+            "py": 410,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.23,
+            "ny": 0.3,
+            "px": 441,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2539,
+        "llm_latency_ms": 1532.4,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 955.0,
+            "py": 545.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 562.0,
+            "py": 553.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 349.0,
+            "py": 559.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 666.6,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.7,
+            "px": 960,
+            "py": 756,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.5,
+            "px": 768,
+            "py": 540,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.35,
+            "px": 576,
+            "py": 378,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2602,
+        "llm_latency_ms": 1613.0,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 955.0,
+            "py": 535.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 562.0,
+            "py": 142.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 349.0,
+            "py": -69.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 681.8,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 3,
+      "commanded": [
+        0,
+        -30,
+        0,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        0.0,
+        -29.7,
+        0.6,
+        0.0,
+        0.3,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.1033,
+          0.0,
+          0.3026
+        ],
+        [
+          0.0789,
+          0.0,
+          0.404
+        ],
+        [
+          0.1779,
+          0.0,
+          0.4584
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.4,
+            "ny": 0.95,
+            "px": 768,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.45,
+            "ny": 0.75,
+            "px": 864,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2541,
+        "llm_latency_ms": 1663.3,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 960.0,
+            "py": 589.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 960.0,
+            "py": 425.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 960.0,
+            "py": 337.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 681.4,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.48,
+            "ny": 0.93,
+            "px": 921,
+            "py": 1004,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.42,
+            "ny": 0.53,
+            "px": 806,
+            "py": 572,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.32,
+            "ny": 0.38,
+            "px": 614,
+            "py": 410,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2604,
+        "llm_latency_ms": 1717.2,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 960.0,
+            "py": 763.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 960.0,
+            "py": 369.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 960.0,
+            "py": 155.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 675.7,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 4,
+      "commanded": [
+        0,
+        -60,
+        0,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        -0.1,
+        -60.3,
+        0.6,
+        0.1,
+        0.1,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.1811,
+          0.0003,
+          0.2248
+        ],
+        [
+          -0.0759,
+          0.0001,
+          0.4048
+        ],
+        [
+          -0.0187,
+          0.0,
+          0.5023
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.45,
+            "ny": 0.55,
+            "px": 864,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.35,
+            "ny": 0.4,
+            "px": 672,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.3,
+            "ny": 0.3,
+            "px": 576,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2548,
+        "llm_latency_ms": 1571.0,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 964.0,
+            "py": 709.0,
+            "conf": 0.611,
+            "source": "contour"
+          },
+          {
+            "name": "wrist",
+            "px": 960.0,
+            "py": 424.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 960.0,
+            "py": 266.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 665.5,
+        "cv_success": true
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.35,
+            "px": 384,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2622,
+        "llm_latency_ms": 1590.1,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 961.0,
+            "py": 931.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 963.0,
+            "py": 705.0,
+            "conf": 0.652,
+            "source": "contour"
+          },
+          {
+            "name": "end_effector",
+            "px": 960.0,
+            "py": 580.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 774.8,
+        "cv_success": true
+      }
+    },
+    {
+      "index": 5,
+      "commanded": [
+        0,
+        0,
+        45,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        -0.1,
+        0.2,
+        45.3,
+        0.0,
+        0.3,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          0.0007,
+          -0.0,
+          0.33
+        ],
+        [
+          0.1469,
+          -0.0003,
+          0.1813
+        ],
+        [
+          0.2256,
+          -0.0004,
+          0.1003
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.48,
+            "ny": 0.97,
+            "px": 921,
+            "py": 1047,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.52,
+            "ny": 0.75,
+            "px": 998,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.42,
+            "ny": 0.52,
+            "px": 806,
+            "py": 561,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.32,
+            "ny": 0.38,
+            "px": 614,
+            "py": 410,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2552,
+        "llm_latency_ms": 1765.1,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 959.0,
+            "py": 545.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 959.0,
+            "py": 786.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 958.0,
+            "py": 917.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 702.0,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.55,
+            "ny": 0.5,
+            "px": 1056,
+            "py": 540,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.4,
+            "ny": 0.35,
+            "px": 768,
+            "py": 378,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.3,
+            "ny": 0.3,
+            "px": 576,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2609,
+        "llm_latency_ms": 1725.8,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 959.0,
+            "py": 538.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 959.0,
+            "py": 222.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 958.0,
+            "py": 52.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 688.2,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 6,
+      "commanded": [
+        0,
+        0,
+        -45,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        -0.2,
+        0.1,
+        -44.5,
+        0.0,
+        0.2,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          0.0004,
+          -0.0,
+          0.33
+        ],
+        [
+          0.1493,
+          -0.0005,
+          0.4759
+        ],
+        [
+          0.2303,
+          -0.0008,
+          0.5547
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.48,
+            "ny": 0.97,
+            "px": 921,
+            "py": 1047,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.49,
+            "ny": 0.74,
+            "px": 940,
+            "py": 799,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.42,
+            "ny": 0.51,
+            "px": 806,
+            "py": 550,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.32,
+            "ny": 0.38,
+            "px": 614,
+            "py": 410,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2551,
+        "llm_latency_ms": 1802.1,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 959.0,
+            "py": 545.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 957.0,
+            "py": 309.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 956.0,
+            "py": 181.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 660.9,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.52,
+            "ny": 0.75,
+            "px": 998,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.42,
+            "ny": 0.55,
+            "px": 806,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.32,
+            "ny": 0.4,
+            "px": 614,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2604,
+        "llm_latency_ms": 1443.3,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 959.0,
+            "py": 539.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 957.0,
+            "py": 217.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 956.0,
+            "py": 42.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 710.5,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 7,
+      "commanded": [
+        0,
+        -30,
+        30,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        -0.1,
+        -29.8,
+        30.2,
+        0.1,
+        0.3,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.1036,
+          0.0002,
+          0.3024
+        ],
+        [
+          0.1049,
+          -0.0002,
+          0.301
+        ],
+        [
+          0.2179,
+          -0.0004,
+          0.2996
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.35,
+            "px": 384,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2513,
+        "llm_latency_ms": 1633.5,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 960.0,
+            "py": 590.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 959.0,
+            "py": 592.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 958.0,
+            "py": 594.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 730.2,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.3,
+            "px": 384,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2600,
+        "llm_latency_ms": 1538.3,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 960.0,
+            "py": 763.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 959.0,
+            "py": 313.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 958.0,
+            "py": 69.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 692.8,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 8,
+      "commanded": [
+        0,
+        -45,
+        45,
+        0,
+        -30,
+        0
+      ],
+      "actual": [
+        0.0,
+        -45.0,
+        45.0,
+        0.0,
+        -29.3,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.1474,
+          0.0,
+          0.2689
+        ],
+        [
+          0.0611,
+          0.0,
+          0.2689
+        ],
+        [
+          0.1596,
+          0.0,
+          0.3242
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.48,
+            "ny": 0.94,
+            "px": 921,
+            "py": 1015,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.49,
+            "ny": 0.75,
+            "px": 940,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.42,
+            "ny": 0.53,
+            "px": 806,
+            "py": 572,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.32,
+            "ny": 0.4,
+            "px": 614,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.33,
+            "px": 480,
+            "py": 356,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2536,
+        "llm_latency_ms": 1987.2,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 960.0,
+            "py": 644.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 960.0,
+            "py": 644.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 960.0,
+            "py": 554.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 699.8,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.45,
+            "ny": 0.55,
+            "px": 864,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.35,
+            "ny": 0.4,
+            "px": 672,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2603,
+        "llm_latency_ms": 1476.1,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 960.0,
+            "py": 858.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 960.0,
+            "py": 408.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 960.0,
+            "py": 195.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 775.3,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 9,
+      "commanded": [
+        30,
+        -30,
+        30,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        29.5,
+        -29.9,
+        30.7,
+        0.0,
+        0.1,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.0905,
+          -0.0512,
+          0.3022
+        ],
+        [
+          0.091,
+          0.0515,
+          0.2993
+        ],
+        [
+          0.1893,
+          0.1071,
+          0.2976
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2540,
+        "llm_latency_ms": 1714.1,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 763.0,
+            "py": 590.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 1157.0,
+            "py": 595.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 1371.0,
+            "py": 597.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 687.3,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.51,
+            "ny": 0.75,
+            "px": 979,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.42,
+            "ny": 0.55,
+            "px": 806,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.32,
+            "ny": 0.4,
+            "px": 614,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.33,
+            "px": 480,
+            "py": 356,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2601,
+        "llm_latency_ms": 1501.1,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 953.0,
+            "py": 535.0,
+            "conf": 0.585,
+            "source": "contour"
+          },
+          {
+            "name": "shoulder",
+            "px": 953.0,
+            "py": 535.0,
+            "conf": 0.585,
+            "source": "contour"
+          },
+          {
+            "name": "elbow",
+            "px": 763.0,
+            "py": 735.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 1157.0,
+            "py": 343.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 1371.0,
+            "py": 131.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 804.4,
+        "cv_success": true
+      }
+    },
+    {
+      "index": 10,
+      "commanded": [
+        -30,
+        -30,
+        30,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        -29.5,
+        -29.9,
+        30.7,
+        0.0,
+        0.1,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.0905,
+          0.0512,
+          0.3022
+        ],
+        [
+          0.091,
+          -0.0515,
+          0.2993
+        ],
+        [
+          0.1893,
+          -0.1071,
+          0.2976
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.35,
+            "px": 384,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2528,
+        "llm_latency_ms": 1535.9,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 1156.0,
+            "py": 590.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 762.0,
+            "py": 595.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 548.0,
+            "py": 597.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 847.8,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.5,
+            "px": 768,
+            "py": 540,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.35,
+            "px": 576,
+            "py": 378,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.3,
+            "px": 384,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2593,
+        "llm_latency_ms": 1722.4,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 1156.0,
+            "py": 735.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 762.0,
+            "py": 343.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 548.0,
+            "py": 131.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 690.7,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 11,
+      "commanded": [
+        0,
+        30,
+        0,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        -0.2,
+        30.5,
+        0.7,
+        0.0,
+        0.2,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          0.1058,
+          -0.0004,
+          0.3011
+        ],
+        [
+          0.2842,
+          -0.001,
+          0.1931
+        ],
+        [
+          0.3806,
+          -0.0013,
+          0.1343
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.48,
+            "ny": 0.97,
+            "px": 921,
+            "py": 1047,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.52,
+            "ny": 0.78,
+            "px": 998,
+            "py": 842,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.58,
+            "ny": 0.55,
+            "px": 1113,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.48,
+            "ny": 0.33,
+            "px": 921,
+            "py": 356,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.42,
+            "ny": 0.2,
+            "px": 806,
+            "py": 216,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2622,
+        "llm_latency_ms": 1748.8,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 958.0,
+            "py": 592.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 956.0,
+            "py": 767.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 954.0,
+            "py": 862.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 693.4,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2620,
+        "llm_latency_ms": 1582.7,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 958.0,
+            "py": 311.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 956.0,
+            "py": -73.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 954.0,
+            "py": -282.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 688.1,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 12,
+      "commanded": [
+        0,
+        -30,
+        45,
+        0,
+        45,
+        0
+      ],
+      "actual": [
+        -0.2,
+        -30.0,
+        45.3,
+        -0.1,
+        44.9,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.1042,
+          0.0004,
+          0.3021
+        ],
+        [
+          0.0969,
+          -0.0003,
+          0.247
+        ],
+        [
+          0.153,
+          -0.0007,
+          0.149
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.3,
+            "px": 384,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2521,
+        "llm_latency_ms": 1505.7,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 961.0,
+            "py": 590.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 958.0,
+            "py": 679.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 957.0,
+            "py": 838.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 807.8,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.51,
+            "ny": 0.75,
+            "px": 979,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.42,
+            "ny": 0.55,
+            "px": 806,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.32,
+            "ny": 0.4,
+            "px": 614,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2605,
+        "llm_latency_ms": 1641.1,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 961.0,
+            "py": 765.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 958.0,
+            "py": 330.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 957.0,
+            "py": 209.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 682.3,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 13,
+      "commanded": [
+        45,
+        -45,
+        30,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        44.7,
+        -45.2,
+        30.7,
+        0.0,
+        0.9,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.1052,
+          -0.1041,
+          0.2684
+        ],
+        [
+          0.0383,
+          0.0379,
+          0.3206
+        ],
+        [
+          0.1164,
+          0.1152,
+          0.3472
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.48,
+            "ny": 0.97,
+            "px": 921,
+            "py": 1047,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.49,
+            "ny": 0.75,
+            "px": 940,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.41,
+            "ny": 0.53,
+            "px": 787,
+            "py": 572,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.31,
+            "ny": 0.4,
+            "px": 595,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.33,
+            "px": 480,
+            "py": 356,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2559,
+        "llm_latency_ms": 1776.5,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 545.0,
+            "py": 652.0,
+            "conf": 0.479,
+            "source": "contour"
+          },
+          {
+            "name": "wrist",
+            "px": 1105.0,
+            "py": 560.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 1402.0,
+            "py": 517.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 701.2,
+        "cv_success": true
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2601,
+        "llm_latency_ms": 1657.9,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 560.0,
+            "py": 767.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 1105.0,
+            "py": 457.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 1402.0,
+            "py": 288.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 819.8,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 14,
+      "commanded": [
+        -45,
+        -45,
+        30,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        -44.5,
+        -45.2,
+        30.7,
+        0.0,
+        0.8,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.1055,
+          0.1037,
+          0.2684
+        ],
+        [
+          0.0385,
+          -0.0378,
+          0.3206
+        ],
+        [
+          0.1168,
+          -0.1147,
+          0.3474
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.35,
+            "px": 384,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2499,
+        "llm_latency_ms": 1752.9,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 1358.0,
+            "py": 645.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 814.0,
+            "py": 560.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 519.0,
+            "py": 517.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 700.9,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.51,
+            "ny": 0.75,
+            "px": 979,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2620,
+        "llm_latency_ms": 1533.7,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 1358.0,
+            "py": 767.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 814.0,
+            "py": 456.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 519.0,
+            "py": 287.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 867.2,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 15,
+      "commanded": [
+        0,
+        0,
+        0,
+        0,
+        -45,
+        0
+      ],
+      "actual": [
+        -0.2,
+        0.4,
+        0.6,
+        -0.1,
+        -44.1,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          0.0015,
+          -0.0,
+          0.33
+        ],
+        [
+          0.2099,
+          -0.0007,
+          0.3264
+        ],
+        [
+          0.2924,
+          -0.0009,
+          0.4036
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.35,
+            "px": 384,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2578,
+        "llm_latency_ms": 1575.5,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 959.0,
+            "py": 545.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 957.0,
+            "py": 551.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 956.0,
+            "py": 426.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 688.0,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.51,
+            "ny": 0.78,
+            "px": 979,
+            "py": 842,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.42,
+            "ny": 0.55,
+            "px": 806,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.32,
+            "ny": 0.4,
+            "px": 614,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2607,
+        "llm_latency_ms": 1551.8,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 959.0,
+            "py": 536.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 957.0,
+            "py": 86.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 956.0,
+            "py": -91.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 713.4,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 16,
+      "commanded": [
+        0,
+        -30,
+        0,
+        0,
+        45,
+        0
+      ],
+      "actual": [
+        -0.2,
+        -29.9,
+        0.4,
+        0.0,
+        45.1,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.1039,
+          0.0004,
+          0.3022
+        ],
+        [
+          0.0775,
+          -0.0003,
+          0.4049
+        ],
+        [
+          0.1864,
+          -0.0007,
+          0.3745
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.45,
+            "ny": 0.55,
+            "px": 864,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.35,
+            "ny": 0.4,
+            "px": 672,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.3,
+            "ny": 0.3,
+            "px": 576,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2559,
+        "llm_latency_ms": 1556.8,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 961.0,
+            "py": 590.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 958.0,
+            "py": 424.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 957.0,
+            "py": 473.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 806.3,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.5,
+            "px": 768,
+            "py": 540,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.35,
+            "px": 576,
+            "py": 378,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.2,
+            "ny": 0.3,
+            "px": 384,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2606,
+        "llm_latency_ms": 1650.3,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 961.0,
+            "py": 764.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 958.0,
+            "py": 372.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 957.0,
+            "py": 137.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 710.5,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 17,
+      "commanded": [
+        60,
+        0,
+        30,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        59.8,
+        0.1,
+        30.2,
+        0.0,
+        0.9,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          0.0002,
+          0.0003,
+          0.33
+        ],
+        [
+          0.0907,
+          0.1559,
+          0.2248
+        ],
+        [
+          0.1394,
+          0.2394,
+          0.1663
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.35,
+            "px": 480,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2578,
+        "llm_latency_ms": 1584.3,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 961.0,
+            "py": 545.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 1558.0,
+            "py": 715.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 1879.0,
+            "py": 810.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 731.0,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.55,
+            "ny": 0.75,
+            "px": 1056,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.65,
+            "ny": 0.55,
+            "px": 1248,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.65,
+            "ny": 0.35,
+            "px": 1248,
+            "py": 378,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.7,
+            "ny": 0.25,
+            "px": 1344,
+            "py": 270,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2613,
+        "llm_latency_ms": 1667.2,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 961.0,
+            "py": 539.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 1558.0,
+            "py": 344.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 1879.0,
+            "py": 238.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 720.0,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 18,
+      "commanded": [
+        -60,
+        0,
+        30,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        -59.5,
+        0.1,
+        30.2,
+        0.0,
+        0.4,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          0.0002,
+          -0.0003,
+          0.33
+        ],
+        [
+          0.0916,
+          -0.1554,
+          0.2248
+        ],
+        [
+          0.1409,
+          -0.2391,
+          0.1671
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.51,
+            "ny": 0.75,
+            "px": 979,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.42,
+            "ny": 0.55,
+            "px": 806,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.32,
+            "ny": 0.4,
+            "px": 614,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.33,
+            "px": 480,
+            "py": 356,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2594,
+        "llm_latency_ms": 1548.0,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 958.0,
+            "py": 545.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 363.0,
+            "py": 715.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 41.0,
+            "py": 809.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 712.7,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2604,
+        "llm_latency_ms": 1599.4,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 958.0,
+            "py": 539.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 363.0,
+            "py": 342.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 41.0,
+            "py": 235.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 715.5,
+        "cv_success": false
+      }
+    },
+    {
+      "index": 19,
+      "commanded": [
+        0,
+        -60,
+        60,
+        0,
+        -45,
+        0
+      ],
+      "actual": [
+        -0.1,
+        -60.2,
+        60.0,
+        0.0,
+        -44.1,
+        0.1
+      ],
+      "fk_positions": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1215
+        ],
+        [
+          -0.1809,
+          0.0003,
+          0.2251
+        ],
+        [
+          0.0276,
+          -0.0,
+          0.2258
+        ],
+        [
+          0.1084,
+          -0.0002,
+          0.3048
+        ]
+      ],
+      "cam0": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.5,
+            "px": 768,
+            "py": 540,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.35,
+            "px": 480,
+            "py": 378,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2542,
+        "llm_latency_ms": 1580.0,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 1080.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 883.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 961.0,
+            "py": 715.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 959.0,
+            "py": 714.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 959.0,
+            "py": 586.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 709.2,
+        "cv_success": false
+      },
+      "cam1": {
+        "llm_joints": [
+          {
+            "name": "base",
+            "nx": 0.5,
+            "ny": 0.95,
+            "px": 960,
+            "py": 1026,
+            "conf": "high"
+          },
+          {
+            "name": "shoulder",
+            "nx": 0.5,
+            "ny": 0.75,
+            "px": 960,
+            "py": 810,
+            "conf": "medium"
+          },
+          {
+            "name": "elbow",
+            "nx": 0.4,
+            "ny": 0.55,
+            "px": 768,
+            "py": 594,
+            "conf": "medium"
+          },
+          {
+            "name": "wrist",
+            "nx": 0.3,
+            "ny": 0.4,
+            "px": 576,
+            "py": 432,
+            "conf": "low"
+          },
+          {
+            "name": "end_effector",
+            "nx": 0.25,
+            "ny": 0.3,
+            "px": 480,
+            "py": 324,
+            "conf": "low"
+          }
+        ],
+        "llm_tokens": 2586,
+        "llm_latency_ms": 1632.5,
+        "llm_success": true,
+        "llm_error": null,
+        "cv_joints": [
+          {
+            "name": "base",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "shoulder",
+            "px": 960.0,
+            "py": 540.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "elbow",
+            "px": 961.0,
+            "py": 930.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "wrist",
+            "px": 959.0,
+            "py": 480.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          },
+          {
+            "name": "end_effector",
+            "px": 959.0,
+            "py": 305.0,
+            "conf": 0.2,
+            "source": "fk_only"
+          }
+        ],
+        "cv_latency_ms": 809.2,
+        "cv_success": false
+      }
+    }
+  ],
+  "summary": {
+    "total_poses": 20,
+    "total_llm_calls": 40,
+    "total_tokens": 102999,
+    "avg_tokens_per_call": 2575,
+    "llm_detection_rate": 1.0,
+    "cv_detection_rate": 0.1,
+    "llm_successes": 40,
+    "cv_successes": 4,
+    "total_detections": 40
+  }
+}
