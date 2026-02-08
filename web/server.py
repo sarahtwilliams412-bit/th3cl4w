@@ -2936,6 +2936,41 @@ async def calibration_report_json(session_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Camera Extrinsics endpoint
+# ---------------------------------------------------------------------------
+
+@app.get("/api/calibration/extrinsics")
+async def get_calibration_extrinsics():
+    """Return current camera extrinsics (from saved calibration file)."""
+    try:
+        from src.calibration.extrinsics_solver import load_extrinsics
+        extrinsics_path = str(Path(__file__).parent.parent / "calibration_results" / "camera_extrinsics.json")
+        data = load_extrinsics(extrinsics_path)
+        if data is None:
+            return JSONResponse({"ok": False, "error": "No extrinsics calibration found"}, status_code=404)
+        return {"ok": True, **data}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/calibration/frames/{session_id}/{pose_index}/{camera_id}")
+async def get_calibration_frame(session_id: str, pose_index: int, camera_id: str):
+    """Return a raw JPEG frame from a calibration session."""
+    if not _HAS_CALIBRATION or _calibration_session is None:
+        return JSONResponse({"ok": False, "error": "No session available"}, status_code=404)
+    if _calibration_runner and _calibration_runner._session_id != session_id:
+        return JSONResponse({"ok": False, "error": "Session not found"}, status_code=404)
+    if pose_index < 0 or pose_index >= len(_calibration_session.captures):
+        return JSONResponse({"ok": False, "error": "Pose index out of range"}, status_code=404)
+    cap = _calibration_session.captures[pose_index]
+    jpeg = cap.cam0_jpeg if camera_id == "cam0" else cap.cam1_jpeg
+    if not jpeg:
+        return JSONResponse({"ok": False, "error": f"No frame for {camera_id}"}, status_code=404)
+    from starlette.responses import Response
+    return Response(content=jpeg, media_type="image/jpeg")
+
+
+# ---------------------------------------------------------------------------
 # Static files — versioned UIs all pointing to the same server
 # /v1/ → V1 stable base, /v2/ → V2 Cartesian controls, / → V1 (default)
 # ---------------------------------------------------------------------------

@@ -121,20 +121,36 @@ def solve_camera_pnp(
         logger.error("Need at least 4 point correspondences, got %d", n)
         return None, None, None
 
+    # Choose appropriate algorithm based on point count
+    if n >= 6:
+        pnp_flag = cv2.SOLVEPNP_ITERATIVE
+    elif n >= 4:
+        pnp_flag = cv2.SOLVEPNP_SQPNP  # Works with ≥4 points
+    else:
+        pnp_flag = cv2.SOLVEPNP_P3P  # Needs exactly 4
+
     if use_ransac and n >= 6:
         success, rvec, tvec, inliers = cv2.solvePnPRansac(
             obj, img, camera_matrix, dist_coeffs,
-            iterationsCount=1000,
-            reprojectionError=8.0,
-            flags=cv2.SOLVEPNP_ITERATIVE,
+            iterationsCount=5000,
+            reprojectionError=50.0,  # generous for manually annotated points
+            flags=pnp_flag,
         )
         if not success:
-            logger.error("solvePnPRansac failed")
-            return None, None, None
+            # Fallback to non-RANSAC
+            logger.warning("solvePnPRansac failed, trying solvePnP")
+            success, rvec, tvec = cv2.solvePnP(
+                obj, img, camera_matrix, dist_coeffs,
+                flags=pnp_flag,
+            )
+            if not success:
+                logger.error("solvePnP also failed")
+                return None, None, None
+            inliers = np.arange(n).reshape(-1, 1)
     else:
         success, rvec, tvec = cv2.solvePnP(
             obj, img, camera_matrix, dist_coeffs,
-            flags=cv2.SOLVEPNP_ITERATIVE,
+            flags=pnp_flag,
         )
         if not success:
             logger.error("solvePnP failed")
