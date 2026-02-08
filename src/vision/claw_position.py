@@ -258,9 +258,7 @@ class ClawPositionPredictor:
 
             # Combined score
             area_score = min(1.0, area / 5000)  # normalize area
-            score = (
-                area_score * 0.35 + circularity * 0.25 + aspect * 0.15 + center_score * 0.25
-            )
+            score = area_score * 0.35 + circularity * 0.25 + aspect * 0.15 + center_score * 0.25
 
             if score > best_score:
                 best_score = score
@@ -319,9 +317,7 @@ class ClawPositionPredictor:
         prediction.detected = True
 
         # Compute 3D position via stereo triangulation
-        position_3d = self._triangulate(
-            left_centroid, right_centroid, left_frame, right_frame
-        )
+        position_3d = self._triangulate(left_centroid, right_centroid, left_frame, right_frame)
 
         if position_3d is not None:
             # Apply scale correction
@@ -414,17 +410,13 @@ class ClawPositionPredictor:
         """Return current status for the API."""
         with self._lock:
             last = self._last_prediction
-            recent_detections = sum(
-                1 for p in self._detection_history if p.detected
-            )
+            recent_detections = sum(1 for p in self._detection_history if p.detected)
             total_recent = len(self._detection_history)
 
             status = {
                 "enabled": self._enabled,
                 "prediction_count": self._prediction_count,
-                "detection_rate": (
-                    round(recent_detections / max(total_recent, 1), 2)
-                ),
+                "detection_rate": (round(recent_detections / max(total_recent, 1), 2)),
                 "scale_factor": round(self._scale_factor, 4),
                 "hsv_lower": self._hsv_lower.tolist(),
                 "hsv_upper": self._hsv_upper.tolist(),
@@ -443,7 +435,7 @@ class ClawPositionPredictor:
         Overlays the detected claw position, bounding info, and
         coordinate readout onto the frame for visualization.
         """
-        annotated = frame.copy()
+        annotated: np.ndarray = frame.copy()
         prediction = self._last_prediction
 
         if prediction is None or not prediction.detected:
