@@ -301,6 +301,9 @@ let localLog = []; // client-side log entries
 let armSynced = false; // SAFETY: don't send commands until first state received
 let updatingFromState = false; // Guard against state→slider→command feedback loop
 let vizDirty = true; // V4: only redraw when state changes
+let prevJoints = [0,0,0,0,0,0]; // Track previous joint values to detect actual changes
+let prevGripper = 0;
+let vizLogCounter = 0; // Throttle telemetry logging
 
 function logLocal(action, details, level) {
   const now = new Date();
@@ -423,7 +426,12 @@ async function runTask(name, body = {}) {
     const resp = await fetch(`/api/task/${name}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     });
-    const data = await resp.json();
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); } catch(parseErr) {
+      logLocal('TASK', `${name}: server error (HTTP ${resp.status})`, 'error');
+      return;
+    }
     if (data.ok) {
       logLocal('TASK', `${name}: ${data.points} pts, ${data.duration_s}s`, 'info');
     } else {
@@ -469,9 +477,24 @@ function connectWS() {
         logLocal('ACK', `${data.action}: ${data.ok ? 'OK' : 'FAIL'}`, data.ok ? 'info' : 'error');
         return;
       }
+      // Detect whether joint/gripper values actually changed before triggering redraw
+      const newJoints = data.joints || [0,0,0,0,0,0];
+      const newGripper = data.gripper || 0;
+      let jointsChanged = false;
+      for (let i = 0; i < 6; i++) {
+        if (Math.abs((newJoints[i] || 0) - prevJoints[i]) > 0.01) { jointsChanged = true; break; }
+      }
+      const gripperChanged = Math.abs(newGripper - prevGripper) > 0.01;
+      const statusChanged = data.power !== armState.power || data.enabled !== armState.enabled || data.error !== armState.error;
+
       armState = data;
       lastStateTs = Date.now();
-      vizDirty = true;
+
+      if (jointsChanged || gripperChanged || statusChanged || !armSynced) {
+        vizDirty = true;
+        prevJoints = newJoints.slice();
+        prevGripper = newGripper;
+      }
       if (!armSynced) {
         armSynced = true;
         logLocal('SYNC', 'First arm state received — sliders synced', 'info');
@@ -576,9 +599,21 @@ function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.
 // ---- Arm Visualization ----
 const canvas = document.getElementById('armCanvas');
 const ctx = canvas.getContext('2d');
+// Double-buffer: draw to offscreen canvas, then blit to visible canvas in one
+// operation. This eliminates the flash from clearRect → redraw.
+let offCanvas = document.createElement('canvas');
+let offCtx = offCanvas.getContext('2d');
 
 function drawArm() {
   const W = canvas.width, H = canvas.height;
+  // Keep offscreen canvas size in sync
+  if (offCanvas.width !== W || offCanvas.height !== H) {
+    offCanvas.width = W;
+    offCanvas.height = H;
+  }
+  // Shadow ctx with offscreen context for double-buffering — all drawing
+  // goes to offscreen canvas, then we blit to the visible canvas at the end.
+  const ctx = offCtx;
   ctx.clearRect(0, 0, W, H);
 
   const joints = armState.joints || [0,0,0,0,0,0];
@@ -866,13 +901,34 @@ function drawArm() {
   ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(136,146,164,0.5)';
   ctx.fillText('D1 Arm (blue=pitch, gold=roll)', 8, 16 * scale);
+
+  // --- Telemetry: log circle positions (~1Hz) to help diagnose jumping ---
+  vizLogCounter++;
+  if (vizLogCounter % 10 === 0) {
+    console.log('[VIZ TELEMETRY]', {
+      joints: joints.map(j => +(j||0).toFixed(2)),
+      gripper: +(gripMM||0).toFixed(1),
+      circlePositions: pts.map((p, i) => ({ idx: i, x: +p.x.toFixed(1), y: +p.y.toFixed(1) })),
+      canvasSize: { W, H },
+      scale: +scale.toFixed(3),
+      base: { x: +baseX.toFixed(1), y: +baseY.toFixed(1) },
+      userDragging,
+      source: 'armState.joints (WebSocket feedback)',
+    });
+  }
+
+  // Blit offscreen canvas to visible canvas in one operation (eliminates flicker)
+  const visCtx = canvas.getContext('2d');
+  visCtx.clearRect(0, 0, W, H);
+  visCtx.drawImage(offCanvas, 0, 0);
 }
 
-// Animation loop — only redraw when state changes
+// Animation loop — always update UI (cheap DOM ops), only redraw canvas when
+// joint/gripper values actually change
 function animLoop() {
+  updateUI();
   if (vizDirty) {
     vizDirty = false;
-    updateUI();
     drawArm();
   }
   animFrameId = requestAnimationFrame(animLoop);
