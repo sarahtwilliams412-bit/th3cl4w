@@ -45,8 +45,7 @@ class WorkspaceMapper:
 
         # Grid dimensions
         self.grid_shape = tuple(
-            int(np.ceil((self.ws_max[i] - self.ws_min[i]) / self.voxel_size))
-            for i in range(3)
+            int(np.ceil((self.ws_max[i] - self.ws_min[i]) / self.voxel_size)) for i in range(3)
         )
         # Occupancy grid: 0=free, 1=occupied, -1=unknown
         self._grid = np.full(self.grid_shape, -1, dtype=np.int8)
@@ -105,7 +104,11 @@ class WorkspaceMapper:
 
     def _voxel_to_world(self, ix: int, iy: int, iz: int) -> np.ndarray:
         """Convert voxel index to world center point (mm)."""
-        return self.ws_min + np.array([ix, iy, iz], dtype=np.float32) * self.voxel_size + self.voxel_size / 2
+        return (
+            self.ws_min
+            + np.array([ix, iy, iz], dtype=np.float32) * self.voxel_size
+            + self.voxel_size / 2
+        )
 
     def update_from_frames(self, left: np.ndarray, right: np.ndarray) -> dict:
         """Process a stereo frame pair and update the occupancy grid.
@@ -259,16 +262,20 @@ class WorkspaceMapper:
         else:
             return {"ok": False, "error": "Camera matrix not available"}
 
-        p3d_1 = np.array([
-            (point1[0] - cx) * d1 / fx,
-            (point1[1] - cy) * d1 / fy,
-            d1,
-        ])
-        p3d_2 = np.array([
-            (point2[0] - cx) * d2 / fx,
-            (point2[1] - cy) * d2 / fy,
-            d2,
-        ])
+        p3d_1 = np.array(
+            [
+                (point1[0] - cx) * d1 / fx,
+                (point1[1] - cy) * d1 / fy,
+                d1,
+            ]
+        )
+        p3d_2 = np.array(
+            [
+                (point2[0] - cx) * d2 / fx,
+                (point2[1] - cy) * d2 / fy,
+                d2,
+            ]
+        )
 
         measured_mm = np.linalg.norm(p3d_1 - p3d_2)
         if measured_mm > 0:
@@ -323,19 +330,23 @@ class WorkspaceMapper:
                             nx = voxel[0] + dx
                             ny = voxel[1] + dy
                             nz = voxel[2] + dz
-                            if (0 <= nx < self.grid_shape[0] and
-                                0 <= ny < self.grid_shape[1] and
-                                0 <= nz < self.grid_shape[2]):
+                            if (
+                                0 <= nx < self.grid_shape[0]
+                                and 0 <= ny < self.grid_shape[1]
+                                and 0 <= nz < self.grid_shape[2]
+                            ):
                                 if self._grid[nx, ny, nz] == 1:
                                     collision_pt = self._voxel_to_world(nx, ny, nz)
                                     dist = np.linalg.norm(pt - collision_pt)
                                     if dist <= radius_mm:
-                                        collisions.append({
-                                            "path_index": i,
-                                            "point_mm": pt.tolist(),
-                                            "obstacle_mm": collision_pt.tolist(),
-                                            "distance_mm": round(dist, 1),
-                                        })
+                                        collisions.append(
+                                            {
+                                                "path_index": i,
+                                                "point_mm": pt.tolist(),
+                                                "obstacle_mm": collision_pt.tolist(),
+                                                "distance_mm": round(dist, 1),
+                                            }
+                                        )
                                         break
                             if collisions and collisions[-1]["path_index"] == i:
                                 break
@@ -365,9 +376,11 @@ class WorkspaceMapper:
                 "scale_calibrated": self._scale_calibrated,
                 "update_count": self._update_count,
                 "enabled": self._enabled,
-                "last_update_age_ms": round(
-                    (time.monotonic() - self._last_update_time) * 1000, 0
-                ) if self._last_update_time > 0 else None,
+                "last_update_age_ms": (
+                    round((time.monotonic() - self._last_update_time) * 1000, 0)
+                    if self._last_update_time > 0
+                    else None
+                ),
             }
 
     def get_occupied_points(self, max_points: int = 500) -> list[list[float]]:

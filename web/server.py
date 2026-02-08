@@ -302,7 +302,9 @@ async def lifespan(app: FastAPI):
                 action_log.add("SYSTEM", f"Calibration load failed: {e}", "warning")
         workspace_mapper = WorkspaceMapper(calibrator)
         collision_preview = CollisionPreview()
-        action_log.add("SYSTEM", "Bifocal workspace mapper initialized (disabled by default)", "info")
+        action_log.add(
+            "SYSTEM", "Bifocal workspace mapper initialized (disabled by default)", "info"
+        )
 
     yield
 
@@ -1188,6 +1190,7 @@ async def bifocal_update():
 
     # Grab snapshots from both cameras
     import httpx
+
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp0 = await client.get("http://localhost:8081/snap/0")
@@ -1196,10 +1199,13 @@ async def bifocal_update():
             return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
 
         import cv2
+
         left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
         right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
         if left is None or right is None:
-            return JSONResponse({"ok": False, "error": "Failed to decode camera frames"}, status_code=502)
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode camera frames"}, status_code=502
+            )
 
         result = workspace_mapper.update_from_frames(left, right)
         return {"ok": True, **result}
@@ -1239,6 +1245,7 @@ async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
         return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
 
     import httpx, cv2
+
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp0 = await client.get("http://localhost:8081/snap/0")
@@ -1253,7 +1260,9 @@ async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
         if result["ok"]:
             action_log.add("BIFOCAL", f"Scale calibrated: factor={result['scale_factor']}", "info")
         else:
-            action_log.add("BIFOCAL", f"Scale calibration failed: {result.get('error', '?')}", "warning")
+            action_log.add(
+                "BIFOCAL", f"Scale calibration failed: {result.get('error', '?')}", "warning"
+            )
         return result
 
     except Exception as e:
@@ -1275,6 +1284,7 @@ async def bifocal_calibrate_tape(req: TapeMeasureRequest):
         return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
 
     import httpx, cv2
+
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp0 = await client.get("http://localhost:8081/snap/0")
