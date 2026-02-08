@@ -2155,10 +2155,11 @@ async def run_viz_calibration():
             import numpy as _np
             if 'R' in cp and 'rx' not in cp:
                 R = _np.array(cp['R']).reshape(3, 3)
-                rvec, _ = cv2.Rodrigues(R)
+                from scipy.spatial.transform import Rotation as _Rot
+                rvec = _Rot.from_matrix(R).as_rotvec()
                 return {
                     'fx': cp['fx'], 'fy': cp['fy'], 'cx': cp['cx'], 'cy': cp['cy'],
-                    'rx': float(rvec[0, 0]), 'ry': float(rvec[1, 0]), 'rz': float(rvec[2, 0]),
+                    'rx': float(rvec[0]), 'ry': float(rvec[1]), 'rz': float(rvec[2]),
                     'tx': float(cp['t'][0]), 'ty': float(cp['t'][1]), 'tz': float(cp['t'][2]),
                 }
             return cp
