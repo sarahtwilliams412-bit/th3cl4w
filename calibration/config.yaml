@@ -1,0 +1,23 @@
+# Calibration Configuration for Visual Hull Pipeline
+# Edit these values based on physical measurements
+
+checkerboard:
+  inner_corners: [9, 6]
+  square_size_mm: 24.8       # Measure with calipers
+
+cameras:
+  top_down_id: "T"
+  profile_id: "P"
+
+workspace:
+  # Measure these with tape measure from robot base
+  robot_base_position_mm: [500, 500, 0]  # Center of workspace
+  workspace_bounds_mm:
+    x: [0, 1000]
+    y: [0, 1000]
+    z: [0, 600]
+
+zmq_frame_source: "tcp://localhost:5555"
+
+# Grid parameters
+grid_resolution: 128
