@@ -1,7 +1,10 @@
+# th3cl4w V1 Server — Stable Base
 #!/usr/bin/env python3.12
 """
-th3cl4w — Web Control Panel for Unitree D1 Arm
+th3cl4w — Web Control Panel for Unitree D1 Arm.
+
 FastAPI backend with WebSocket state streaming and REST command API.
+Supports both real DDS hardware and --simulate mode.
 """
 
 import argparse
@@ -502,16 +505,19 @@ async def api_cameras():
 
 @app.get("/api/state")
 async def api_state():
+    """Return current arm state (joints, gripper, power, enabled, error)."""
     return get_arm_state()
 
 
 @app.get("/api/log")
 async def api_log():
+    """Return recent action log entries."""
     return {"entries": action_log.last(50)}
 
 
 @app.post("/api/command/enable")
 async def cmd_enable():
+    """Enable motors (requires power to be on first)."""
     cid = _new_cid()
     _telem_cmd_sent("enable", {}, cid)
     if arm is None:
@@ -546,6 +552,7 @@ async def cmd_enable():
 
 @app.post("/api/command/disable")
 async def cmd_disable():
+    """Disable motors."""
     cid = _new_cid()
     _telem_cmd_sent("disable", {}, cid)
     ok = arm.disable_motors(_correlation_id=cid) if arm else False
@@ -562,6 +569,7 @@ async def cmd_disable():
 
 @app.post("/api/command/power-on")
 async def cmd_power_on():
+    """Power on the arm."""
     cid = _new_cid()
     _telem_cmd_sent("power-on", {}, cid)
     ok = arm.power_on(_correlation_id=cid) if arm else False
@@ -576,6 +584,7 @@ async def cmd_power_on():
 
 @app.post("/api/command/power-off")
 async def cmd_power_off():
+    """Power off the arm (also disables motors)."""
     cid = _new_cid()
     _telem_cmd_sent("power-off", {}, cid)
     ok = arm.power_off(_correlation_id=cid) if arm else False
@@ -592,6 +601,7 @@ async def cmd_power_off():
 
 @app.post("/api/command/reset")
 async def cmd_reset():
+    """Reset arm to zero position."""
     cid = _new_cid()
     _telem_cmd_sent("reset", {}, cid)
     ok = arm.reset_to_zero(_correlation_id=cid) if arm else False
@@ -604,6 +614,7 @@ async def cmd_reset():
 
 @app.post("/api/command/set-joint")
 async def cmd_set_joint(req: SetJointRequest):
+    """Set a single joint to a target angle (degrees)."""
     cid = _new_cid()
     _telem_cmd_sent("set-joint", {"id": req.id, "angle": req.angle}, cid)
     if not (smoother and smoother._arm_enabled):
@@ -635,6 +646,7 @@ async def cmd_set_joint(req: SetJointRequest):
 
 @app.post("/api/command/set-all-joints")
 async def cmd_set_all_joints(req: SetAllJointsRequest):
+    """Set all 6 joints to target angles simultaneously."""
     cid = _new_cid()
     _telem_cmd_sent("set-all-joints", {"angles": req.angles}, cid)
     if not (smoother and smoother._arm_enabled):
@@ -738,8 +750,8 @@ async def ws_state(ws: WebSocket):
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
         action_log.add("WS", "Client disconnected", "info")
-    except Exception:
-        pass
+    except Exception as e:
+        action_log.add("WS", f"Client error: {e}", "error")
     finally:
         if ws in ws_clients:
             ws_clients.remove(ws)
@@ -836,8 +848,10 @@ async def ws_telemetry(ws: WebSocket):
         while True:
             event_dict = await queue.get()
             await ws.send_json(event_dict)
-    except (WebSocketDisconnect, Exception):
+    except WebSocketDisconnect:
         pass
+    except Exception as e:
+        logger.warning("Telemetry WS error: %s", e)
     finally:
         tc.unsubscribe(on_event)
 
@@ -1154,11 +1168,19 @@ async def telemetry_page():
 
 
 # ---------------------------------------------------------------------------
-# Static files
+# Static files — versioned UIs all pointing to the same server
+# /v1/ → V1 stable base, /v2/ → V2 Cartesian controls, / → V1 (default)
 # ---------------------------------------------------------------------------
 
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(parents=True, exist_ok=True)
+
+v1_dir = static_dir / "v1"
+v2_dir = static_dir / "v2"
+if v1_dir.is_dir():
+    app.mount("/v1", StaticFiles(directory=str(v1_dir), html=True), name="static-v1")
+if v2_dir.is_dir():
+    app.mount("/v2", StaticFiles(directory=str(v2_dir), html=True), name="static-v2")
 app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 # ---------------------------------------------------------------------------
