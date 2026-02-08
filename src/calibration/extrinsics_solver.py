@@ -30,12 +30,32 @@ from src.vision.fk_engine import fk_positions
 
 logger = logging.getLogger("th3cl4w.calibration.extrinsics")
 
-# Default intrinsics for 1920×1080 cameras (no intrinsic calibration yet)
-DEFAULT_FX = 1000.0
-DEFAULT_FY = 1000.0
+# Path to calibrated intrinsics (from scripts/calibrate_intrinsics.py)
+_INTRINSICS_PATH = Path(__file__).resolve().parent.parent.parent / "calibration_results" / "camera_intrinsics.json"
+
+# Fallback defaults for 1920×1080 (Logitech BRIO wide-angle estimate)
+DEFAULT_FX = 1200.0
+DEFAULT_FY = 1200.0
 DEFAULT_CX = 960.0
 DEFAULT_CY = 540.0
 DEFAULT_IMAGE_SIZE = (1920, 1080)
+
+_intrinsics_cache: Optional[dict] = None
+
+
+def load_camera_intrinsics(cam_id: str = "cam0") -> tuple[float, float, float, float, list[float]]:
+    """Load calibrated intrinsics from JSON file. Returns (fx, fy, cx, cy, dist_coeffs)."""
+    global _intrinsics_cache
+    if _intrinsics_cache is None and _INTRINSICS_PATH.exists():
+        try:
+            _intrinsics_cache = json.loads(_INTRINSICS_PATH.read_text())
+            logger.info("Loaded camera intrinsics from %s", _INTRINSICS_PATH)
+        except Exception as e:
+            logger.warning("Failed to load intrinsics: %s", e)
+    if _intrinsics_cache and cam_id in _intrinsics_cache:
+        c = _intrinsics_cache[cam_id]
+        return c["fx"], c["fy"], c["cx"], c["cy"], c.get("dist_coeffs", [0]*5)
+    return DEFAULT_FX, DEFAULT_FY, DEFAULT_CX, DEFAULT_CY, [0]*5
 
 
 @dataclass
@@ -67,13 +87,20 @@ BOOTSTRAP_POSES = [
 ]
 
 
-def get_default_camera_matrix() -> np.ndarray:
-    """Return default 3x3 camera intrinsic matrix for 1920x1080."""
+def get_default_camera_matrix(cam_id: str = "cam0") -> np.ndarray:
+    """Return 3x3 camera intrinsic matrix, loading from calibration file if available."""
+    fx, fy, cx, cy, _ = load_camera_intrinsics(cam_id)
     return np.array([
-        [DEFAULT_FX, 0, DEFAULT_CX],
-        [0, DEFAULT_FY, DEFAULT_CY],
+        [fx, 0, cx],
+        [0, fy, cy],
         [0, 0, 1],
     ], dtype=np.float64)
+
+
+def get_dist_coeffs(cam_id: str = "cam0") -> np.ndarray:
+    """Return distortion coefficients from calibration file."""
+    _, _, _, _, dist = load_camera_intrinsics(cam_id)
+    return np.array(dist, dtype=np.float64)
 
 
 def compute_fk_ee_positions(
