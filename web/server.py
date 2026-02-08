@@ -2084,11 +2084,16 @@ async def run_viz_calibration():
             f"{'OK' if result.success else 'FAILED'} — {result.n_observations} obs, residual={result.residual}",
             "info" if result.success else "error",
         )
+        import math
+        def _sanitize(v):
+            if isinstance(v, float) and (math.isinf(v) or math.isnan(v)):
+                return None
+            return v
         return {
             "ok": result.success,
-            "links_mm": result.links_mm,
-            "joint_viz_offsets": result.joint_viz_offsets,
-            "residual": result.residual,
+            "links_mm": {k: _sanitize(v) for k, v in result.links_mm.items()},
+            "joint_viz_offsets": [_sanitize(v) for v in result.joint_viz_offsets],
+            "residual": _sanitize(result.residual),
             "n_observations": result.n_observations,
             "message": result.message,
         }

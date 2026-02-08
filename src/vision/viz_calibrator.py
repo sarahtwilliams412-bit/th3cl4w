@@ -62,7 +62,7 @@ CALIBRATION_POSES = [
     [0,  20, -60, 0,  30, 0],
 ]
 
-CAMERA_URL = "http://localhost:8081/snapshot/1"
+CAMERA_URL = "http://localhost:8081/snap/1"
 ARM_API = "http://localhost:8080"
 SETTLE_TIME = 2.0  # seconds to wait after moving
 MOVE_STEP_DEG = 10.0  # max degrees per increment
@@ -312,7 +312,7 @@ def solve_calibration(observations: List[PoseObservation],
         return CalibrationResult(
             links_mm=DEFAULT_LINKS_MM.copy(),
             joint_viz_offsets=list(DEFAULT_OFFSETS),
-            residual=float('inf'),
+            residual=-1.0,
             n_observations=len(valid_obs),
             success=False,
             message=f"Not enough valid observations ({len(valid_obs)} < 5)",
