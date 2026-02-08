@@ -704,6 +704,24 @@ async def run_calibration(
                      round_num, total_rounds, round_num * ANGLE_INCREMENT, len(poses))
         
         for i, pose in enumerate(poses):
+            # Pre-check: skip poses that collision memory says are unsafe
+            skip_unsafe = False
+            try:
+                from src.safety.collision_memory import get_collision_memory
+                cmem = get_collision_memory()
+                for jid in range(6):
+                    if pose[jid] != 0.0 and not cmem.is_safe(jid, pose[jid]):
+                        safe_lo, safe_hi = cmem.get_safe_range(jid)
+                        logger.info("Skipping pose %s — J%d=%.1f° outside safe range [%.0f°, %.0f°]",
+                                   pose, jid, pose[jid], safe_lo, safe_hi)
+                        skip_unsafe = True
+                        break
+            except ImportError:
+                pass
+            
+            if skip_unsafe:
+                continue
+            
             # Move to pose
             move_ok = True
             for jid in range(6):

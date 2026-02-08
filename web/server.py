@@ -728,6 +728,19 @@ async def cmd_set_joint(req: SetJointRequest):
         if cid:
             resp_data["correlation_id"] = cid
         return JSONResponse(resp_data, status_code=400)
+    # Check collision memory — clamp to learned safe range
+    try:
+        from src.safety.collision_memory import get_collision_memory
+        cmem = get_collision_memory()
+        if not cmem.is_safe(req.id, req.angle):
+            safe_lo, safe_hi = cmem.get_safe_range(req.id)
+            clamped = cmem.clamp_to_safe(req.id, req.angle)
+            action_log.add("SET_JOINT",
+                f"⚠ J{req.id} {req.angle}° clamped by collision memory (safe: [{safe_lo:.0f}°, {safe_hi:.0f}°]) → {clamped:.1f}°",
+                "warning")
+            req.angle = clamped
+    except Exception:
+        pass
     if smoother and smoother.running:
         smoother.set_joint_target(req.id, req.angle)
         ok = True
@@ -2197,6 +2210,14 @@ async def _handle_collision(stall: "StallEvent", clients: list):
         "error",
     )
 
+    # 0. Record in collision memory (persistent — never hit the same spot twice)
+    try:
+        from src.safety.collision_memory import get_collision_memory
+        cmem = get_collision_memory()
+        cmem.record_collision(stall.joint_id, stall.commanded_deg, stall.actual_deg)
+    except Exception as e:
+        logger.error("Failed to record collision memory: %s", e)
+
     # 1. Stop arm movement
     if smoother:
         smoother._clear_targets()
@@ -2269,6 +2290,34 @@ async def _handle_collision(stall: "StallEvent", clients: list):
 async def api_collisions(limit: int = 20):
     """Return recent collision events."""
     return {"events": collision_events[-limit:]}
+
+
+@app.get("/api/collision-memory")
+async def api_collision_memory():
+    """Return the persistent collision memory (learned safe ranges)."""
+    try:
+        from src.safety.collision_memory import get_collision_memory
+        cmem = get_collision_memory()
+        return {
+            "ok": True,
+            "safe_ranges": {str(k): list(v) for k, v in cmem.safe_ranges.items()},
+            "n_events": len(cmem.events),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/collision-memory/clear")
+async def api_clear_collision_memory():
+    """Clear collision memory (do this after rearranging workspace)."""
+    try:
+        from src.safety.collision_memory import get_collision_memory
+        cmem = get_collision_memory()
+        cmem.clear()
+        action_log.add("COLLISION_MEMORY", "Cleared — all ranges reset to hardware limits", "info")
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.get("/api/collisions/{timestamp}/{filename}")
