@@ -27,21 +27,122 @@ def mock_arm():
 
 @pytest.fixture
 def smoother(mock_arm):
-    return CommandSmoother(mock_arm, rate_hz=10.0, smoothing_factor=0.5, max_step_deg=15.0)
+    """A smoother that is synced and arm-enabled, ready to send commands."""
+    s = CommandSmoother(mock_arm, rate_hz=10.0, smoothing_factor=0.5, max_step_deg=15.0)
+    s.sync_current_positions()
+    s.set_arm_enabled(True)
+    return s
 
 
 class TestCommandSmootherInit:
-    def test_initial_state(self, smoother):
-        assert not smoother.running
-        assert smoother._current == [0.0] * 6
-        assert smoother._ticks == 0
+    def test_initial_state_not_synced(self, mock_arm):
+        """Smoother starts unsynced with None positions."""
+        s = CommandSmoother(mock_arm)
+        assert not s.running
+        assert not s.synced
+        assert not s.arm_enabled
+        assert s._current == [None] * 6
+        assert s._ticks == 0
 
-    def test_sync_positions(self, smoother, mock_arm):
+    def test_sync_positions(self, mock_arm):
+        s = CommandSmoother(mock_arm)
         mock_arm.get_joint_angles.return_value = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
         mock_arm.get_gripper_position.return_value = 25.0
-        smoother.sync_current_positions()
-        assert smoother._current == [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
-        assert smoother._current_gripper == 25.0
+        result = s.sync_current_positions()
+        assert result is True
+        assert s.synced
+        assert s._current == [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        assert s._current_gripper == 25.0
+
+    def test_sync_fails_with_none_angles(self, mock_arm):
+        s = CommandSmoother(mock_arm)
+        mock_arm.get_joint_angles.return_value = None
+        result = s.sync_current_positions()
+        assert result is False
+        assert not s.synced
+
+    def test_sync_fails_with_short_angles(self, mock_arm):
+        s = CommandSmoother(mock_arm)
+        mock_arm.get_joint_angles.return_value = [1.0, 2.0]  # too few
+        result = s.sync_current_positions()
+        assert result is False
+        assert not s.synced
+
+    def test_sync_from_feedback(self, mock_arm):
+        s = CommandSmoother(mock_arm)
+        assert not s.synced
+        s.sync_from_feedback([10.0, 20.0, 30.0, 40.0, 50.0, 60.0], gripper=25.0)
+        assert s.synced
+        assert s._current == [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        assert s._current_gripper == 25.0
+
+
+class TestSafetyGuards:
+    def test_tick_noop_when_not_synced(self, mock_arm):
+        """SAFETY: No commands sent if smoother hasn't synced positions."""
+        s = CommandSmoother(mock_arm, smoothing_factor=0.5, max_step_deg=15.0)
+        s.set_arm_enabled(True)
+        s.set_joint_target(0, 100.0)
+        s._tick()
+        mock_arm.set_joint.assert_not_called()
+        mock_arm.set_all_joints.assert_not_called()
+
+    def test_tick_noop_when_arm_not_enabled(self, mock_arm):
+        """SAFETY: No commands sent if arm is not enabled."""
+        s = CommandSmoother(mock_arm, smoothing_factor=0.5, max_step_deg=15.0)
+        s.sync_current_positions()
+        # arm_enabled is False by default
+        s.set_joint_target(0, 100.0)
+        s._tick()
+        mock_arm.set_joint.assert_not_called()
+        mock_arm.set_all_joints.assert_not_called()
+
+    def test_commands_sent_when_synced_and_enabled(self, smoother, mock_arm):
+        """Commands ARE sent when both synced and enabled."""
+        smoother.set_joint_target(0, 100.0)
+        smoother._tick()
+        mock_arm.set_joint.assert_called_once()
+
+    def test_emergency_stop_clears_everything(self, smoother, mock_arm):
+        """SAFETY: E-stop clears all targets, dirty flags, and disables arm."""
+        smoother.set_joint_target(0, 100.0)
+        smoother.set_joint_target(1, 50.0)
+        smoother.set_gripper_target(30.0)
+        smoother.emergency_stop()
+        assert smoother._dirty_joints == set()
+        assert not smoother._dirty_gripper
+        assert smoother._target == [None] * 6
+        assert smoother._target_gripper is None
+        assert not smoother.arm_enabled
+        # Tick should be a no-op now
+        smoother._tick()
+        mock_arm.set_joint.assert_not_called()
+        mock_arm.set_all_joints.assert_not_called()
+
+    def test_disable_clears_targets(self, smoother, mock_arm):
+        """SAFETY: Disabling arm clears pending targets."""
+        smoother.set_joint_target(0, 100.0)
+        smoother.set_arm_enabled(False)
+        assert smoother._dirty_joints == set()
+        assert smoother._target == [None] * 6
+
+    def test_no_phantom_zero_commands(self, mock_arm):
+        """SAFETY: The core bug — smoother must NOT drive joints toward 0° on init."""
+        # Simulate arm at non-zero positions
+        mock_arm.get_joint_angles.return_value = [45.0, -30.0, 60.0, 10.0, -15.0, 90.0]
+        mock_arm.get_gripper_position.return_value = 20.0
+        s = CommandSmoother(mock_arm, smoothing_factor=0.5, max_step_deg=15.0)
+        # Before sync: no commands possible
+        s.set_arm_enabled(True)
+        s.set_joint_target(0, 50.0)
+        s._tick()
+        mock_arm.set_joint.assert_not_called()
+        # After sync: positions match arm, not 0
+        s.sync_current_positions()
+        s._tick()
+        # The first command should be near 45°→50°, NOT near 0°→50°
+        sent_angle = mock_arm.set_joint.call_args[0][1]
+        assert sent_angle > 44.0, f"Sent {sent_angle}, expected near 45-50 (not 0!)"
 
 
 class TestSmootherTick:
@@ -69,6 +170,8 @@ class TestSmootherTick:
     def test_max_step_limits_velocity(self, mock_arm):
         """Max step should cap movement per tick."""
         s = CommandSmoother(mock_arm, smoothing_factor=1.0, max_step_deg=5.0)
+        s.sync_current_positions()
+        s.set_arm_enabled(True)
         s.set_joint_target(0, 100.0)
         s._tick()
         # alpha=1.0 wants to jump 100°, but max_step=5° caps it
@@ -120,19 +223,21 @@ class TestSmootherTick:
 
 
 class TestSmootherAsync:
-    def test_start_stop(self, smoother):
+    def test_start_stop(self, mock_arm):
         async def _run():
-            await smoother.start()
-            assert smoother.running
+            s = CommandSmoother(mock_arm, rate_hz=10.0, smoothing_factor=0.5, max_step_deg=15.0)
+            await s.start()
+            assert s.running
             await asyncio.sleep(0.15)
-            await smoother.stop()
-            assert not smoother.running
+            await s.stop()
+            assert not s.running
         asyncio.run(_run())
 
     def test_smoothing_over_time(self, mock_arm):
         async def _run():
             s = CommandSmoother(mock_arm, rate_hz=100, smoothing_factor=0.3, max_step_deg=50.0)
             await s.start()
+            s.set_arm_enabled(True)
             s.set_joint_target(0, 90.0)
             await asyncio.sleep(0.3)
             await s.stop()
@@ -144,6 +249,8 @@ class TestPassthrough:
     def test_alpha_one_is_passthrough(self, mock_arm):
         """With alpha=1.0 and high max_step, acts as passthrough."""
         s = CommandSmoother(mock_arm, smoothing_factor=1.0, max_step_deg=999.0)
+        s.sync_current_positions()
+        s.set_arm_enabled(True)
         s.set_joint_target(0, 45.0)
         s._tick()
         assert s._current[0] == pytest.approx(45.0, abs=0.1)

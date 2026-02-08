@@ -28,6 +28,10 @@ try:
 except ImportError:
     _HAS_TELEMETRY = False
 
+_web_dir = str(Path(__file__).resolve().parent)
+if _web_dir not in sys.path:
+    sys.path.insert(0, _web_dir)
+
 from command_smoother import CommandSmoother
 
 # ---------------------------------------------------------------------------
@@ -228,7 +232,7 @@ async def lifespan(app: FastAPI):
         tc_ref = get_collector() if _HAS_TELEMETRY else None
         smoother = CommandSmoother(arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=15.0, collector=tc_ref)
         await smoother.start()
-        action_log.add("SYSTEM", "Command smoother started (10Hz, α=0.35)", "info")
+        action_log.add("SYSTEM", f"Command smoother started (10Hz, α=0.35, synced={smoother.synced})", "info")
 
     yield
 
@@ -331,6 +335,16 @@ def get_arm_state() -> Dict[str, Any]:
         "timestamp": time.time(),
     }
 
+    # SAFETY: Sync smoother from arm feedback if not yet synced
+    if smoother and not smoother.synced:
+        smoother.sync_from_feedback(angles, gripper)
+
+    # SAFETY: Keep smoother arm_enabled in sync with actual arm state
+    if smoother:
+        is_enabled = state["power"] and state["enabled"]
+        if smoother.arm_enabled != is_enabled:
+            smoother.set_arm_enabled(is_enabled)
+
     # Log state transitions
     if _prev_state:
         if _prev_state.get("power") != state["power"]:
@@ -423,6 +437,8 @@ async def cmd_enable():
     ok = arm.enable_motors(_correlation_id=cid)
     if _HAS_TELEMETRY:
         get_collector().log_system_event("enable", "web", f"Motors enable: {'OK' if ok else 'FAILED'}", correlation_id=cid, level="info" if ok else "error")
+    if ok and smoother:
+        smoother.set_arm_enabled(True)
     resp = cmd_response(ok, "ENABLE", correlation_id=cid)
     await broadcast_ack("ENABLE", ok)
     return resp
@@ -434,6 +450,8 @@ async def cmd_disable():
     ok = arm.disable_motors(_correlation_id=cid) if arm else False
     if _HAS_TELEMETRY:
         get_collector().log_system_event("disable", "web", f"Motors disable: {'OK' if ok else 'FAILED'}", correlation_id=cid)
+    if smoother:
+        smoother.set_arm_enabled(False)
     resp = cmd_response(ok, "DISABLE", correlation_id=cid)
     await broadcast_ack("DISABLE", ok)
     return resp
@@ -456,6 +474,8 @@ async def cmd_power_off():
     ok = arm.power_off(_correlation_id=cid) if arm else False
     if _HAS_TELEMETRY:
         get_collector().log_system_event("power_off", "web", f"Power off: {'OK' if ok else 'FAILED'}", correlation_id=cid)
+    if smoother:
+        smoother.set_arm_enabled(False)
     resp = cmd_response(ok, "POWER_OFF", correlation_id=cid)
     await broadcast_ack("POWER_OFF", ok)
     return resp
@@ -534,6 +554,8 @@ async def cmd_stop():
     cid = _new_cid()
     _telem_cmd_sent("stop", {}, cid)
     action_log.add("EMERGENCY_STOP", "⚠ TRIGGERED", "error")
+    if smoother:
+        smoother.emergency_stop()
     if _HAS_TELEMETRY:
         get_collector().log_system_event("estop", "web", "Emergency stop triggered", correlation_id=cid, level="error")
     ok1 = arm.disable_motors(_correlation_id=cid) if arm else False
@@ -623,17 +645,7 @@ async def debug_pipeline(correlation_id: str):
     if not _HAS_TELEMETRY:
         return JSONResponse({"error": "telemetry not available"}, status_code=501)
     pipeline = get_collector().get_pipeline(correlation_id)
-    return [{
-        "event": {
-            "timestamp_ms": entry["event"].timestamp_ms,
-            "wall_time_ms": entry["event"].wall_time_ms,
-            "source": entry["event"].source,
-            "event_type": entry["event"].event_type.value,
-            "payload": entry["event"].payload,
-            "correlation_id": entry["event"].correlation_id,
-        },
-        "latency_ms": entry["latency_ms"],
-    } for entry in pipeline]
+    return pipeline
 
 # ---------------------------------------------------------------------------
 # WebSocket — stream telemetry events in real-time

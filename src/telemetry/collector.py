@@ -281,6 +281,9 @@ class TelemetryCollector:
     # -- Background writer -----------------------------------------------
 
     def _writer_loop(self) -> None:
+        import logging
+        _log = logging.getLogger("th3cl4w.telemetry.writer")
+        _log.info("Writer thread started (db=%s, pid=%d)", self._db_path, os.getpid())
         conn = self._make_conn()
         try:
             while True:
@@ -322,6 +325,8 @@ class TelemetryCollector:
     def _flush_batch(self, conn: sqlite3.Connection, batch: list[tuple[str, tuple]]) -> None:
         if not batch:
             return
+        import logging
+        logging.getLogger("th3cl4w.telemetry.writer").debug("Flushing %d rows", len(batch))
         # Group by table
         by_table: dict[str, list[tuple]] = {}
         for table, params in batch:

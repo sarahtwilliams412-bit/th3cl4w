@@ -283,6 +283,9 @@ let lastStateTs = 0;
 let userDragging = -1; // -1=none, 0-5=joint, 6=gripper
 let animFrameId = null;
 let localLog = []; // client-side log entries
+let armSynced = false; // SAFETY: don't send commands until first state received
+let updatingFromState = false; // Guard against state→slider→command feedback loop
+let vizDirty = true; // V4: only redraw when state changes
 
 function logLocal(action, details, level) {
   const now = new Date();
@@ -309,6 +312,7 @@ for (let i = 0; i < 6; i++) {
   slider.addEventListener('touchstart', () => userDragging = i);
   slider.addEventListener('input', () => {
     document.getElementById(`jv${i}`).textContent = parseFloat(slider.value).toFixed(1) + '°';
+    if (!armSynced || updatingFromState) return; // SAFETY: don't send until synced
     throttledSendJoint(i, parseFloat(slider.value));
   });
   const release = () => { if (userDragging === i) { sendJoint(i, parseFloat(slider.value)); userDragging = -1; } };
@@ -323,6 +327,7 @@ gripSlider.addEventListener('mousedown', () => userDragging = 6);
 gripSlider.addEventListener('touchstart', () => userDragging = 6);
 gripSlider.addEventListener('input', () => {
   document.getElementById('gripperValue').textContent = parseFloat(gripSlider.value).toFixed(1) + ' mm';
+  if (!armSynced || updatingFromState) return; // SAFETY: don't send until synced
   throttledSendGripper(parseFloat(gripSlider.value));
 });
 const gripRelease = () => { if (userDragging === 6) { sendGripper(parseFloat(gripSlider.value)); userDragging = -1; } };
@@ -358,7 +363,7 @@ async function cmd(action) {
     } else {
       logLocal(action.toUpperCase(), `✗ Failed: ${data.error || 'unknown'}`, 'error');
     }
-    if (data.state) armState = { ...armState, ...data.state };
+    if (data.state) { armState = { ...armState, ...data.state }; vizDirty = true; }
     updateUI();
   } catch(e) {
     logLocal(action.toUpperCase(), `✗ Network error: ${e.message}`, 'error');
@@ -366,6 +371,7 @@ async function cmd(action) {
 }
 
 async function sendJoint(id, angle) {
+  if (!armSynced) return; // SAFETY: don't send before first state sync
   const body = { id, angle };
   logLocal('SET_JOINT', `J${id} -> ${angle.toFixed(1)}°`, 'info');
   try {
@@ -378,6 +384,7 @@ async function sendJoint(id, angle) {
 }
 
 async function sendGripper(pos) {
+  if (!armSynced) return; // SAFETY: don't send before first state sync
   logLocal('SET_GRIPPER', `${pos.toFixed(1)} mm`, 'info');
   try {
     const resp = await fetch('/api/command/set-gripper', {
@@ -430,6 +437,11 @@ function connectWS() {
       }
       armState = data;
       lastStateTs = Date.now();
+      vizDirty = true;
+      if (!armSynced) {
+        armSynced = true;
+        logLocal('SYNC', 'First arm state received — sliders synced', 'info');
+      }
     } catch(err) {}
   };
 }
@@ -475,22 +487,31 @@ function updateUI() {
   // E-stop flash when enabled
   document.getElementById('btnEstop').className = armState.enabled ? 'estop flash' : 'estop';
 
-  // Joint sliders
+  // Joint sliders — guard against triggering input events, skip if unchanged
+  updatingFromState = true;
   const joints = armState.joints || [0,0,0,0,0,0];
   for (let i = 0; i < 6; i++) {
     if (userDragging !== i) {
       const val = joints[i] || 0;
-      document.getElementById(`js${i}`).value = val;
-      document.getElementById(`jv${i}`).textContent = val.toFixed(1) + '°';
+      const slider = document.getElementById(`js${i}`);
+      const valStr = String(val);
+      if (slider.value !== valStr) slider.value = val;
+      const label = document.getElementById(`jv${i}`);
+      const txt = val.toFixed(1) + '°';
+      if (label.textContent !== txt) label.textContent = txt;
     }
   }
 
   // Gripper
   if (userDragging !== 6) {
     const gv = armState.gripper || 0;
-    gripSlider.value = gv;
-    document.getElementById('gripperValue').textContent = gv.toFixed(1) + ' mm';
+    const gvStr = String(gv);
+    if (gripSlider.value !== gvStr) gripSlider.value = gv;
+    const gLabel = document.getElementById('gripperValue');
+    const gTxt = gv.toFixed(1) + ' mm';
+    if (gLabel.textContent !== gTxt) gLabel.textContent = gTxt;
   }
+  updatingFromState = false;
 
   renderLog();
 }
@@ -628,83 +649,198 @@ function drawArm() {
     ctx.stroke();
   }
 
-  // --- Rotation indicators for J0, J3, J5 ---
-  function drawRotationIndicator(cx, cy, radius, angleDeg, label) {
+  // --- Roll joint rotation indicators (V2: larger, color-coded, with degree labels) ---
+  const rollColor = '#e8a838';  // orange-gold for roll joints
+  const pitchColor = '#4a90d9'; // blue for pitch joints
+
+  function drawRotationIndicator(cx, cy, radius, angleDeg, label, offsetX, offsetY) {
     const a = angleDeg * deg2rad;
     const r = radius * scale;
-    // Arc background
+    // Arc background ring
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(74,144,217,0.2)';
-    ctx.lineWidth = 2 * scale;
-    ctx.stroke();
-    // Arc showing angle
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0);
-    ctx.strokeStyle = Math.abs(angleDeg) > 100 ? '#e94560' : '#53d769';
+    ctx.strokeStyle = 'rgba(232,168,56,0.15)';
     ctx.lineWidth = 3 * scale;
     ctx.stroke();
-    // Tick at end
+    // Zero tick mark (top)
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r + 2 * scale);
+    ctx.lineTo(cx, cy - r - 3 * scale);
+    ctx.strokeStyle = 'rgba(232,168,56,0.4)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.stroke();
+    // Filled arc showing angle
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0);
+    ctx.closePath();
+    ctx.fillStyle = Math.abs(angleDeg) > 100 ? 'rgba(233,69,96,0.2)' : 'rgba(232,168,56,0.15)';
+    ctx.fill();
+    // Arc stroke
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0);
+    ctx.strokeStyle = Math.abs(angleDeg) > 100 ? '#e94560' : rollColor;
+    ctx.lineWidth = 3.5 * scale;
+    ctx.stroke();
+    // Endpoint dot
     const ex = cx + Math.cos(-Math.PI / 2 + a) * r;
     const ey = cy + Math.sin(-Math.PI / 2 + a) * r;
     ctx.beginPath();
-    ctx.arc(ex, ey, 3 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = Math.abs(angleDeg) > 100 ? '#e94560' : '#53d769';
+    ctx.arc(ex, ey, 4 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = Math.abs(angleDeg) > 100 ? '#e94560' : rollColor;
     ctx.fill();
-    // Label
-    ctx.font = `${9 * scale}px JetBrains Mono, monospace`;
-    ctx.fillStyle = 'rgba(136,146,164,0.8)';
-    ctx.fillText(label + ' ' + angleDeg.toFixed(0) + '°', cx + r + 4 * scale, cy + 3 * scale);
+    // Label with degree value
+    ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
+    ctx.fillStyle = rollColor;
+    const lx = cx + (offsetX || (r + 6 * scale));
+    const ly = cy + (offsetY || (4 * scale));
+    ctx.fillText(`${label} ${angleDeg.toFixed(1)}°`, lx, ly);
+    // "roll" sub-label
+    ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
+    ctx.fillStyle = 'rgba(232,168,56,0.5)';
+    ctx.fillText('roll', lx, ly + 10 * scale);
   }
 
-  // J0 indicator at base
-  drawRotationIndicator(pts[0].x, pts[0].y, 18, joints[0] || 0, 'J0');
-  // J3 indicator at wrist1 joint (pt index 3)
-  drawRotationIndicator(pts[3].x, pts[3].y, 14, joints[3] || 0, 'J3');
-  // J5 indicator at end-effector area (pt index 5)
-  drawRotationIndicator(pts[5].x, pts[5].y, 12, joints[5] || 0, 'J5');
+  // J0 base rotation — top-down mini view in upper-right corner
+  const j0Angle = joints[0] || 0;
+  const j0cx = W - 50 * scale, j0cy = 50 * scale, j0r = 30 * scale;
+  // Background circle
+  ctx.beginPath();
+  ctx.arc(j0cx, j0cy, j0r + 2 * scale, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(26,39,68,0.6)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(232,168,56,0.3)';
+  ctx.lineWidth = 1.5 * scale;
+  ctx.stroke();
+  // Compass ticks
+  for (let t = 0; t < 4; t++) {
+    const ta = t * Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(j0cx + Math.cos(ta) * (j0r - 3 * scale), j0cy + Math.sin(ta) * (j0r - 3 * scale));
+    ctx.lineTo(j0cx + Math.cos(ta) * (j0r + 2 * scale), j0cy + Math.sin(ta) * (j0r + 2 * scale));
+    ctx.strokeStyle = 'rgba(232,168,56,0.25)';
+    ctx.lineWidth = 1 * scale;
+    ctx.stroke();
+  }
+  // Arm direction indicator (top-down: line pointing "forward" rotated by J0)
+  const j0a = j0Angle * deg2rad;
+  // Filled sweep
+  ctx.beginPath();
+  ctx.moveTo(j0cx, j0cy);
+  ctx.arc(j0cx, j0cy, j0r, -Math.PI / 2, -Math.PI / 2 + j0a, j0a < 0);
+  ctx.closePath();
+  ctx.fillStyle = Math.abs(j0Angle) > 100 ? 'rgba(233,69,96,0.2)' : 'rgba(232,168,56,0.15)';
+  ctx.fill();
+  // Direction line
+  ctx.beginPath();
+  ctx.moveTo(j0cx, j0cy);
+  ctx.lineTo(j0cx + Math.sin(j0a) * j0r * 0.85, j0cy - Math.cos(j0a) * j0r * 0.85);
+  ctx.strokeStyle = Math.abs(j0Angle) > 100 ? '#e94560' : rollColor;
+  ctx.lineWidth = 3 * scale;
+  ctx.stroke();
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(j0cx, j0cy, 3 * scale, 0, Math.PI * 2);
+  ctx.fillStyle = rollColor;
+  ctx.fill();
+  // J0 label
+  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = rollColor;
+  ctx.textAlign = 'center';
+  ctx.fillText(`J0 ${j0Angle.toFixed(1)}°`, j0cx, j0cy + j0r + 14 * scale);
+  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = 'rgba(232,168,56,0.5)';
+  ctx.fillText('base rotation (top view)', j0cx, j0cy + j0r + 24 * scale);
+  ctx.textAlign = 'left';
 
-  // --- Joint angle labels for pitch joints ---
-  ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = 'rgba(200,210,230,0.7)';
-  // J1 at shoulder (pt 2 is end of shoulder link, label at pt 1)
-  ctx.fillText(`J1 ${(joints[1]||0).toFixed(1)}°`, pts[1].x - 50 * scale, pts[1].y - 12 * scale);
+  // J3 indicator at forearm (pt index 3) — larger
+  drawRotationIndicator(pts[3].x, pts[3].y, 22, joints[3] || 0, 'J3');
+  // J5 indicator at wrist (pt index 5) — larger
+  drawRotationIndicator(pts[5].x, pts[5].y, 18, joints[5] || 0, 'J5');
+
+  // --- Joint angle labels for pitch joints (V1: verified correct mapping) ---
+  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = pitchColor;
+  // J1 at shoulder (pt 1 is top of base, label there)
+  ctx.fillText(`J1 ${(joints[1]||0).toFixed(1)}°`, pts[1].x - 55 * scale, pts[1].y - 12 * scale);
+  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = 'rgba(74,144,217,0.5)';
+  ctx.fillText('pitch', pts[1].x - 55 * scale, pts[1].y - 2 * scale);
   // J2 at elbow
-  ctx.fillText(`J2 ${(joints[2]||0).toFixed(1)}°`, pts[2].x + 12 * scale, pts[2].y - 8 * scale);
+  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = pitchColor;
+  ctx.fillText(`J2 ${(joints[2]||0).toFixed(1)}°`, pts[2].x + 12 * scale, pts[2].y - 12 * scale);
+  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = 'rgba(74,144,217,0.5)';
+  ctx.fillText('pitch', pts[2].x + 12 * scale, pts[2].y - 2 * scale);
   // J4 at wrist
-  ctx.fillText(`J4 ${(joints[4]||0).toFixed(1)}°`, pts[4].x + 12 * scale, pts[4].y - 8 * scale);
+  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = pitchColor;
+  ctx.fillText(`J4 ${(joints[4]||0).toFixed(1)}°`, pts[4].x + 12 * scale, pts[4].y - 12 * scale);
+  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = 'rgba(74,144,217,0.5)';
+  ctx.fillText('pitch', pts[4].x + 12 * scale, pts[4].y - 2 * scale);
 
-  // --- Gripper at end ---
+  // --- Gripper visualization (V3: two fingers with color-coded open/close) ---
   const tip = pts[pts.length - 1];
   const gAngle = cumAngle;
-  const gripMM = armState.gripper || 0;
-  const gOpen = (gripMM / 65) * 10 * scale;
+  const gripMM = armState.gripper != null ? armState.gripper : 0;
+  const gripRatio = Math.min(gripMM / 65, 1);
+  const gOpen = gripRatio * 12 * scale;
+  const fingerLen = 20 * scale;
+  const fingerWid = 4 * scale;
+  // Color: closed=orange, open=green, smooth gradient
+  const gR = Math.round(233 - gripRatio * 150);
+  const gG = Math.round(120 + gripRatio * 95);
+  const gB = Math.round(56 + gripRatio * 50);
+  const gripCol = `rgb(${gR},${gG},${gB})`;
+
   for (const side of [-1, 1]) {
+    const perpX = Math.cos(gAngle + Math.PI / 2) * side * gOpen;
+    const perpY = Math.sin(gAngle + Math.PI / 2) * side * gOpen;
+    const fx1 = tip.x + perpX;
+    const fy1 = tip.y + perpY;
+    const fx2 = fx1 + Math.cos(gAngle) * fingerLen;
+    const fy2 = fy1 + Math.sin(gAngle) * fingerLen;
+    // Finger body
     ctx.beginPath();
-    ctx.moveTo(tip.x, tip.y);
-    ctx.lineTo(
-      tip.x + Math.cos(gAngle) * 18 * scale + Math.cos(gAngle + Math.PI/2) * side * gOpen,
-      tip.y + Math.sin(gAngle) * 18 * scale + Math.sin(gAngle + Math.PI/2) * side * gOpen
-    );
-    ctx.strokeStyle = '#e94560';
+    ctx.moveTo(fx1, fy1);
+    ctx.lineTo(fx2, fy2);
+    ctx.strokeStyle = gripCol;
+    ctx.lineWidth = fingerWid;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    // Fingertip inner edge (small inward nub)
+    const tipNubX = fx2 + Math.cos(gAngle + Math.PI / 2) * (-side) * 3 * scale;
+    const tipNubY = fy2 + Math.sin(gAngle + Math.PI / 2) * (-side) * 3 * scale;
+    ctx.beginPath();
+    ctx.moveTo(fx2, fy2);
+    ctx.lineTo(tipNubX, tipNubY);
+    ctx.strokeStyle = gripCol;
     ctx.lineWidth = 3 * scale;
     ctx.stroke();
   }
   // Gripper readout
-  ctx.font = `${9 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = '#e94560';
-  ctx.fillText(`G ${gripMM.toFixed(1)}mm`, tip.x + 14 * scale, tip.y + 14 * scale);
+  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = gripCol;
+  ctx.fillText(`Grip ${gripMM.toFixed(1)}mm`, tip.x + 20 * scale, tip.y + 18 * scale);
+  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = gripRatio > 0.5 ? 'rgba(83,215,105,0.6)' : 'rgba(233,69,96,0.6)';
+  ctx.fillText(gripRatio > 0.7 ? 'open' : gripRatio < 0.15 ? 'closed' : 'partial', tip.x + 20 * scale, tip.y + 28 * scale);
 
   // --- Title ---
   ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(136,146,164,0.5)';
-  ctx.fillText('D1 Side View (J1/J2/J4 pitch)', 8, 16 * scale);
+  ctx.fillText('D1 Arm (blue=pitch, gold=roll)', 8, 16 * scale);
 }
 
-// Animation loop
+// Animation loop — only redraw when state changes
 function animLoop() {
-  updateUI();
-  drawArm();
+  if (vizDirty) {
+    vizDirty = false;
+    updateUI();
+    drawArm();
+  }
   animFrameId = requestAnimationFrame(animLoop);
 }
 
@@ -714,6 +850,7 @@ function resizeCanvas() {
   const h = cont.clientHeight - 16;
   canvas.width = Math.max(w, 300);
   canvas.height = Math.max(h, 250);
+  vizDirty = true;
 }
 window.addEventListener('resize', resizeCanvas);
 
@@ -768,7 +905,11 @@ document.getElementById('btnDebug').addEventListener('click', async () => {
 });
 
 async function pollDebug() {
-  if (!debugOn) return;
+  const panel = document.getElementById('debugPanel');
+  if (!debugOn || !panel || panel.style.display === 'none') {
+    if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
+    return;
+  }
   try {
     const [statsResp, telResp] = await Promise.allSettled([
       fetch('/api/debug/stats'),

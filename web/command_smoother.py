@@ -46,6 +46,10 @@ class CommandSmoother:
 
     The max_step_deg parameter limits the maximum angular change per tick,
     providing a velocity cap for safety.
+
+    SAFETY: The smoother will NOT send any commands until positions have been
+    synced from the arm (via sync_current_positions() or sync_from_feedback()).
+    This prevents phantom commands that drive joints toward 0°.
     """
 
     def __init__(
@@ -67,9 +71,9 @@ class CommandSmoother:
         self._num_joints = num_joints
         self._collector = collector
 
-        # Current commanded positions (what we last sent to the arm)
-        self._current = [0.0] * num_joints
-        self._current_gripper = 0.0
+        # SAFETY: Initialize to None — unknown positions until synced
+        self._current: list[Optional[float]] = [None] * num_joints
+        self._current_gripper: Optional[float] = None
 
         # Target positions (set by UI)
         self._target = [None] * num_joints  # None = no pending target
@@ -78,6 +82,12 @@ class CommandSmoother:
         # Track which joints have active targets
         self._dirty_joints: set = set()
         self._dirty_gripper = False
+
+        # SAFETY: Must be True before any commands are sent
+        self._synced = False
+
+        # SAFETY: Must be True (arm powered + enabled) before sending commands
+        self._arm_enabled = False
 
         self._task: Optional[asyncio.Task] = None
         self._running = False
@@ -91,6 +101,14 @@ class CommandSmoother:
         return self._running
 
     @property
+    def synced(self) -> bool:
+        return self._synced
+
+    @property
+    def arm_enabled(self) -> bool:
+        return self._arm_enabled
+
+    @property
     def stats(self) -> dict:
         return {
             "ticks": self._ticks,
@@ -99,17 +117,79 @@ class CommandSmoother:
             "smoothing_factor": self._alpha,
         }
 
-    def sync_current_positions(self) -> None:
-        """Read current positions from arm to initialize smoother state."""
+    def sync_current_positions(self) -> bool:
+        """Read current positions from arm to initialize smoother state.
+
+        Returns True if sync succeeded, False otherwise.
+        The smoother will NOT send commands until this succeeds.
+        """
         try:
             angles = self._arm.get_joint_angles()
-            if angles is not None:
-                for i in range(min(len(angles), self._num_joints)):
+            if angles is not None and len(angles) >= self._num_joints:
+                for i in range(self._num_joints):
                     self._current[i] = float(angles[i])
+            else:
+                logger.warning("sync_current_positions: got invalid angles: %s", angles)
+                return False
             if hasattr(self._arm, "get_gripper_position"):
                 self._current_gripper = float(self._arm.get_gripper_position())
-        except Exception:
-            logger.debug("Could not sync positions from arm")
+            else:
+                self._current_gripper = 0.0
+            self._synced = True
+            logger.info("Smoother synced to arm positions: %s", self._current)
+            return True
+        except Exception as e:
+            logger.warning("Could not sync positions from arm: %s", e)
+            return False
+
+    def sync_from_feedback(self, angles: list, gripper: Optional[float] = None) -> None:
+        """Sync smoother state from arm feedback data (e.g., WebSocket state).
+
+        This is called by the server when the first arm state arrives,
+        ensuring the smoother knows the real joint positions before
+        sending any commands.
+        """
+        if len(angles) >= self._num_joints:
+            for i in range(self._num_joints):
+                self._current[i] = float(angles[i])
+            if gripper is not None:
+                self._current_gripper = float(gripper)
+            self._synced = True
+            logger.info("Smoother synced from feedback: %s", self._current)
+
+    def set_arm_enabled(self, enabled: bool) -> None:
+        """Set whether the arm is powered and enabled.
+
+        SAFETY: The smoother will not send any commands unless this is True.
+        """
+        was_enabled = self._arm_enabled
+        self._arm_enabled = enabled
+        if was_enabled and not enabled:
+            # Arm just became disabled — clear all pending targets
+            self._clear_targets()
+            logger.info("Arm disabled — smoother targets cleared")
+        elif not was_enabled and enabled:
+            logger.info("Arm enabled — smoother will accept commands")
+
+    def emergency_stop(self) -> None:
+        """SAFETY: Immediately clear all targets and stop sending commands.
+
+        Called from the e-stop handler. Clears all state so no further
+        commands are sent until new targets are explicitly set.
+        """
+        self._dirty_joints.clear()
+        self._dirty_gripper = False
+        self._target = [None] * self._num_joints
+        self._target_gripper = None
+        self._arm_enabled = False
+        logger.warning("EMERGENCY STOP — smoother halted, all targets cleared")
+
+    def _clear_targets(self) -> None:
+        """Clear all pending targets and dirty flags."""
+        self._dirty_joints.clear()
+        self._dirty_gripper = False
+        self._target = [None] * self._num_joints
+        self._target_gripper = None
 
     def set_joint_target(self, joint_id: int, angle_deg: float) -> None:
         """Set a target angle for a joint. Non-blocking."""
@@ -135,7 +215,8 @@ class CommandSmoother:
         self.sync_current_positions()
         self._running = True
         self._task = asyncio.create_task(self._loop())
-        logger.info("Command smoother started at %.0fHz, alpha=%.2f", self._rate_hz, self._alpha)
+        logger.info("Command smoother started at %.0fHz, alpha=%.2f, synced=%s",
+                     self._rate_hz, self._alpha, self._synced)
 
     async def stop(self) -> None:
         """Stop the smoothing loop."""
@@ -160,7 +241,21 @@ class CommandSmoother:
             await asyncio.sleep(sleep_time)
 
     def _tick(self) -> None:
-        """One smoothing step: interpolate current toward target, send if changed."""
+        """One smoothing step: interpolate current toward target, send if changed.
+
+        SAFETY GUARDS:
+        - No-op if positions haven't been synced from the arm
+        - No-op if arm is not enabled (powered + motors enabled)
+        - Skips any joint where current position is None (unknown)
+        """
+        # SAFETY: Don't send anything until we know the real arm positions
+        if not self._synced:
+            return
+
+        # SAFETY: Don't send commands if arm is not enabled
+        if not self._arm_enabled:
+            return
+
         if not self._dirty_joints and not self._dirty_gripper:
             return
 
@@ -176,6 +271,13 @@ class CommandSmoother:
                 continue
 
             current = self._current[jid]
+            # SAFETY: Skip joints with unknown current position
+            if current is None:
+                logger.warning("Joint %d has no known position — skipping", jid)
+                self._dirty_joints.discard(jid)
+                self._target[jid] = None
+                continue
+
             diff = target - current
 
             if abs(diff) < 0.05:  # close enough, snap to target
@@ -195,10 +297,20 @@ class CommandSmoother:
 
         # Send joint commands
         if joints_changed:
+            # Build the angles list, using current values (all must be non-None at this point due to _synced check)
+            send_angles = []
+            for i in range(self._num_joints):
+                v = self._current[i]
+                if v is None:
+                    # This shouldn't happen if _synced is True, but be safe
+                    logger.error("Joint %d position is None despite being synced — aborting send", i)
+                    return
+                send_angles.append(v)
+
             if len(joints_changed) >= 3:
                 # Batch as set_all_joints when multiple joints move
                 try:
-                    self._arm.set_all_joints(list(self._current))
+                    self._arm.set_all_joints(send_angles)
                     self._commands_sent += 1
                 except Exception:
                     logger.debug("Failed to send all-joints command")
@@ -229,7 +341,15 @@ class CommandSmoother:
 
         # Gripper
         if self._dirty_gripper and self._target_gripper is not None:
-            diff = self._target_gripper - self._current_gripper
+            current_grip = self._current_gripper
+            # SAFETY: Skip if gripper position unknown
+            if current_grip is None:
+                logger.warning("Gripper has no known position — skipping")
+                self._dirty_gripper = False
+                self._target_gripper = None
+                return
+
+            diff = self._target_gripper - current_grip
             if abs(diff) < 0.1:
                 self._current_gripper = self._target_gripper
                 self._target_gripper = None
@@ -238,7 +358,7 @@ class CommandSmoother:
                 step = diff * self._alpha
                 if abs(step) > self._max_grip_step:
                     step = self._max_grip_step if step > 0 else -self._max_grip_step
-                self._current_gripper += step
+                self._current_gripper = current_grip + step
 
             try:
                 if hasattr(self._arm, "set_gripper"):
