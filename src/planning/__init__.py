@@ -3,6 +3,7 @@
 from src.planning.motion_planner import MotionPlanner, Waypoint, Trajectory, TrajectoryPoint
 from src.planning.task_planner import TaskPlanner, TaskResult
 from src.planning.path_optimizer import PathOptimizer
+from src.planning.collision_preview import CollisionPreview, PreviewResult
 
 __all__ = [
     "MotionPlanner",
@@ -12,4 +13,6 @@ __all__ = [
     "TaskPlanner",
     "TaskResult",
     "PathOptimizer",
+    "CollisionPreview",
+    "PreviewResult",
 ]

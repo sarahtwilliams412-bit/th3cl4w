@@ -46,6 +46,15 @@ try:
 except ImportError:
     _HAS_PLANNING = False
 
+try:
+    from src.vision.calibration import StereoCalibrator
+    from src.vision.workspace_mapper import WorkspaceMapper
+    from src.planning.collision_preview import CollisionPreview
+
+    _HAS_BIFOCAL = True
+except ImportError:
+    _HAS_BIFOCAL = False
+
 _web_dir = str(Path(__file__).resolve().parent)
 if _web_dir not in sys.path:
     sys.path.insert(0, _web_dir)
@@ -216,6 +225,8 @@ class SimulatedArm:
 arm: Any = None
 smoother: Optional[CommandSmoother] = None
 task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
+workspace_mapper: Any = None  # WorkspaceMapper for bifocal vision
+collision_preview: Any = None  # CollisionPreview for path checking
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -276,6 +287,22 @@ async def lifespan(app: FastAPI):
     if _HAS_PLANNING:
         task_planner = TaskPlanner()
         action_log.add("SYSTEM", "Task planner initialized", "info")
+
+    # Initialize bifocal workspace mapper and collision preview
+    global workspace_mapper, collision_preview
+    if _HAS_BIFOCAL:
+        calibrator = StereoCalibrator()
+        # Try to load existing calibration
+        calib_path = Path(__file__).resolve().parent.parent / "calibration" / "stereo.npz"
+        if calib_path.exists():
+            try:
+                calibrator.load(calib_path)
+                action_log.add("SYSTEM", "Stereo calibration loaded", "info")
+            except Exception as e:
+                action_log.add("SYSTEM", f"Calibration load failed: {e}", "warning")
+        workspace_mapper = WorkspaceMapper(calibrator)
+        collision_preview = CollisionPreview()
+        action_log.add("SYSTEM", "Bifocal workspace mapper initialized (disabled by default)", "info")
 
     yield
 
@@ -1124,6 +1151,205 @@ def armState_gripper() -> float:
     if hasattr(arm, "get_gripper_position"):
         return float(arm.get_gripper_position())
     return 0.0
+
+
+# ---------------------------------------------------------------------------
+# Bifocal Workspace Mapping endpoints — planning/measurement only
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/bifocal/toggle")
+async def bifocal_toggle():
+    """Toggle the bifocal workspace mapper on/off."""
+    if not _HAS_BIFOCAL or workspace_mapper is None:
+        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
+    enabled = workspace_mapper.toggle()
+    action_log.add("BIFOCAL", f"Workspace mapper {'enabled' if enabled else 'disabled'}", "info")
+    return {"ok": True, "enabled": enabled}
+
+
+@app.get("/api/bifocal/status")
+async def bifocal_status():
+    """Get bifocal workspace mapper status."""
+    if not _HAS_BIFOCAL or workspace_mapper is None:
+        return {"available": False}
+    status = workspace_mapper.get_status()
+    status["available"] = True
+    return status
+
+
+@app.post("/api/bifocal/update")
+async def bifocal_update():
+    """Trigger a workspace map update from current camera frames."""
+    if not _HAS_BIFOCAL or workspace_mapper is None:
+        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
+    if not workspace_mapper.enabled:
+        return JSONResponse({"ok": False, "error": "Mapper not enabled"}, status_code=409)
+
+    # Grab snapshots from both cameras
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp0 = await client.get("http://localhost:8081/snap/0")
+            resp1 = await client.get("http://localhost:8081/snap/1")
+        if resp0.status_code != 200 or resp1.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
+
+        import cv2
+        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if left is None or right is None:
+            return JSONResponse({"ok": False, "error": "Failed to decode camera frames"}, status_code=502)
+
+        result = workspace_mapper.update_from_frames(left, right)
+        return {"ok": True, **result}
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/bifocal/workspace")
+async def bifocal_workspace(max_points: int = 500):
+    """Get occupied voxel positions for 3D visualization."""
+    if not _HAS_BIFOCAL or workspace_mapper is None:
+        return {"points": [], "summary": {}}
+    points = workspace_mapper.get_occupied_points(max_points)
+    summary = workspace_mapper.get_occupancy_summary()
+    return {"points": points, "summary": summary}
+
+
+@app.post("/api/bifocal/clear")
+async def bifocal_clear():
+    """Clear the workspace map."""
+    if not _HAS_BIFOCAL or workspace_mapper is None:
+        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
+    workspace_mapper.clear()
+    action_log.add("BIFOCAL", "Workspace map cleared", "info")
+    return {"ok": True}
+
+
+class CalibScaleRequest(BaseModel):
+    square_size_mm: float = Field(default=25.0, gt=0)
+
+
+@app.post("/api/bifocal/calibrate-scale")
+async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
+    """Calibrate real-world scale using a checkerboard pattern."""
+    if not _HAS_BIFOCAL or workspace_mapper is None:
+        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
+
+    import httpx, cv2
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp0 = await client.get("http://localhost:8081/snap/0")
+            resp1 = await client.get("http://localhost:8081/snap/1")
+
+        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if left is None or right is None:
+            return JSONResponse({"ok": False, "error": "Failed to decode frames"}, status_code=502)
+
+        result = workspace_mapper.calibrate_scale_from_checkerboard(left, right, req.square_size_mm)
+        if result["ok"]:
+            action_log.add("BIFOCAL", f"Scale calibrated: factor={result['scale_factor']}", "info")
+        else:
+            action_log.add("BIFOCAL", f"Scale calibration failed: {result.get('error', '?')}", "warning")
+        return result
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+class TapeMeasureRequest(BaseModel):
+    known_length_mm: float = Field(gt=0)
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+
+@app.post("/api/bifocal/calibrate-tape")
+async def bifocal_calibrate_tape(req: TapeMeasureRequest):
+    """Calibrate scale using two points on a tape measure."""
+    if not _HAS_BIFOCAL or workspace_mapper is None:
+        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
+
+    import httpx, cv2
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp0 = await client.get("http://localhost:8081/snap/0")
+            resp1 = await client.get("http://localhost:8081/snap/1")
+
+        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if left is None or right is None:
+            return JSONResponse({"ok": False, "error": "Failed to decode frames"}, status_code=502)
+
+        result = workspace_mapper.calibrate_scale_from_tape_measure(
+            left, right, req.known_length_mm, (req.x1, req.y1), (req.x2, req.y2)
+        )
+        if result["ok"]:
+            action_log.add("BIFOCAL", f"Tape calibration: factor={result['scale_factor']}", "info")
+        return result
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/bifocal/preview")
+async def bifocal_preview():
+    """Preview the current arm pose against the workspace map for collisions."""
+    if not _HAS_BIFOCAL or workspace_mapper is None or collision_preview is None:
+        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
+
+    current = _get_current_joints()
+    result = collision_preview.preview_single_pose(current, workspace_mapper)
+    arm_points = collision_preview.get_arm_envelope(current)
+
+    return {
+        "ok": True,
+        "clear": result.clear,
+        "summary": result.summary,
+        "hits": [
+            {
+                "link": h.link_index,
+                "point": h.link_point_mm,
+                "severity": h.severity,
+            }
+            for h in result.hits
+        ],
+        "arm_points_mm": arm_points,
+        "checked": result.checked_points,
+        "elapsed_ms": result.elapsed_ms,
+    }
+
+
+@app.post("/api/bifocal/preview-target")
+async def bifocal_preview_target(req: SetAllJointsRequest):
+    """Preview a target pose against the workspace map for collisions."""
+    if not _HAS_BIFOCAL or workspace_mapper is None or collision_preview is None:
+        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
+
+    target = np.array(req.angles[:6])
+    result = collision_preview.preview_single_pose(target, workspace_mapper)
+    arm_points = collision_preview.get_arm_envelope(target)
+
+    return {
+        "ok": True,
+        "clear": result.clear,
+        "summary": result.summary,
+        "hits": [
+            {
+                "link": h.link_index,
+                "point": h.link_point_mm,
+                "severity": h.severity,
+            }
+            for h in result.hits
+        ],
+        "arm_points_mm": arm_points,
+        "checked": result.checked_points,
+        "elapsed_ms": result.elapsed_ms,
+    }
 
 
 # ---------------------------------------------------------------------------
