@@ -229,7 +229,7 @@ task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global arm, smoother
+    global arm, smoother, task_planner
     # Start telemetry collector
     if _HAS_TELEMETRY:
         tc = get_collector()
