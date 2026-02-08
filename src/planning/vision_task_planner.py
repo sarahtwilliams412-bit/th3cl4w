@@ -5,10 +5,14 @@ Takes a SceneDescription from the SceneAnalyzer and a natural-language
 instruction, then reasons about the scene and builds a concrete arm
 trajectory plan using the existing TaskPlanner and MotionPlanner.
 
+Integrates with the dual-camera independent vision system:
+  cam0 (front/side): height estimation
+  cam1 (overhead): workspace X/Y positioning
+
 The planning pipeline:
   1. Parse the instruction to identify the intended action and target objects
   2. Match targets against detected scene objects
-  3. Map scene positions to arm joint-space poses
+  3. Map workspace positions to arm joint-space poses
   4. Build a step-by-step reasoning chain
   5. Generate executable trajectories via TaskPlanner
 
@@ -30,6 +34,7 @@ from src.planning.motion_planner import (
     Waypoint,
     Trajectory,
     NUM_ARM_JOINTS,
+    JOINT_LIMITS_DEG,
 )
 from src.planning.task_planner import (
     TaskPlanner,
@@ -158,6 +163,10 @@ _POSITION_KEYWORDS = {
 class VisionTaskPlanner:
     """Plans arm tasks from camera scene + natural-language instructions.
 
+    Uses workspace positions from the SceneAnalyzer (derived from independent
+    camera calibration) when available, and falls back to image-based
+    estimation otherwise.
+
     Pipeline:
       1. analyze_instruction() — parse what the user wants
       2. match_targets() — find referenced objects in the scene
@@ -171,7 +180,7 @@ class VisionTaskPlanner:
         workspace_range_deg: float = 60.0,
     ):
         self.task_planner = task_planner or TaskPlanner()
-        # Center of the visual workspace in joint space (where objects map to)
+        # Center of the visual workspace in joint space (for image-based fallback)
         self.workspace_center = (
             workspace_center_deg
             if workspace_center_deg is not None
@@ -217,10 +226,12 @@ class VisionTaskPlanner:
         step_num += 1
 
         # Step 2: Analyze the scene
+        cameras_str = ", ".join(scene.cameras_used) if scene.cameras_used else "unknown"
         scene_detail = (
-            f"Scene has {scene.object_count} objects. {scene.summary.split(chr(10))[0]}"
+            f"Scene has {scene.object_count} objects (cameras: {cameras_str}). "
+            f"{scene.summary.split(chr(10))[0]}"
             if scene.has_objects
-            else "No objects detected in scene."
+            else f"No objects detected in scene (cameras: {cameras_str})."
         )
         reasoning.append(
             ReasoningStep(
@@ -234,13 +245,16 @@ class VisionTaskPlanner:
         # Step 3: Match target objects
         target, target_detail = self._match_target(instruction, scene)
         if target:
-            plan.target_object = {
+            target_dict: dict = {
                 "color": target.color,
                 "region": target.region,
                 "centroid_2d": list(target.centroid_2d),
                 "area": round(target.area, 1),
-                "depth_mm": round(target.depth_mm, 1),
+                "source": target.source,
             }
+            if target.centroid_3d is not None:
+                target_dict["workspace_mm"] = [round(v, 1) for v in target.centroid_3d]
+            plan.target_object = target_dict
         reasoning.append(
             ReasoningStep(
                 step=step_num,
@@ -255,11 +269,14 @@ class VisionTaskPlanner:
         if action == ActionType.PICK_AND_PLACE:
             destination, dest_detail = self._match_destination(instruction, scene, target)
             if destination:
-                plan.destination_object = {
+                dest_dict: dict = {
                     "color": destination.color,
                     "region": destination.region,
                     "centroid_2d": list(destination.centroid_2d),
                 }
+                if destination.centroid_3d is not None:
+                    dest_dict["workspace_mm"] = [round(v, 1) for v in destination.centroid_3d]
+                plan.destination_object = dest_dict
             reasoning.append(
                 ReasoningStep(
                     step=step_num,
@@ -345,8 +362,11 @@ class VisionTaskPlanner:
             if color in text:
                 matches = scene.objects_by_color(color)
                 if matches:
-                    obj = matches[0]  # take the largest (sorted by area)
-                    return obj, f"Matched '{color}' -> {obj.color} object in {obj.region}"
+                    obj = matches[0]
+                    pos_str = ""
+                    if obj.centroid_3d is not None:
+                        pos_str = f", workspace ({obj.centroid_3d[0]:.0f}, {obj.centroid_3d[1]:.0f})mm"
+                    return obj, f"Matched '{color}' -> {obj.color} object in {obj.region}{pos_str}"
 
         # Try to match by position keywords
         for pos_word in ["left", "right", "top", "bottom", "center", "middle"]:
@@ -364,7 +384,7 @@ class VisionTaskPlanner:
         if "near" in text or "close" in text or "nearest" in text or "closest" in text:
             obj = scene.nearest_object()
             if obj:
-                return obj, f"Matched 'nearest' -> {obj.color} object at {obj.depth_mm:.0f}mm"
+                return obj, f"Matched 'nearest' -> {obj.color} object in {obj.region}"
 
         # Default: use the largest object
         obj = scene.largest_object()
@@ -388,16 +408,13 @@ class VisionTaskPlanner:
         )
         if dest_match:
             dest_word = dest_match.group(1)
-            # Check if it's a color
             if dest_word in _COLOR_KEYWORDS:
                 matches = scene.objects_by_color(dest_word)
-                # Don't pick the same object as target
                 if target:
                     matches = [m for m in matches if m.centroid_2d != target.centroid_2d]
                 if matches:
                     return matches[0], f"Destination: {dest_word} object in {matches[0].region}"
 
-            # Check if it's a position
             if dest_word in _POSITION_KEYWORDS:
                 return None, f"Destination: {dest_word} side of workspace (no specific object)"
 
@@ -420,12 +437,12 @@ class VisionTaskPlanner:
     ) -> np.ndarray:
         """Map a scene object's position to a joint-space pose.
 
-        Uses normalized 2D position to interpolate across the arm's
-        visual workspace range, centered on the workspace center pose.
+        Uses normalized 2D position from the overhead camera to interpolate
+        across the arm's visual workspace range, centered on the workspace
+        center pose.
         """
         # Map normalized image coords to joint offsets
-        # x: maps primarily to J0 (base yaw) and slightly to J3 (wrist roll)
-        # y: maps primarily to J1 (shoulder pitch) and J4 (wrist pitch)
+        # In overhead view: x maps to J0 (base yaw), y maps to J1 (shoulder pitch)
         x_offset = (obj.normalized_x - 0.5) * self.workspace_range
         y_offset = (obj.normalized_y - 0.5) * self.workspace_range * 0.5
 
@@ -438,8 +455,6 @@ class VisionTaskPlanner:
             pose += offset
 
         # Clamp to joint limits
-        from src.planning.motion_planner import JOINT_LIMITS_DEG
-
         for i in range(NUM_ARM_JOINTS):
             pose[i] = float(np.clip(pose[i], JOINT_LIMITS_DEG[i, 0], JOINT_LIMITS_DEG[i, 1]))
 
@@ -454,14 +469,20 @@ class VisionTaskPlanner:
         parts = []
         if target:
             pose = self._scene_to_joint_pose(target)
+            pos_info = f"image ({target.normalized_x:.2f}, {target.normalized_y:.2f})"
+            if target.centroid_3d is not None:
+                pos_info += f" / workspace ({target.centroid_3d[0]:.0f}, {target.centroid_3d[1]:.0f})mm"
             parts.append(
-                f"Target at image ({target.normalized_x:.2f}, {target.normalized_y:.2f}) "
+                f"Target at {pos_info} "
                 f"-> joint pose [{', '.join(f'{a:.1f}' for a in pose)}]"
             )
         if destination:
             pose = self._scene_to_joint_pose(destination)
+            pos_info = f"image ({destination.normalized_x:.2f}, {destination.normalized_y:.2f})"
+            if destination.centroid_3d is not None:
+                pos_info += f" / workspace ({destination.centroid_3d[0]:.0f}, {destination.centroid_3d[1]:.0f})mm"
             parts.append(
-                f"Destination at image ({destination.normalized_x:.2f}, {destination.normalized_y:.2f}) "
+                f"Destination at {pos_info} "
                 f"-> joint pose [{', '.join(f'{a:.1f}' for a in pose)}]"
             )
         if not parts:
@@ -531,8 +552,6 @@ class VisionTaskPlanner:
             # Default: place 30 degrees to the right of pick
             place_pose = pick_pose.copy()
             place_pose[0] += 30.0
-            from src.planning.motion_planner import JOINT_LIMITS_DEG
-
             place_pose[0] = float(
                 np.clip(place_pose[0], JOINT_LIMITS_DEG[0, 0], JOINT_LIMITS_DEG[0, 1])
             )
@@ -576,7 +595,6 @@ class VisionTaskPlanner:
         else:
             point_pose = READY_POSE.copy()
 
-        # Close the gripper for a pointing gesture
         waypoints = [
             Waypoint(current_pose, gripper_mm=0.0, max_speed_factor=0.6),
             Waypoint(point_pose, gripper_mm=0.0, max_speed_factor=0.6),
@@ -598,11 +616,8 @@ class VisionTaskPlanner:
             )
 
         approach_pose = self._scene_to_joint_pose(target)
-        # Push pose: extend further into the object area
         push_pose = approach_pose.copy()
-        push_pose[1] -= 10.0  # lower the shoulder slightly
-        from src.planning.motion_planner import JOINT_LIMITS_DEG
-
+        push_pose[1] -= 10.0
         push_pose[1] = float(
             np.clip(push_pose[1], JOINT_LIMITS_DEG[1, 0], JOINT_LIMITS_DEG[1, 1])
         )
@@ -625,12 +640,9 @@ class VisionTaskPlanner:
         """Plan an inspection motion — move near the target to look at it."""
         if target is not None:
             inspect_pose = self._scene_to_joint_pose(target)
-            # Pull back slightly (don't get too close)
             inspect_pose[1] += 10.0
         else:
             inspect_pose = READY_POSE.copy()
-
-        from src.planning.motion_planner import JOINT_LIMITS_DEG
 
         for i in range(NUM_ARM_JOINTS):
             inspect_pose[i] = float(
