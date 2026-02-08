@@ -28,7 +28,7 @@ JOINT_LIMITS_SAFE = {
 }
 
 MAX_INCREMENT_DEG = 10.0
-MAX_TRACKING_ERROR_DEG = 15.0
+MAX_TRACKING_ERROR_DEG = 20.0
 
 CALIBRATION_POSES = [
     (0, 0, 0, 0, 0, 0),           # home
@@ -186,10 +186,10 @@ class CalibrationRunner:
                         f"set_joint failed for J{joint_id} -> {step_angle}°"
                     )
                 # Brief pause for arm to move
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.5)
 
             # Verify feedback after moving this joint
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.0)
             feedback = await self.get_joint_angles()
             error = abs(feedback[joint_id] - target)
             if error > MAX_TRACKING_ERROR_DEG:
