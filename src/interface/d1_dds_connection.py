@@ -147,20 +147,48 @@ class D1DDSConnection:
                 self._dp = DomainParticipant(domain_id=domain_id)
             except Exception:
                 logger.warning(
-                    "CycloneDDS rejected interface name '%s', retrying with autodetermine",
+                    "CycloneDDS rejected interface name '%s', trying IP address fallback",
                     interface_name,
                 )
-                os.environ["CYCLONEDDS_URI"] = (
-                    "<CycloneDDS>"
-                    "  <Domain>"
-                    "    <General>"
-                    "      <Interfaces>"
-                    '        <NetworkInterface autodetermine="true" />'
-                    "      </Interfaces>"
-                    "    </General>"
-                    "  </Domain>"
-                    "</CycloneDDS>"
+                # Try by IP address (more reliable than autodetermine which may pick wrong iface)
+                import subprocess
+                ip_result = subprocess.run(
+                    ["ip", "-4", "addr", "show", interface_name],
+                    capture_output=True, text=True
                 )
+                ip_addr = None
+                for line in ip_result.stdout.split('\n'):
+                    line = line.strip()
+                    if line.startswith('inet '):
+                        ip_addr = line.split()[1].split('/')[0]
+                        break
+
+                if ip_addr:
+                    logger.info("Using IP address %s for CycloneDDS on %s", ip_addr, interface_name)
+                    os.environ["CYCLONEDDS_URI"] = (
+                        "<CycloneDDS>"
+                        "  <Domain>"
+                        "    <General>"
+                        "      <Interfaces>"
+                        f'        <NetworkInterface address="{ip_addr}" />'
+                        "      </Interfaces>"
+                        "    </General>"
+                        "  </Domain>"
+                        "</CycloneDDS>"
+                    )
+                else:
+                    logger.warning("Could not determine IP for %s, using autodetermine", interface_name)
+                    os.environ["CYCLONEDDS_URI"] = (
+                        "<CycloneDDS>"
+                        "  <Domain>"
+                        "    <General>"
+                        "      <Interfaces>"
+                        '        <NetworkInterface autodetermine="true" />'
+                        "      </Interfaces>"
+                        "    </General>"
+                        "  </Domain>"
+                        "</CycloneDDS>"
+                    )
                 self._dp = DomainParticipant(domain_id=domain_id)
 
             topic_fb = Topic(self._dp, self.FEEDBACK_TOPIC, ArmString_)
@@ -238,7 +266,7 @@ class D1DDSConnection:
         try:
             payload = json.dumps(cmd, separators=(",", ":"))
             self._writer.write(ArmString_(data_=payload))
-            logger.debug("Published command: %s", payload)
+            logger.info("Published command: %s", payload[:200])
             tc = self._get_collector()
             if tc is not None:
                 data = cmd.get("data", {}) or {}
