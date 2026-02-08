@@ -322,16 +322,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   </div>
 </div>
 
-<div class="log-panel">
-  <div class="log-title">Action Log</div>
-  <div class="log-scroll" id="logScroll"></div>
-</div>
-
-</div><!-- /tabControl -->
-
-<div class="tab-content" id="tabAscii">
-<div class="ascii-tab-wrap">
+<!-- ASCII Video Feed — always visible below main layout -->
+<div class="ascii-always-on" style="border-top:1px solid var(--card-border);flex-shrink:0;">
   <div class="ascii-controls-bar">
+    <span class="section-title" style="margin:0">ASCII VIDEO <span class="beta-pill">BETA</span></span>
     <label>CHARS</label>
     <select id="ascCharset"><option value="standard">Standard</option><option value="detailed">Detailed</option><option value="blocks">Blocks</option><option value="minimal">Minimal</option></select>
     <label>W</label><input type="number" id="ascWidth" value="320" min="20" max="500" step="10">
@@ -340,16 +334,14 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <button class="ascii-toggle on" id="ascInvert">INVERT</button>
     <button class="ascii-toggle" id="ascPause">PAUSE</button>
     <button class="ascii-toggle" id="ascFkOverlay" title="Show FK joint overlay on ASCII frames">FK OVERLAY</button>
-  </div>
-  <div class="ascii-status-bar">
-    <span class="ascii-status-dot" id="ascDot0"></span>
-    <span>CAM0</span>
-    <span class="ascii-status-dot" id="ascDot1" style="margin-left:8px"></span>
-    <span>CAM1</span>
     <span style="flex:1"></span>
-    <span id="ascFps">-- fps</span>
+    <span class="ascii-status-dot" id="ascDot0"></span>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">CAM0</span>
+    <span class="ascii-status-dot" id="ascDot1" style="margin-left:8px"></span>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">CAM1</span>
+    <span id="ascFps" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">-- fps</span>
   </div>
-  <div class="ascii-viewport" id="asciiViewport">
+  <div class="ascii-viewport" id="asciiViewport" style="height:180px;flex:none;">
     <div class="ascii-pane">
       <div class="ascii-pane-label">📷 CAM 0 — Front</div>
       <pre id="asciiOutput0">Waiting for stream...</pre>
@@ -361,6 +353,19 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     </div>
   </div>
 </div>
+
+<div class="log-panel">
+  <div class="log-title">Action Log</div>
+  <div class="log-scroll" id="logScroll"></div>
+</div>
+
+</div><!-- /tabControl -->
+
+<div class="tab-content" id="tabAscii">
+  <!-- ASCII Video moved to always-visible section in Control tab -->
+  <div style="display:flex;align-items:center;justify-content:center;height:100%;font-family:var(--mono);color:var(--text-dim);font-size:14px;">
+    ASCII Video is now always visible on the Control tab below ↓
+  </div>
 </div><!-- /tabAscii -->
 
 <div class="tab-content" id="tabFactory" style="position:relative;background:#000;">
@@ -1318,6 +1323,9 @@ function renderDebugEvents(events) {
 connectWS();
 setTimeout(() => { resizeCanvas(); animLoop(); }, 50);
 
+// Auto-connect ASCII video on page load (always-on)
+setTimeout(() => { if (typeof asciiConnect === 'function') asciiConnect(); }, 500);
+
 // === Collision Alert ===
 function showCollisionAlert(data) {
   const el = document.getElementById('collisionAlert');
@@ -1356,14 +1364,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     const tabMap = { control: 'tabControl', ascii: 'tabAscii', factory: 'tabFactory', realworld: 'tabRealworld' };
     document.getElementById(tabMap[tab] || 'tabControl').classList.add('active');
 
-    // Disconnect everything from previous tab
-    if (prevTab === 'ascii' && typeof asciiDisconnect === 'function') asciiDisconnect();
+    // Disconnect everything from previous tab (ASCII stays always-on)
     if (prevTab === 'factory' && typeof fw_deactivate === 'function') fw_deactivate();
     if (prevTab === 'realworld' && typeof rw_deactivate === 'function') rw_deactivate();
 
     // Connect new tab after DOM settles
     setTimeout(() => {
-      if (tab === 'ascii' && typeof asciiConnect === 'function') asciiConnect();
       if (tab === 'control') resizeCanvas();
       if (tab === 'factory' && typeof fw_activate === 'function') fw_activate();
       if (tab === 'realworld' && typeof rw_activate === 'function') rw_activate();
