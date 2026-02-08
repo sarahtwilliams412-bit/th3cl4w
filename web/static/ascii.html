@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>th3cl4w — ASCII Video</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #0a0a0f;
+            color: #c0c0c0;
+            font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            background: #111118;
+            border-bottom: 1px solid #2a2a3a;
+            flex-shrink: 0;
+        }
+
+        header h1 {
+            font-size: 14px;
+            color: #8888cc;
+            font-weight: normal;
+            letter-spacing: 1px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .controls label {
+            font-size: 11px;
+            color: #888;
+        }
+
+        .controls select, .controls input {
+            background: #1a1a24;
+            color: #aaa;
+            border: 1px solid #333;
+            padding: 3px 6px;
+            font-size: 11px;
+            font-family: inherit;
+            border-radius: 2px;
+        }
+
+        .controls button {
+            background: #2a2a3a;
+            color: #aaa;
+            border: 1px solid #444;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-family: inherit;
+            cursor: pointer;
+            border-radius: 2px;
+        }
+
+        .controls button:hover {
+            background: #3a3a4a;
+            color: #ccc;
+        }
+
+        .controls button.active {
+            background: #334;
+            border-color: #668;
+            color: #aaf;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 4px 16px;
+            background: #0d0d14;
+            border-bottom: 1px solid #1a1a2a;
+            font-size: 10px;
+            color: #666;
+            flex-shrink: 0;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #444;
+        }
+
+        .status-dot.connected { background: #4a4; }
+        .status-dot.error { background: #a44; }
+
+        #ascii-viewport {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+        }
+
+        #ascii-output {
+            white-space: pre;
+            font-size: 10px;
+            line-height: 1.1;
+            letter-spacing: 0.5px;
+            color: #88cc88;
+            text-align: center;
+            user-select: text;
+        }
+
+        #ascii-output.color-mode {
+            color: unset;
+        }
+
+        .cam-select {
+            display: flex;
+            gap: 4px;
+        }
+
+        .cam-btn {
+            width: 24px;
+            height: 20px;
+            text-align: center;
+            line-height: 20px;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>th3cl4w // ASCII VIDEO</h1>
+        <div class="controls">
+            <label>CAM</label>
+            <div class="cam-select">
+                <button class="cam-btn active" data-cam="0">0</button>
+                <button class="cam-btn" data-cam="1">1</button>
+            </div>
+
+            <label>CHARS</label>
+            <select id="charset-select">
+                <option value="standard">Standard</option>
+                <option value="detailed">Detailed</option>
+                <option value="blocks">Blocks</option>
+                <option value="minimal">Minimal</option>
+            </select>
+
+            <label>W</label>
+            <input type="number" id="width-input" value="120" min="20" max="300" step="10" style="width: 50px;">
+            <label>H</label>
+            <input type="number" id="height-input" value="40" min="10" max="120" step="5" style="width: 50px;">
+
+            <button id="color-toggle">COLOR</button>
+            <button id="invert-toggle" class="active">INVERT</button>
+            <button id="pause-toggle">PAUSE</button>
+        </div>
+    </header>
+
+    <div class="status-bar">
+        <span class="status-dot" id="ws-status"></span>
+        <span id="status-text">Connecting...</span>
+        <span id="fps-display">-- fps</span>
+    </div>
+
+    <div id="ascii-viewport">
+        <pre id="ascii-output">Connecting to ASCII stream...</pre>
+    </div>
+
+    <script>
+    (function() {
+        const output = document.getElementById('ascii-output');
+        const wsStatus = document.getElementById('ws-status');
+        const statusText = document.getElementById('status-text');
+        const fpsDisplay = document.getElementById('fps-display');
+
+        let ws = null;
+        let paused = false;
+        let colorMode = false;
+        let invertMode = true;
+        let activeCam = 0;
+        let frameCount = 0;
+        let lastFpsTime = performance.now();
+        let reconnectTimer = null;
+
+        function getSettings() {
+            return {
+                cam: activeCam,
+                charset: document.getElementById('charset-select').value,
+                width: parseInt(document.getElementById('width-input').value) || 120,
+                height: parseInt(document.getElementById('height-input').value) || 40,
+                color: colorMode,
+                invert: invertMode,
+            };
+        }
+
+        function connect() {
+            if (ws && ws.readyState <= 1) ws.close();
+
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const url = `${proto}//${location.host}/ws/ascii`;
+            ws = new WebSocket(url);
+
+            ws.onopen = function() {
+                wsStatus.className = 'status-dot connected';
+                statusText.textContent = 'Connected';
+                // Send initial settings
+                ws.send(JSON.stringify({ type: 'settings', ...getSettings() }));
+            };
+
+            ws.onmessage = function(evt) {
+                if (paused) return;
+
+                const data = JSON.parse(evt.data);
+                if (data.type === 'frame') {
+                    renderFrame(data);
+                    // Track FPS
+                    frameCount++;
+                    const now = performance.now();
+                    if (now - lastFpsTime >= 1000) {
+                        const fps = (frameCount / ((now - lastFpsTime) / 1000)).toFixed(1);
+                        fpsDisplay.textContent = fps + ' fps';
+                        frameCount = 0;
+                        lastFpsTime = now;
+                    }
+                }
+            };
+
+            ws.onclose = function() {
+                wsStatus.className = 'status-dot';
+                statusText.textContent = 'Disconnected — reconnecting...';
+                scheduleReconnect();
+            };
+
+            ws.onerror = function() {
+                wsStatus.className = 'status-dot error';
+                statusText.textContent = 'Connection error';
+            };
+        }
+
+        function scheduleReconnect() {
+            if (reconnectTimer) return;
+            reconnectTimer = setTimeout(function() {
+                reconnectTimer = null;
+                connect();
+            }, 2000);
+        }
+
+        function renderFrame(data) {
+            if (data.colors && colorMode) {
+                renderColorFrame(data);
+            } else {
+                output.textContent = data.lines.join('\n');
+                output.classList.remove('color-mode');
+            }
+        }
+
+        function renderColorFrame(data) {
+            output.classList.add('color-mode');
+            output.innerHTML = '';
+            const lines = data.lines;
+            const colors = data.colors;
+            const frag = document.createDocumentFragment();
+            for (let y = 0; y < lines.length; y++) {
+                const line = lines[y];
+                const rowColors = colors[y];
+                for (let x = 0; x < line.length; x++) {
+                    const span = document.createElement('span');
+                    const c = rowColors[x];
+                    span.style.color = `rgb(${c[0]},${c[1]},${c[2]})`;
+                    span.textContent = line[x];
+                    frag.appendChild(span);
+                }
+                frag.appendChild(document.createTextNode('\n'));
+            }
+            output.appendChild(frag);
+        }
+
+        function sendSettings() {
+            if (ws && ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: 'settings', ...getSettings() }));
+            }
+        }
+
+        // Camera buttons
+        document.querySelectorAll('.cam-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.cam-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                activeCam = parseInt(this.dataset.cam);
+                sendSettings();
+            });
+        });
+
+        // Settings controls
+        document.getElementById('charset-select').addEventListener('change', sendSettings);
+        document.getElementById('width-input').addEventListener('change', sendSettings);
+        document.getElementById('height-input').addEventListener('change', sendSettings);
+
+        // Toggle buttons
+        document.getElementById('color-toggle').addEventListener('click', function() {
+            colorMode = !colorMode;
+            this.classList.toggle('active', colorMode);
+            sendSettings();
+        });
+
+        document.getElementById('invert-toggle').addEventListener('click', function() {
+            invertMode = !invertMode;
+            this.classList.toggle('active', invertMode);
+            sendSettings();
+        });
+
+        document.getElementById('pause-toggle').addEventListener('click', function() {
+            paused = !paused;
+            this.classList.toggle('active', paused);
+            this.textContent = paused ? 'RESUME' : 'PAUSE';
+        });
+
+        // Auto-fit font size to viewport
+        function fitFont() {
+            const viewport = document.getElementById('ascii-viewport');
+            const w = parseInt(document.getElementById('width-input').value) || 120;
+            const h = parseInt(document.getElementById('height-input').value) || 40;
+            const maxW = viewport.clientWidth - 16;
+            const maxH = viewport.clientHeight - 16;
+            // Each character is roughly 0.6em wide and 1.1em tall at a given font-size
+            const sizeByW = maxW / (w * 0.62);
+            const sizeByH = maxH / (h * 1.15);
+            const fontSize = Math.max(4, Math.min(20, Math.floor(Math.min(sizeByW, sizeByH))));
+            output.style.fontSize = fontSize + 'px';
+        }
+
+        window.addEventListener('resize', fitFont);
+        document.getElementById('width-input').addEventListener('change', fitFont);
+        document.getElementById('height-input').addEventListener('change', fitFont);
+        fitFont();
+
+        // Start
+        connect();
+    })();
+    </script>
+</body>
+</html>
