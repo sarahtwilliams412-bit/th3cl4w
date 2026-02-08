@@ -23,6 +23,7 @@ from datetime import datetime
 try:
     from cyclonedds.domain import Domain, DomainParticipant
     from cyclonedds.builtin import DcpsParticipant, DcpsTopic, DcpsEndpoint
+    from cyclonedds.builtin import BuiltinDataReader
     from cyclonedds.sub import DataReader
     from cyclonedds.core import Listener, DDSException
     from cyclonedds.util import duration
@@ -113,8 +114,8 @@ class DDSDiscoverer:
         print("-" * 60)
 
         # Built-in topic readers for discovery
-        participant_reader = DataReader(self.participant, DcpsParticipant)
-        topic_reader = DataReader(self.participant, DcpsTopic)
+        participant_reader = BuiltinDataReader(self.participant, DcpsParticipant)
+        topic_reader = BuiltinDataReader(self.participant, DcpsTopic)
 
         start_time = time.time()
         poll_interval = 0.5
