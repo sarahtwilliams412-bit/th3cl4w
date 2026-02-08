@@ -45,11 +45,12 @@ logger = logging.getLogger("th3cl4w.camera")
 class CameraThread:
     """Captures frames from a camera in a background thread."""
 
-    def __init__(self, device_id: int, width: int = 640, height: int = 480, fps: int = 15):
+    def __init__(self, device_id: int, width: int = 1920, height: int = 1080, fps: int = 15, jpeg_quality: int = 92):
         self.device_id = device_id
         self.width = width
         self.height = height
         self.fps = fps
+        self.jpeg_quality = jpeg_quality
         self._frame: Optional[bytes] = None
         self._lock = threading.Lock()
         self._running = False
@@ -99,17 +100,24 @@ class CameraThread:
                 logger.info("Opening camera /dev/video%d ...", self.device_id)
                 cap = cv2.VideoCapture(self.device_id, cv2.CAP_V4L2)
                 if cap.isOpened():
+                    # Request MJPEG format for high-res throughput
+                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
                     cap.set(cv2.CAP_PROP_FPS, self.fps)
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    # Log actual resolution
+                    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     self._connected = True
                     reconnect_delay = 1.0
                     logger.info(
-                        "Camera /dev/video%d opened (%dx%d @ %dfps)",
+                        "Camera /dev/video%d opened (requested %dx%d, actual %dx%d @ %dfps)",
                         self.device_id,
                         self.width,
                         self.height,
+                        actual_w,
+                        actual_h,
                         self.fps,
                     )
                 else:
@@ -136,7 +144,7 @@ class CameraThread:
                     self._frame = self._no_signal_frame
                 continue
 
-            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             with self._lock:
                 self._frame = buf.tobytes()
 
@@ -164,6 +172,18 @@ class CameraThread:
     def get_frame(self) -> bytes:
         with self._lock:
             return self._frame if self._frame else self._no_signal_frame
+
+    def get_raw_frame(self) -> Optional[np.ndarray]:
+        """Get the latest frame as a decoded numpy BGR array.
+
+        Returns None if no frame is available or camera is disconnected.
+        Used by the arm tracker and grasp planner for vision processing.
+        """
+        jpeg_bytes = self.get_frame()
+        if jpeg_bytes is None or jpeg_bytes == self._no_signal_frame:
+            return None
+        frame = cv2.imdecode(np.frombuffer(jpeg_bytes, np.uint8), cv2.IMREAD_COLOR)
+        return frame
 
     @property
     def connected(self) -> bool:
@@ -304,14 +324,15 @@ def main():
         "--cam1", type=int, default=4, help="Device index for camera 1 (default: 4)"
     )
     parser.add_argument("--port", type=int, default=8081, help="HTTP port (default: 8081)")
-    parser.add_argument("--width", type=int, default=640, help="Capture width (default: 640)")
-    parser.add_argument("--height", type=int, default=480, help="Capture height (default: 480)")
+    parser.add_argument("--width", type=int, default=1920, help="Capture width (default: 1920)")
+    parser.add_argument("--height", type=int, default=1080, help="Capture height (default: 1080)")
     parser.add_argument("--fps", type=int, default=15, help="Capture FPS (default: 15)")
+    parser.add_argument("--jpeg-quality", type=int, default=92, help="JPEG quality 1-100 (default: 92)")
     args = parser.parse_args()
 
     # Start camera threads
-    cameras[0] = CameraThread(args.cam0, args.width, args.height, args.fps)
-    cameras[1] = CameraThread(args.cam1, args.width, args.height, args.fps)
+    cameras[0] = CameraThread(args.cam0, args.width, args.height, args.fps, args.jpeg_quality)
+    cameras[1] = CameraThread(args.cam1, args.width, args.height, args.fps, args.jpeg_quality)
 
     for cam in cameras.values():
         cam.start()

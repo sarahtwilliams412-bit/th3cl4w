@@ -55,13 +55,29 @@ except ImportError:
     _HAS_PLANNING = False
 
 try:
-    from src.vision.calibration import StereoCalibrator
     from src.vision.workspace_mapper import WorkspaceMapper
     from src.planning.collision_preview import CollisionPreview
 
     _HAS_BIFOCAL = True
 except ImportError:
     _HAS_BIFOCAL = False
+
+try:
+    from src.vision.arm_tracker import DualCameraArmTracker
+    from src.vision.grasp_planner import VisualGraspPlanner
+    from src.planning.pick_executor import PickExecutor, PickPhase
+
+    _HAS_VISUAL_PICK = True
+except ImportError:
+    _HAS_VISUAL_PICK = False
+
+try:
+    from src.vision.scene_analyzer import SceneAnalyzer
+    from src.planning.vision_task_planner import VisionTaskPlanner
+
+    _HAS_VISION_PLANNING = True
+except ImportError:
+    _HAS_VISION_PLANNING = False
 
 try:
     from src.vision.claw_position import ClawPositionPredictor
@@ -242,6 +258,11 @@ smoother: Optional[CommandSmoother] = None
 task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
 workspace_mapper: Any = None  # WorkspaceMapper for bifocal vision
 collision_preview: Any = None  # CollisionPreview for path checking
+arm_tracker: Any = None  # DualCameraArmTracker for visual object tracking
+grasp_planner: Any = None  # VisualGraspPlanner for grasp pose computation
+pick_executor: Any = None  # PickExecutor for autonomous pick operations
+vision_task_planner: Any = None  # VisionTaskPlanner for camera-guided planning
+scene_analyzer: Any = None  # SceneAnalyzer for scene understanding
 claw_predictor: Any = None  # ClawPositionPredictor for visual claw tracking
 
 # ---------------------------------------------------------------------------
@@ -306,29 +327,28 @@ async def lifespan(app: FastAPI):
         action_log.add("SYSTEM", "Task planner initialized", "info")
 
     # Initialize bifocal workspace mapper and collision preview
-    global workspace_mapper, collision_preview, claw_predictor
+    global workspace_mapper, collision_preview
     if _HAS_BIFOCAL:
-        calibrator = StereoCalibrator()
-        # Try to load existing calibration
-        calib_path = Path(__file__).resolve().parent.parent / "calibration" / "stereo.npz"
-        if calib_path.exists():
-            try:
-                calibrator.load(calib_path)
-                action_log.add("SYSTEM", "Stereo calibration loaded", "info")
-            except Exception as e:
-                action_log.add("SYSTEM", f"Calibration load failed: {e}", "warning")
-        workspace_mapper = WorkspaceMapper(calibrator)
+        workspace_mapper = WorkspaceMapper()
         collision_preview = CollisionPreview()
         action_log.add(
             "SYSTEM", "Bifocal workspace mapper initialized (disabled by default)", "info"
         )
 
-        # Initialize claw position predictor (shares calibrator with workspace mapper)
-        if _HAS_CLAW_PREDICT:
-            claw_predictor = ClawPositionPredictor(calibrator)
-            action_log.add(
-                "SYSTEM", "Claw position predictor initialized (disabled by default)", "info"
-            )
+    # Initialize visual pick system (arm tracker + grasp planner + pick executor)
+    global arm_tracker, grasp_planner, pick_executor
+    if _HAS_VISUAL_PICK:
+        arm_tracker = DualCameraArmTracker()
+        grasp_planner = VisualGraspPlanner()
+        pick_executor = PickExecutor(task_planner=task_planner if _HAS_PLANNING else None)
+        action_log.add("SYSTEM", "Visual pick system initialized (tracker + grasp planner)", "info")
+
+    # Initialize vision task planner for camera-guided planning
+    global vision_task_planner, scene_analyzer
+    if _HAS_VISION_PLANNING and _HAS_PLANNING:
+        scene_analyzer = SceneAnalyzer()
+        vision_task_planner = VisionTaskPlanner(task_planner=task_planner)
+        action_log.add("SYSTEM", "Vision task planner initialized", "info")
 
     yield
 
@@ -779,17 +799,6 @@ async def ws_state(ws: WebSocket):
         while True:
             state = get_arm_state()
             state["log"] = action_log.last(30)
-
-            # Include claw prediction data if predictor is enabled
-            if claw_predictor is not None and claw_predictor.enabled:
-                last_pred = claw_predictor.get_last_prediction()
-                if last_pred is not None:
-                    state["claw_prediction"] = last_pred.to_dict()
-                else:
-                    state["claw_prediction"] = {"enabled": True, "detected": False}
-            elif claw_predictor is not None:
-                state["claw_prediction"] = {"enabled": False}
-
             await ws.send_json(state)
             if _HAS_TELEMETRY:
                 tc = get_collector()
@@ -1418,38 +1427,48 @@ async def bifocal_preview_target(req: SetAllJointsRequest):
 
 
 # ---------------------------------------------------------------------------
-# Claw Position Prediction endpoints — visual tracking of end-effector
+# Visual Pick endpoints — dual-camera object detection + autonomous grasp
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/claw-predict/toggle")
-async def claw_predict_toggle():
-    """Toggle the claw position predictor on/off."""
-    if not _HAS_CLAW_PREDICT or claw_predictor is None:
-        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
-    enabled = claw_predictor.toggle()
-    action_log.add("CLAW_PREDICT", f"Predictor {'enabled' if enabled else 'disabled'}", "info")
-    return {"ok": True, "enabled": enabled}
+class VisualPickRequest(BaseModel):
+    target: str = Field(default="redbull", description="Object to pick: redbull, red, blue, all")
+    speed: float = Field(default=0.5, ge=0.1, le=1.0)
+    execute: bool = Field(default=False, description="If True, execute immediately after planning")
 
 
-@app.get("/api/claw-predict/status")
-async def claw_predict_status():
-    """Get claw position predictor status and last prediction."""
-    if not _HAS_CLAW_PREDICT or claw_predictor is None:
-        return {"available": False}
-    status = claw_predictor.get_status()
+class VisualPickFromPositionRequest(BaseModel):
+    x_mm: float = Field(description="X position in arm-base frame (mm)")
+    y_mm: float = Field(description="Y position in arm-base frame (mm)")
+    z_mm: float = Field(description="Z position in arm-base frame (mm)")
+    label: str = Field(default="redbull")
+    speed: float = Field(default=0.5, ge=0.1, le=1.0)
+    execute: bool = Field(default=False)
+
+
+@app.get("/api/pick/status")
+async def pick_status():
+    """Get visual pick system status."""
+    if not _HAS_VISUAL_PICK or pick_executor is None:
+        return {"available": False, "error": "Visual pick module not available"}
+    status = pick_executor.get_status()
     status["available"] = True
+    status["calibrated"] = arm_tracker.calibrator.is_calibrated if arm_tracker else False
     return status
 
 
-@app.post("/api/claw-predict/update")
-async def claw_predict_update():
-    """Trigger a claw position prediction from current camera frames."""
-    if not _HAS_CLAW_PREDICT or claw_predictor is None:
-        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
-    if not claw_predictor.enabled:
-        return JSONResponse({"ok": False, "error": "Predictor not enabled"}, status_code=409)
+@app.post("/api/pick/detect")
+async def pick_detect(req: VisualPickRequest = VisualPickRequest()):
+    """Detect objects using dual cameras without planning a grasp.
 
+    Returns detected objects with their 3D positions.
+    """
+    if not _HAS_VISUAL_PICK or arm_tracker is None:
+        return JSONResponse(
+            {"ok": False, "error": "Visual pick module not available"}, status_code=501
+        )
+
+    # Grab camera snapshots
     import httpx
 
     try:
@@ -1468,89 +1487,400 @@ async def claw_predict_update():
                 {"ok": False, "error": "Failed to decode camera frames"}, status_code=502
             )
 
-        # Sync scale factor from workspace mapper if available
-        if workspace_mapper is not None and workspace_mapper.scale_calibrated:
-            claw_predictor.set_scale_factor(workspace_mapper._scale_factor)
+        result = arm_tracker.track(left, right, target_label=req.target, annotate=False)
 
-        # Compute FK position for comparison
-        fk_pos = _get_fk_position_mm()
+        objects_data = []
+        for obj in result.objects:
+            objects_data.append({
+                "label": obj.label,
+                "position_mm": [round(float(x), 1) for x in obj.position_mm],
+                "position_cam_mm": [round(float(x), 1) for x in obj.position_cam_mm],
+                "size_mm": list(obj.size_mm),
+                "depth_mm": round(obj.depth_mm, 1),
+                "confidence": round(obj.confidence, 3),
+                "bbox_left": list(obj.bbox_left),
+                "centroid_left": list(obj.centroid_left),
+            })
 
-        result = claw_predictor.predict(left, right, fk_position_mm=fk_pos)
-        return {"ok": True, "prediction": result.to_dict()}
+        action_log.add(
+            "VISION",
+            f"Detected {len(result.objects)} '{req.target}' object(s) in {result.elapsed_ms:.0f}ms",
+            "info",
+        )
+
+        return {
+            "ok": True,
+            "objects": objects_data,
+            "count": len(result.objects),
+            "elapsed_ms": result.elapsed_ms,
+            "status": result.status,
+            "message": result.message,
+        }
 
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
-class ClawHSVRequest(BaseModel):
-    h_lower: int = Field(ge=0, le=180)
-    s_lower: int = Field(ge=0, le=255)
-    v_lower: int = Field(ge=0, le=255)
-    h_upper: int = Field(ge=0, le=180)
-    s_upper: int = Field(ge=0, le=255)
-    v_upper: int = Field(ge=0, le=255)
+@app.post("/api/pick/plan")
+async def pick_plan(req: VisualPickRequest = VisualPickRequest()):
+    """Detect object and plan a full pick trajectory.
 
+    Uses dual cameras to find the target, plans grasp approach, and optionally
+    executes the trajectory through the command smoother.
+    """
+    global _active_task
+    if not _HAS_VISUAL_PICK or pick_executor is None or arm_tracker is None or grasp_planner is None:
+        return JSONResponse(
+            {"ok": False, "error": "Visual pick module not available"}, status_code=501
+        )
+    if req.execute and not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled for execution"}, status_code=409)
 
-@app.post("/api/claw-predict/set-hsv")
-async def claw_predict_set_hsv(req: ClawHSVRequest):
-    """Set custom HSV color range for claw detection."""
-    if not _HAS_CLAW_PREDICT or claw_predictor is None:
-        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
-    claw_predictor.set_hsv_range(
-        (req.h_lower, req.s_lower, req.v_lower),
-        (req.h_upper, req.s_upper, req.v_upper),
-    )
-    action_log.add(
-        "CLAW_PREDICT",
-        f"HSV range set: [{req.h_lower},{req.s_lower},{req.v_lower}]-[{req.h_upper},{req.s_upper},{req.v_upper}]",
-        "info",
-    )
-    return {"ok": True}
+    # Grab camera snapshots
+    import httpx, cv2
 
-
-class ClawROIRequest(BaseModel):
-    x: int = Field(ge=0)
-    y: int = Field(ge=0)
-    w: int = Field(gt=0)
-    h: int = Field(gt=0)
-
-
-@app.post("/api/claw-predict/set-roi")
-async def claw_predict_set_roi(req: ClawROIRequest):
-    """Set a region of interest for claw detection."""
-    if not _HAS_CLAW_PREDICT or claw_predictor is None:
-        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
-    claw_predictor.set_detection_roi(req.x, req.y, req.w, req.h)
-    action_log.add("CLAW_PREDICT", f"ROI set: ({req.x},{req.y}) {req.w}x{req.h}", "info")
-    return {"ok": True}
-
-
-@app.post("/api/claw-predict/clear-roi")
-async def claw_predict_clear_roi():
-    """Clear the detection ROI."""
-    if not _HAS_CLAW_PREDICT or claw_predictor is None:
-        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
-    claw_predictor.clear_detection_roi()
-    action_log.add("CLAW_PREDICT", "ROI cleared", "info")
-    return {"ok": True}
-
-
-def _get_fk_position_mm() -> Optional[list[float]]:
-    """Compute the current end-effector position from forward kinematics."""
     try:
-        from src.kinematics import D1Kinematics
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp0 = await client.get("http://localhost:8081/snap/0")
+            resp1 = await client.get("http://localhost:8081/snap/1")
+        if resp0.status_code != 200 or resp1.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
+
+        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if left is None or right is None:
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode camera frames"}, status_code=502
+            )
+
+        current = _get_current_joints()
+        gripper = armState_gripper()
+
+        result = pick_executor.plan_pick(
+            left_frame=left,
+            right_frame=right,
+            arm_tracker=arm_tracker,
+            grasp_planner=grasp_planner,
+            current_angles_deg=current,
+            current_gripper_mm=gripper,
+            target_label=req.target,
+            workspace_mapper=workspace_mapper,
+            collision_preview=collision_preview,
+        )
+
+        response_data = {
+            "ok": result.success,
+            "phase": result.phase.value,
+            "message": result.message,
+            "elapsed_ms": result.elapsed_ms,
+            "detected_count": len(result.detected_objects),
+        }
+
+        if result.success and result.trajectory is not None:
+            response_data["trajectory"] = {
+                "points": len(result.trajectory.points),
+                "duration_s": round(result.trajectory.duration, 1),
+            }
+            response_data["grasp"] = {
+                "approach_angles": result.approach_angles_deg,
+                "grasp_angles": result.grasp_angles_deg,
+                "retreat_angles": result.retreat_angles_deg,
+                "gripper_open_mm": result.gripper_open_mm,
+                "gripper_close_mm": result.gripper_close_mm,
+            }
+
+            if result.target_object is not None:
+                response_data["target"] = {
+                    "label": result.target_object.label,
+                    "position_mm": [round(float(x), 1) for x in result.target_object.position_mm],
+                    "depth_mm": round(result.target_object.depth_mm, 1),
+                    "confidence": round(result.target_object.confidence, 3),
+                }
+
+            action_log.add(
+                "PICK",
+                f"Pick planned for '{req.target}': {len(result.trajectory.points)} pts, "
+                f"{result.trajectory.duration:.1f}s",
+                "info",
+            )
+
+            # Execute if requested
+            if req.execute and smoother and smoother.arm_enabled:
+                if _active_task and not _active_task.done():
+                    _active_task.cancel()
+                _active_task = asyncio.create_task(
+                    _execute_trajectory(result.trajectory, f"Visual Pick ({req.target})")
+                )
+                response_data["executing"] = True
+                action_log.add("PICK", f"Executing pick trajectory for '{req.target}'", "info")
+        else:
+            action_log.add(
+                "PICK", f"Pick plan failed for '{req.target}': {result.message}", "warning"
+            )
+
+        return response_data
+
+    except Exception as e:
+        logger.exception("Pick plan error")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/pick/from-position")
+async def pick_from_position(req: VisualPickFromPositionRequest):
+    """Plan a pick from a known 3D position (skip camera detection).
+
+    Useful when the object position is already known.
+    """
+    global _active_task
+    if not _HAS_VISUAL_PICK or pick_executor is None or grasp_planner is None:
+        return JSONResponse(
+            {"ok": False, "error": "Visual pick module not available"}, status_code=501
+        )
+    if req.execute and not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled for execution"}, status_code=409)
+
+    current = _get_current_joints()
+    gripper = armState_gripper()
+    obj_pos = np.array([req.x_mm, req.y_mm, req.z_mm])
+
+    result = pick_executor.plan_pick_from_position(
+        object_position_mm=obj_pos,
+        grasp_planner=grasp_planner,
+        current_angles_deg=current,
+        current_gripper_mm=gripper,
+        object_label=req.label,
+    )
+
+    response_data = {
+        "ok": result.success,
+        "phase": result.phase.value,
+        "message": result.message,
+        "elapsed_ms": result.elapsed_ms,
+    }
+
+    if result.success and result.trajectory is not None:
+        response_data["trajectory"] = {
+            "points": len(result.trajectory.points),
+            "duration_s": round(result.trajectory.duration, 1),
+        }
+        response_data["grasp"] = {
+            "approach_angles": result.approach_angles_deg,
+            "grasp_angles": result.grasp_angles_deg,
+            "retreat_angles": result.retreat_angles_deg,
+            "gripper_open_mm": result.gripper_open_mm,
+            "gripper_close_mm": result.gripper_close_mm,
+        }
+        response_data["target_position_mm"] = [req.x_mm, req.y_mm, req.z_mm]
+
+        action_log.add(
+            "PICK",
+            f"Pick from position [{req.x_mm:.0f},{req.y_mm:.0f},{req.z_mm:.0f}]: "
+            f"{len(result.trajectory.points)} pts",
+            "info",
+        )
+
+        if req.execute and smoother and smoother.arm_enabled:
+            if _active_task and not _active_task.done():
+                _active_task.cancel()
+            _active_task = asyncio.create_task(
+                _execute_trajectory(result.trajectory, f"Pick from position ({req.label})")
+            )
+            response_data["executing"] = True
+
+    return response_data
+
+
+@app.post("/api/pick/calibrate-camera-arm")
+async def pick_calibrate_camera_arm():
+    """Calibrate camera-to-arm transform using current arm pose and visual detection.
+
+    Place a distinctive object (e.g. red marker) at the end-effector,
+    then this endpoint detects it in both cameras and computes the
+    camera-to-arm translation offset.
+    """
+    if not _HAS_VISUAL_PICK or arm_tracker is None:
+        return JSONResponse(
+            {"ok": False, "error": "Visual pick module not available"}, status_code=501
+        )
+
+    import httpx, cv2
+
+    try:
+        # Get camera frames
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp0 = await client.get("http://localhost:8081/snap/0")
+            resp1 = await client.get("http://localhost:8081/snap/1")
+
+        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if left is None or right is None:
+            return JSONResponse({"ok": False, "error": "Camera frames failed"}, status_code=502)
+
+        # Detect red marker at EE
+        result = arm_tracker.track(left, right, target_label="red", annotate=False)
+        if not result.objects:
+            return JSONResponse(
+                {"ok": False, "error": "No red marker detected at end-effector"},
+                status_code=400,
+            )
+
+        # Get current EE position from FK
+        current = _get_current_joints()
+        from src.kinematics.kinematics import D1Kinematics
 
         kin = D1Kinematics()
-        joints_6 = _get_current_joints()
-        # FK expects 7 joints (6 arm + gripper); gripper angle is 0
-        joints_7 = np.append(joints_6, 0.0)
-        joint_radians = np.deg2rad(joints_7)
-        T = kin.forward_kinematics(joint_radians)
-        # Position in meters from FK, convert to mm
-        pos_mm = T[:3, 3] * 1000.0
-        return list(float(v) for v in pos_mm)
-    except Exception:
-        return None
+        q7 = np.zeros(7)
+        q7[:6] = np.deg2rad(current)
+        ee_pose = kin.forward_kinematics(q7)
+        ee_pos_mm = ee_pose[:3, 3] * 1000  # meters to mm
+
+        # Use the closest detection to EE as the calibration point
+        cam_pos = result.objects[0].position_cam_mm
+        arm_tracker.calibrate_cam_to_arm_from_known_point(cam_pos, ee_pos_mm)
+
+        action_log.add(
+            "CALIBRATION",
+            f"Camera-to-arm calibrated: cam={[round(x,1) for x in cam_pos]}, "
+            f"arm={[round(x,1) for x in ee_pos_mm]}",
+            "info",
+        )
+
+        return {
+            "ok": True,
+            "camera_point_mm": [round(float(x), 1) for x in cam_pos],
+            "arm_point_mm": [round(float(x), 1) for x in ee_pos_mm],
+            "message": "Camera-to-arm transform updated",
+        }
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
+# Vision Task Planning endpoints — look at camera, build a plan
+# ---------------------------------------------------------------------------
+
+
+class VisionPlanRequest(BaseModel):
+    instruction: str = Field(
+        ..., min_length=1, max_length=500, description="What to do, e.g. 'pick up the red object'"
+    )
+    camera: int = Field(default=0, ge=0, le=1, description="Camera index to use (0 or 1)")
+    execute: bool = Field(default=False, description="Execute the plan immediately if True")
+
+
+@app.post("/api/vision/plan")
+async def vision_plan(req: VisionPlanRequest):
+    """Analyze camera feed and build a task plan from an instruction."""
+    if not _HAS_VISION_PLANNING or vision_task_planner is None or scene_analyzer is None:
+        return JSONResponse(
+            {"ok": False, "error": "Vision planning module not available"}, status_code=501
+        )
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"http://localhost:8081/snap/{req.camera}")
+        if resp.status_code != 200:
+            return JSONResponse(
+                {"ok": False, "error": f"Camera {req.camera} snapshot failed"}, status_code=502
+            )
+
+        import cv2
+
+        frame = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode camera frame"}, status_code=502
+            )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"Camera error: {e}"}, status_code=502)
+
+    import time as _time
+
+    scene = scene_analyzer.analyze(frame, timestamp=_time.time())
+    action_log.add(
+        "VISION",
+        f"Scene analyzed: {scene.object_count} objects from camera {req.camera}",
+        "info",
+    )
+
+    current = _get_current_joints()
+    plan = vision_task_planner.plan(req.instruction, scene, current)
+
+    action_log.add(
+        "VISION",
+        f"Plan: {plan.action.value} -> {'OK' if plan.success else 'FAILED'}: "
+        + (plan.error or (plan.task_result.message if plan.task_result else "")),
+        "info" if plan.success else "warning",
+    )
+
+    global _active_task
+    if req.execute and plan.success and plan.trajectory:
+        if not (smoother and smoother.arm_enabled):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "Arm not enabled — plan created but not executed",
+                    "plan": plan.to_dict(),
+                    "scene": scene.to_dict(),
+                },
+                status_code=409,
+            )
+        if _active_task and not _active_task.done():
+            _active_task.cancel()
+        _active_task = asyncio.create_task(
+            _execute_trajectory(plan.trajectory, f"Vision: {plan.action.value}")
+        )
+        action_log.add("VISION", f"Executing vision plan: {plan.action.value}", "info")
+
+    return {
+        "ok": plan.success,
+        "plan": plan.to_dict(),
+        "scene": scene.to_dict(),
+        "executed": req.execute and plan.success,
+    }
+
+
+@app.post("/api/vision/analyze")
+async def vision_analyze(camera: int = 0):
+    """Analyze the current camera view and return a scene description."""
+    if not _HAS_VISION_PLANNING or scene_analyzer is None:
+        return JSONResponse(
+            {"ok": False, "error": "Vision planning module not available"}, status_code=501
+        )
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"http://localhost:8081/snap/{camera}")
+        if resp.status_code != 200:
+            return JSONResponse(
+                {"ok": False, "error": f"Camera {camera} snapshot failed"}, status_code=502
+            )
+
+        import cv2
+
+        frame = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode camera frame"}, status_code=502
+            )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"Camera error: {e}"}, status_code=502)
+
+    import time as _time
+
+    scene = scene_analyzer.analyze(frame, timestamp=_time.time())
+    action_log.add(
+        "VISION",
+        f"Scene analysis: {scene.object_count} objects from camera {camera}",
+        "info",
+    )
+
+    return {"ok": True, "scene": scene.to_dict()}
 
 
 # ---------------------------------------------------------------------------
