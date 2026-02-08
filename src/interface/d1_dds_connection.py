@@ -203,7 +203,7 @@ class D1DDSConnection:
         if not self._connected or self._writer is None:
             logger.error("Cannot send command — not connected")
             tc = self._get_collector()
-            if tc is not None and tc.enabled:
+            if tc is not None:
                 tc.emit(
                     "dds",
                     EventType.ERROR,
@@ -220,7 +220,7 @@ class D1DDSConnection:
             self._writer.write(ArmString_(data_=payload))
             logger.debug("Published command: %s", payload)
             tc = self._get_collector()
-            if tc is not None and tc.enabled:
+            if tc is not None:
                 data = cmd.get("data", {}) or {}
                 tc.log_dds_command(
                     seq=cmd.get("seq", 0),
@@ -235,7 +235,7 @@ class D1DDSConnection:
         except Exception:
             logger.exception("Failed to publish command")
             tc = self._get_collector()
-            if tc is not None and tc.enabled:
+            if tc is not None:
                 tc.emit(
                     "dds",
                     EventType.ERROR,
@@ -401,22 +401,33 @@ class D1DDSConnection:
 
     def _feedback_loop(self) -> None:
         """Continuously read feedback samples and update the cache."""
-        logger.debug("Feedback reader thread started")
+        logger.info("Feedback reader thread started")
+        _fb_count = 0
         while not self._stop_event.is_set():
             if self._reader is None:
                 break
             try:
                 samples = self._reader.take(N=32)
-                for sample in samples:
+                if _fb_count == 0 and samples:
+                    logger.info("First take() returned %d samples", len(samples))
+                elif _fb_count == 0 and not samples:
+                    pass  # normal - no data yet
+            except Exception as take_err:
+                if _fb_count == 0:
+                    logger.warning("take() exception (first): %s", take_err)
+                samples = []
+            for sample in samples:
+                _fb_count += 1
+                if _fb_count <= 3 or _fb_count % 100 == 0:
+                    logger.info("Feedback sample #%d received, data_=%s", _fb_count, getattr(sample, 'data_', 'N/A')[:100] if hasattr(sample, 'data_') else 'no data_')
+                try:
                     self._process_feedback(sample)
-            except Exception:
-                # CycloneDDS may raise on empty take depending on version;
-                # just keep polling.
-                pass
+                except Exception as e:
+                    logger.error("Error processing feedback: %s", e, exc_info=True)
 
             # Stale connection detection
             tc = self._get_collector()
-            if tc is not None and tc.enabled:
+            if tc is not None:
                 now = time.monotonic()
                 with self._cache.lock:
                     last = self._cache.last_update
@@ -448,7 +459,7 @@ class D1DDSConnection:
         seq = msg.get("seq", 0)
 
         tc = self._get_collector()
-        if tc is not None and tc.enabled:
+        if tc is not None:
             tc.log_dds_feedback(
                 seq=seq,
                 funcode=funcode,
@@ -468,7 +479,7 @@ class D1DDSConnection:
                 self._cache.joint_angles = data
                 # Detect changes for telemetry
                 if tc is not None and isinstance(data, dict):
-                    if tc.enabled and self._prev_angles is not None:
+                    if self._prev_angles is not None:
                         changed = {k: v for k, v in data.items() if self._prev_angles.get(k) != v}
                         if changed:
                             tc.emit("dds", EventType.STATE_UPDATE, {"changed": changed})
@@ -477,7 +488,7 @@ class D1DDSConnection:
                 # Status feedback
                 self._cache.status = data
                 if tc is not None and isinstance(data, dict):
-                    if tc.enabled:
+                    if tc is not None:
                         if "recv_status" in data:
                             tc.emit(
                                 "dds",

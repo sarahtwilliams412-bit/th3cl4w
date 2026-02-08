@@ -151,7 +151,7 @@ class CameraThread:
                 if self._frame_count % (self.fps * 5) == 0 and _HAS_TELEMETRY:
                     try:
                         tc = get_collector()
-                        if tc.enabled:
+                        if tc is not None:
                             tc.log_camera_health(str(self.device_id), self._health.stats)
                     except Exception:
                         pass
