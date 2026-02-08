@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import sys
 import time
 
@@ -577,9 +578,12 @@ def get_arm_state() -> Dict[str, Any]:
     if smoother and not smoother.synced:
         smoother.sync_from_feedback(angles, gripper)
 
-    # NOTE: smoother arm_enabled is ONLY changed by explicit command handlers
-    # (enable, disable, power-off, e-stop, reset). DO NOT sync from feedback here
-    # — the arm takes time to process enable commands, so feedback would race.
+    # Auto-sync enable state from DDS feedback on server restart:
+    # If DDS reports enabled but smoother doesn't know, sync it.
+    # This handles the case where server restarts while arm is already enabled.
+    if smoother and not smoother._arm_enabled and state["enabled"] and state["power"]:
+        smoother.set_arm_enabled(True)
+        action_log.add("STATE", "Auto-synced enable state from DDS feedback", "warning")
 
     # Log state transitions
     if _prev_state:
@@ -2827,6 +2831,10 @@ async def calibration_start():
     _calibration_session = None
     _calibration_error = None
 
+    # Pre-generate session_id so it's available in the response
+    import time as _time_mod
+    _calibration_runner._session_id = f"cal_{int(_time_mod.time())}"
+
     async def _run():
         global _calibration_session, _calibration_error
         try:
@@ -2957,8 +2965,34 @@ async def serve_root():
 # Main
 # ---------------------------------------------------------------------------
 
+def _write_pidfile():
+    """Write PID file for reliable process management."""
+    pidfile = Path("/tmp/th3cl4w-server.pid")
+    pidfile.write_text(str(os.getpid()))
+
+def _remove_pidfile():
+    """Remove PID file on shutdown."""
+    pidfile = Path("/tmp/th3cl4w-server.pid")
+    try:
+        pidfile.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+def _handle_sigterm(signum, frame):
+    """Graceful shutdown on SIGTERM — lets uvicorn clean up."""
+    logger.info("Received SIGTERM, initiating graceful shutdown...")
+    _remove_pidfile()
+    # Raise SystemExit so uvicorn's shutdown hooks run (lifespan cleanup)
+    raise SystemExit(0)
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+    _write_pidfile()
     logger.info(
-        "Starting th3cl4w web panel on %s:%d (simulate=%s)", args.host, args.port, args.simulate
+        "Starting th3cl4w web panel on %s:%d (simulate=%s, pid=%d)",
+        args.host, args.port, args.simulate, os.getpid(),
     )
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    try:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    finally:
+        _remove_pidfile()

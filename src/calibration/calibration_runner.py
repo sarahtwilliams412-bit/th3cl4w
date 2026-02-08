@@ -259,7 +259,8 @@ class CalibrationRunner:
         """
         self._running = True
         self._abort = False
-        self._session_id = f"cal_{int(time.time())}"
+        if self._session_id is None:
+            self._session_id = f"cal_{int(time.time())}"
         session = CalibrationSession(
             start_time=time.time(),
             total_poses=len(CALIBRATION_POSES),
