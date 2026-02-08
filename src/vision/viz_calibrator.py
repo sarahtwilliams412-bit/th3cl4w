@@ -23,18 +23,6 @@ from scipy.optimize import least_squares
 
 logger = logging.getLogger("th3cl4w.viz_calibrator")
 
-<<<<<<< HEAD
-# Default link lengths and offsets (fallback / initial guess)
-DEFAULT_LINKS_MM = {
-    "base": 80,
-    "shoulder": 170,
-    "elbow": 170,
-    "wrist1": 60,
-    "wrist2": 60,
-    "end": 50,
-}
-DEFAULT_OFFSETS = [0, 90, 90, 0, 0, 0]
-=======
 # ---------------------------------------------------------------------------
 # DH parameters (from src/kinematics/kinematics.py) — FIXED, not optimized
 # ---------------------------------------------------------------------------
@@ -43,7 +31,6 @@ DH_D = [0.1215, 0.0, 0.2085, 0.0, 0.2085, 0.0, 0.1130]  # meters
 DH_A = [0.0] * 7
 DH_ALPHA = [-np.pi/2, np.pi/2, -np.pi/2, np.pi/2, -np.pi/2, np.pi/2, 0.0]
 DH_THETA_OFFSET = [0.0] * 7
->>>>>>> origin/main
 
 # Safety: joint limits with 5° margin
 JOINT_LIMITS = {
@@ -53,21 +40,12 @@ JOINT_LIMITS = {
     4: (-85.0, 85.0),
 }
 
-<<<<<<< HEAD
-# Progressive calibration config
-PITCH_JOINTS = [1, 2, 4]  # joints that affect side-view
-ANGLE_INCREMENT = 5  # degrees per round
-MAX_ANGLE = 45  # maximum angle to reach
-CONVERGENCE_THRESHOLD = 50.0  # average px residual to consider "good"
-STABLE_ROUNDS_NEEDED = 2  # rounds residual must be stable to stop
-=======
 # Calibration joints — now includes J0
 CALIBRATION_JOINTS = [1, 2, 4]  # pitch joints for initial calibration
 ANGLE_INCREMENT = 5
 MAX_ANGLE = 45
 CONVERGENCE_THRESHOLD = 20.0  # px average residual
 STABLE_ROUNDS_NEEDED = 2
->>>>>>> origin/main
 
 CAMERA_URLS = {
     0: "http://localhost:8081/snap/0",  # overhead
@@ -77,9 +55,7 @@ ARM_API = "http://localhost:8080"
 SETTLE_TIME = 1.5
 MOVE_STEP_DEG = 10.0
 
-OUTPUT_PATH = (
-    Path(__file__).resolve().parent.parent.parent / "web" / "static" / "v1" / "viz_calibration.json"
-)
+OUTPUT_PATH = Path(__file__).resolve().parent.parent.parent / "web" / "static" / "v1" / "viz_calibration.json"
 
 # Key joint frames to track (indices into get_joint_positions_3d output, 0=base, 1-7=joints, 8 would be EE but we have 0..7)
 # base=0, after_J1=1, after_J2=2, after_J3=3 (elbow region), after_J4=4, after_J5=5, after_J6=6, after_J7=7(EE)
@@ -278,32 +254,17 @@ class ArmDetector:
 
 @dataclass
 class PoseObservation:
-<<<<<<< HEAD
-    """A single calibration observation."""
-
-    joint_angles: List[float]
-    end_effector_px: Optional[Tuple[int, int]] = None
-    joint_positions_px: Optional[List[Optional[Tuple[int, int]]]] = None
-=======
     joint_angles: List[float]  # 6 or 7 angles in degrees
     cam0_landmarks: Dict[str, Optional[Tuple[int, int]]] = field(default_factory=dict)
     cam1_landmarks: Dict[str, Optional[Tuple[int, int]]] = field(default_factory=dict)
->>>>>>> origin/main
     timestamp: float = 0.0
 
 
 @dataclass
 class CalibrationResult:
-<<<<<<< HEAD
-    """Result of the calibration optimization."""
-
-    links_mm: Dict[str, float]
-    joint_viz_offsets: List[float]
-=======
     cam1_params: Dict[str, Any]  # {fx, fy, cx, cy, R, t}
     cam0_params: Optional[Dict[str, Any]]  # overhead camera
     theta_offsets: List[float]  # 7 DH theta offsets in radians
->>>>>>> origin/main
     residual: float
     n_observations: int
     n_constraints: int
@@ -311,11 +272,6 @@ class CalibrationResult:
     message: str = ""
 
 
-<<<<<<< HEAD
-def fk_2d(
-    joint_angles: List[float], links: List[float], offsets: List[float]
-) -> List[Tuple[float, float]]:
-=======
 # ---------------------------------------------------------------------------
 # Solver
 # ---------------------------------------------------------------------------
@@ -332,7 +288,6 @@ def _rodrigues(rvec):
 
 
 def _params_to_cameras(params, n_cams=2):
->>>>>>> origin/main
     """
     Unpack parameter vector into camera params and theta offsets.
     
@@ -620,19 +575,10 @@ async def get_arm_state() -> Optional[Dict]:
     return None
 
 
-<<<<<<< HEAD
-async def move_joint_slowly(
-    joint_id: int, target_deg: float, api_base: str = ARM_API, step_deg: float = MOVE_STEP_DEG
-) -> bool:
-    """Move a single joint slowly in increments."""
-    state = await get_arm_state(api_base)
-    if state is None:
-=======
 async def move_joint_slowly(joint_id: int, target_angle: float, step_deg: float = MOVE_STEP_DEG):
     """Move a single joint incrementally to target angle."""
     state = await get_arm_state()
     if not state:
->>>>>>> origin/main
         return False
     
     current = state.get('joints', [0]*6)
@@ -672,115 +618,11 @@ async def move_to_home():
 # Progressive pose generation
 # ---------------------------------------------------------------------------
 
-<<<<<<< HEAD
-
-def solve_calibration(
-    observations: List[PoseObservation], image_shape: Tuple[int, int] = (1080, 1920)
-) -> CalibrationResult:
-=======
 def generate_round_poses(round_num: int) -> List[List[float]]:
->>>>>>> origin/main
     """
     Generate poses for round N (1-indexed).
     Each round tests each calibration joint at ±(N * ANGLE_INCREMENT).
     """
-<<<<<<< HEAD
-    valid_obs = [o for o in observations if o.end_effector_px is not None]
-    if len(valid_obs) < 5:
-        return CalibrationResult(
-            links_mm=DEFAULT_LINKS_MM.copy(),
-            joint_viz_offsets=list(DEFAULT_OFFSETS),
-            residual=-1.0,
-            n_observations=len(valid_obs),
-            success=False,
-            message=f"Not enough valid observations ({len(valid_obs)} < 5)",
-        )
-
-    h, w = image_shape
-
-    link_names = ["base", "shoulder", "elbow", "wrist1", "wrist2", "end"]
-    x0 = np.array(
-        [
-            DEFAULT_LINKS_MM["base"],
-            DEFAULT_LINKS_MM["shoulder"],
-            DEFAULT_LINKS_MM["elbow"],
-            DEFAULT_LINKS_MM["wrist1"],
-            DEFAULT_LINKS_MM["wrist2"],
-            DEFAULT_LINKS_MM["end"],
-            DEFAULT_OFFSETS[1],  # off1
-            DEFAULT_OFFSETS[2],  # off2
-            DEFAULT_OFFSETS[4],  # off4
-            w / 900.0,  # sx
-            h / 900.0,  # sy
-            w * 0.35,  # tx
-            h * 0.85,  # ty
-        ]
-    )
-
-    def residuals(params):
-        links = list(params[:6])
-        offsets = [0, params[6], params[7], 0, params[8], 0]
-        sx, sy, tx, ty = params[9], params[10], params[11], params[12]
-
-        total = 0.0
-        for obs in valid_obs:
-            fk_pts = fk_2d(obs.joint_angles, links, offsets)
-            ee_fk = fk_pts[-1]
-            pred_px = sx * ee_fk[0] + tx
-            pred_py = -sy * ee_fk[1] + ty
-
-            obs_px, obs_py = obs.end_effector_px
-            total += (pred_px - obs_px) ** 2 + (pred_py - obs_py) ** 2
-
-        return total
-
-    bounds = [
-        (10, 300),
-        (50, 400),
-        (50, 400),
-        (10, 200),
-        (10, 200),
-        (10, 200),  # links
-        (-180, 180),
-        (-180, 180),
-        (-180, 180),  # offsets
-        (0.1, 10),
-        (0.1, 10),  # scale
-        (0, w),
-        (0, h),  # translation
-    ]
-
-    result = minimize(
-        residuals,
-        x0,
-        method="L-BFGS-B",
-        bounds=bounds,
-        options={"maxiter": 10000, "maxfun": 50000, "ftol": 1e-10},
-    )
-
-    p = result.x
-    links_mm = {name: round(float(p[i]), 1) for i, name in enumerate(link_names)}
-    offsets = [0, round(float(p[6]), 1), round(float(p[7]), 1), 0, round(float(p[8]), 1), 0]
-    camera_params = {
-        "sx": round(float(p[9]), 4),
-        "sy": round(float(p[10]), 4),
-        "tx": round(float(p[11]), 1),
-        "ty": round(float(p[12]), 1),
-    }
-
-    # Compute average per-observation residual in pixels
-    avg_residual = math.sqrt(result.fun / len(valid_obs)) if valid_obs else 0.0
-
-    return CalibrationResult(
-        links_mm=links_mm,
-        joint_viz_offsets=offsets,
-        residual=round(avg_residual, 2),
-        n_observations=len(valid_obs),
-        camera_params=camera_params,
-        success=result.success,
-        message=result.message if hasattr(result, "message") else "",
-    )
-=======
     angle = round_num * ANGLE_INCREMENT
     poses = []
     for jid in CALIBRATION_JOINTS:
@@ -792,7 +634,6 @@ def generate_round_poses(round_num: int) -> List[List[float]]:
                 pose[jid] = target
                 poses.append(pose)
     return poses
->>>>>>> origin/main
 
 
 def max_rounds() -> int:
@@ -832,43 +673,6 @@ async def run_calibration(
     for cam_id in [0, 1]:
         frame = await capture_snapshot(cam_id)
         if frame is not None:
-<<<<<<< HEAD
-            image_shape = frame.shape[:2]
-            state = await get_arm_state(api_base)
-            if state is not None:
-                ee_px = detect_end_effector(frame)
-                observations.append(
-                    PoseObservation(
-                        joint_angles=state["joints"],
-                        end_effector_px=ee_px,
-                        joint_positions_px=detect_arm_joints(frame),
-                        timestamp=time.time(),
-                    )
-                )
-
-        for round_num in range(1, n_rounds + 1):
-            round_poses = generate_round_poses(round_num)
-
-            for pose in round_poses:
-                poses_done += 1
-                if progress_callback:
-                    progress_callback(
-                        poses_done, total_poses_planned, f"Round {round_num}: pose {poses_done}"
-                    )
-
-                logger.info("Round %d — pose %s", round_num, pose)
-
-                # Move to pose
-                ok = await move_to_pose(pose, api_base)
-                if not ok:
-                    reason = "move failed"
-                    logger.warning("Skipping pose %s — %s", pose, reason)
-                    skipped_poses.append((round_num, pose, reason))
-                    await return_home(api_base)
-                    await asyncio.sleep(1.0)
-                    continue
-
-=======
             detector.set_home_frame(cam_id, frame)
             image_shapes[cam_id] = (frame.shape[0], frame.shape[1])
             logger.info("Home frame captured for cam%d: %dx%d", cam_id, frame.shape[1], frame.shape[0])
@@ -930,7 +734,6 @@ async def run_calibration(
             if not move_ok:
                 logger.warning("Skipping pose %s — move failed", pose)
                 await move_to_home()
->>>>>>> origin/main
                 await asyncio.sleep(SETTLE_TIME)
                 continue
             
@@ -951,46 +754,6 @@ async def run_calibration(
                     await move_to_home()
                     await asyncio.sleep(SETTLE_TIME)
                     continue
-<<<<<<< HEAD
-
-                # Get actual state and capture
-                state = await get_arm_state(api_base)
-                if state is None:
-                    await return_home(api_base)
-                    continue
-
-                frame = await capture_snapshot(camera_url)
-                if frame is None:
-                    logger.warning("Skipping pose %s — capture failed", pose)
-                    skipped_poses.append((round_num, pose, "capture failed"))
-                    await return_home(api_base)
-                    continue
-
-                image_shape = frame.shape[:2]
-                ee_px = detect_end_effector(frame)
-
-                observations.append(
-                    PoseObservation(
-                        joint_angles=state["joints"],
-                        end_effector_px=ee_px,
-                        joint_positions_px=detect_arm_joints(frame),
-                        timestamp=time.time(),
-                    )
-                )
-                logger.info("  Detected EE: %s", ee_px)
-
-                # Return home between poses
-                await return_home(api_base)
-                await asyncio.sleep(0.5)
-
-            # --- Self-assessment after this round ---
-            result = solve_calibration(observations, image_shape)
-            residual = result.residual if result.success else -1.0
-            n_valid = result.n_observations
-
-            if result.success and prev_residual is not None:
-                if abs(residual - prev_residual) < 5.0 and residual < CONVERGENCE_THRESHOLD:
-=======
             
             # Capture from both cameras and detect landmarks
             obs = PoseObservation(joint_angles=pose, timestamp=time.time())
@@ -1028,7 +791,6 @@ async def run_calibration(
             
             if result.residual > 0 and result.residual < CONVERGENCE_THRESHOLD:
                 if abs(result.residual - prev_residual) < 5.0:
->>>>>>> origin/main
                     stable_count += 1
                 else:
                     stable_count = 0
@@ -1039,46 +801,6 @@ async def run_calibration(
                     break
             else:
                 stable_count = 0
-<<<<<<< HEAD
-
-            converged = stable_count >= STABLE_ROUNDS_NEEDED
-            status = "converged — stopping" if converged else "continuing"
-            logger.info(
-                "Round %d complete: %d observations, residual %.1fpx, %s",
-                round_num,
-                n_valid,
-                residual,
-                status,
-            )
-
-            if converged:
-                break
-
-            prev_residual = residual
-
-    finally:
-        if progress_callback:
-            progress_callback(total_poses_planned, total_poses_planned, "Returning home")
-        await return_home(api_base)
-
-    # Final solve
-    if progress_callback:
-        progress_callback(total_poses_planned, total_poses_planned, "Solving optimization")
-
-    result = solve_calibration(observations, image_shape)
-
-    if skipped_poses:
-        logger.info(
-            "Skipped %d poses: %s",
-            len(skipped_poses),
-            [(r, p, reason) for r, p, reason in skipped_poses],
-        )
-
-    if result.success:
-        save_calibration(result)
-
-    return result
-=======
             
             prev_residual = result.residual if result.residual > 0 else prev_residual
             best_result = result
@@ -1107,4 +829,3 @@ async def run_calibration(
                 best_result.residual, best_result.n_observations, best_result.n_constraints)
     
     return best_result
->>>>>>> origin/main
