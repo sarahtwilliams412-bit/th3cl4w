@@ -215,6 +215,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="control">CONTROL</button>
     <button class="tab-btn" data-tab="ascii">ASCII VIDEO <span class="beta-pill">BETA</span></button>
+    <button class="tab-btn" data-tab="factory">FACTORY 3D <span class="beta-pill">BETA</span></button>
+    <button class="tab-btn" data-tab="realworld">REAL WORLD 3D <span class="beta-pill">BETA</span></button>
   </div>
   <button class="btn" id="btnDebug" style="font-size:10px;padding:3px 8px">🔧 DEBUG</button>
   <button class="btn" id="btnCalibrateViz" style="font-size:10px;padding:3px 8px" title="Calibrate arm visualization using camera">📐 CALIBRATE VIZ</button>
@@ -287,11 +289,35 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 
       <button class="estop" id="btnEstop">⚠ EMERGENCY STOP</button>
 
+      <div class="section-title">3D Tracking Status</div>
+      <div id="calibStatusPanel" style="font-size:11px;color:#8899aa;padding:4px 0;line-height:1.6">
+        <span id="calibCams">Cameras: --</span><br>
+        <span id="calibLoaded">Calibration: --</span><br>
+        <span id="calibQuality">Tracking: --</span>
+      </div>
+
       <div class="section-title">Raw Command</div>
       <div class="raw-cmd">
         <input type="text" id="rawInput" placeholder='{"action":"set-joint","id":0,"angle":45}'>
         <button class="btn" id="btnRawSend">Send</button>
       </div>
+
+      <!-- Calibration Comparison Section -->
+      <div style="margin-top:10px;padding:8px;background:var(--card);border:1px solid var(--card-border);border-radius:4px;">
+        <div class="section-title">LLM/CV Calibration</div>
+        <div style="display:flex;gap:6px;margin-top:4px;">
+          <button class="btn" id="btnStartCalib" style="flex:1">START CALIBRATION</button>
+          <button class="btn" id="btnStopCalib" style="flex:1;border-color:var(--warning);color:var(--warning)" disabled>STOP</button>
+        </div>
+        <div id="calibProgress" style="display:none;margin-top:6px;font-size:11px;color:var(--text-dim);">
+          <div>Pose <span id="calibCurrent">0</span> / <span id="calibTotal">20</span></div>
+          <div style="background:#1a2744;border-radius:3px;height:6px;margin-top:4px;overflow:hidden;">
+            <div id="calibProgressBar" style="background:var(--info);height:100%;width:0%;transition:width 0.3s;"></div>
+          </div>
+        </div>
+        <div id="calibResults" style="display:none;margin-top:6px;font-size:11px;color:var(--text-dim);max-height:150px;overflow-y:auto;white-space:pre-wrap;font-family:var(--mono);"></div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -313,6 +339,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <button class="ascii-toggle" id="ascColor">COLOR</button>
     <button class="ascii-toggle on" id="ascInvert">INVERT</button>
     <button class="ascii-toggle" id="ascPause">PAUSE</button>
+    <button class="ascii-toggle" id="ascFkOverlay" title="Show FK joint overlay on ASCII frames">FK OVERLAY</button>
   </div>
   <div class="ascii-status-bar">
     <span class="ascii-status-dot" id="ascDot0"></span>
@@ -335,6 +362,14 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   </div>
 </div>
 </div><!-- /tabAscii -->
+
+<div class="tab-content" id="tabFactory" style="position:relative;background:#000;">
+  <canvas id="factoryCanvas" tabindex="0" style="display:block;width:100%;height:100%;image-rendering:pixelated;outline:none;"></canvas>
+</div><!-- /tabFactory -->
+
+<div class="tab-content" id="tabRealworld" style="position:relative;background:#000;">
+  <canvas id="realworldCanvas" tabindex="0" style="display:block;width:100%;height:100%;image-rendering:pixelated;outline:none;"></canvas>
+</div><!-- /tabRealworld -->
 
 <div class="debug-panel" id="debugPanel" style="display:none">
   <div class="debug-section">
@@ -1309,174 +1344,151 @@ function dismissCollision() {
 //  TAB SWITCHING
 // ============================================================
 
+window._activeTab = 'control';
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    const prevTab = window._activeTab;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     btn.classList.add('active');
     const tab = btn.dataset.tab;
-    document.getElementById(tab === 'ascii' ? 'tabAscii' : 'tabControl').classList.add('active');
-    if (tab === 'ascii') { asciiConnect(); }
-    else { asciiDisconnect(); }
-    if (tab === 'control') setTimeout(resizeCanvas, 50);
+    window._activeTab = tab;
+    const tabMap = { control: 'tabControl', ascii: 'tabAscii', factory: 'tabFactory', realworld: 'tabRealworld' };
+    document.getElementById(tabMap[tab] || 'tabControl').classList.add('active');
+
+    // Disconnect everything from previous tab
+    if (prevTab === 'ascii' && typeof asciiDisconnect === 'function') asciiDisconnect();
+    if (prevTab === 'factory' && typeof fw_deactivate === 'function') fw_deactivate();
+    if (prevTab === 'realworld' && typeof rw_deactivate === 'function') rw_deactivate();
+
+    // Connect new tab after DOM settles
+    setTimeout(() => {
+      if (tab === 'ascii' && typeof asciiConnect === 'function') asciiConnect();
+      if (tab === 'control') resizeCanvas();
+      if (tab === 'factory' && typeof fw_activate === 'function') fw_activate();
+      if (tab === 'realworld' && typeof rw_activate === 'function') rw_activate();
+    }, 100);
   });
 });
 
-// ============================================================
-//  ASCII VIDEO TAB — Dual Camera
-// ============================================================
+// ASCII Video engine loaded from ascii-video.js
 
-(function() {
-  const ascWs = [null, null]; // two WebSocket connections
-  const ascReconnectTimers = [null, null];
-  let ascPaused = false;
-  let ascColorMode = false;
-  let ascInvertMode = true;
-  let ascFrameCount = 0;
-  let ascLastFpsTime = performance.now();
+// --- Calibration Status Fetcher (for Control tab) ---
+(function(){
+  const calibCams = document.getElementById('calibCams');
+  const calibLoaded = document.getElementById('calibLoaded');
+  const calibQuality = document.getElementById('calibQuality');
+  let calibInterval = null;
 
-  const ascOutputs = [document.getElementById('asciiOutput0'), document.getElementById('asciiOutput1')];
-  const ascDots = [document.getElementById('ascDot0'), document.getElementById('ascDot1')];
-  const ascFpsEl = document.getElementById('ascFps');
-
-  function ascSettings(camId) {
-    return {
-      type: 'settings',
-      cam: camId,
-      charset: document.getElementById('ascCharset').value,
-      width: parseInt(document.getElementById('ascWidth').value) || 320,
-      height: parseInt(document.getElementById('ascHeight').value) || 140,
-      color: ascColorMode,
-      invert: ascInvertMode
-    };
+  function fetchCalibStatus(){
+    fetch('/api/arm3d/status').then(r=>r.json()).then(d=>{
+      if(calibCams) calibCams.textContent = 'Cameras: '+(d.cameras_connected!=null?d.cameras_connected:'--');
+      if(calibLoaded) calibLoaded.textContent = 'Calibration: '+(d.calibration_loaded?'✅ Loaded':'❌ Not loaded');
+      if(calibQuality) calibQuality.textContent = 'Tracking: '+(d.tracking_quality||d.source||'--');
+    }).catch(()=>{
+      if(calibCams) calibCams.textContent = 'Cameras: N/A';
+      if(calibLoaded) calibLoaded.textContent = 'Calibration: N/A';
+      if(calibQuality) calibQuality.textContent = 'Tracking: N/A';
+    });
   }
 
-  function ascSendSettings(camId) {
-    if (ascWs[camId] && ascWs[camId].readyState === 1) {
-      ascWs[camId].send(JSON.stringify(ascSettings(camId)));
-    }
-  }
-
-  function ascSendAllSettings() {
-    ascSendSettings(0);
-    ascSendSettings(1);
-  }
-
-  function renderFrame(camId, data) {
-    const out = ascOutputs[camId];
-    if (data.colors && ascColorMode) {
-      out.classList.add('color-mode');
-      out.innerHTML = '';
-      const frag = document.createDocumentFragment();
-      for (let y = 0; y < data.lines.length; y++) {
-        const line = data.lines[y], rowC = data.colors[y];
-        for (let x = 0; x < line.length; x++) {
-          const sp = document.createElement('span');
-          const c = rowC[x];
-          sp.style.color = `rgb(${c[0]},${c[1]},${c[2]})`;
-          sp.textContent = line[x];
-          frag.appendChild(sp);
-        }
-        frag.appendChild(document.createTextNode('\n'));
-      }
-      out.appendChild(frag);
+  // Poll every 5 seconds when control tab is visible
+  const observer = new MutationObserver(()=>{
+    const ctrl = document.getElementById('tabControl');
+    if(ctrl && ctrl.classList.contains('active')){
+      if(!calibInterval){fetchCalibStatus();calibInterval=setInterval(fetchCalibStatus,5000);}
     } else {
-      out.classList.remove('color-mode');
-      out.textContent = data.lines.join('\n');
+      if(calibInterval){clearInterval(calibInterval);calibInterval=null;}
     }
-  }
+  });
+  const tabCtrl = document.getElementById('tabControl');
+  if(tabCtrl) observer.observe(tabCtrl,{attributes:true,attributeFilter:['class']});
+  // Initial fetch
+  fetchCalibStatus();
+})();
 
-  function connectCam(camId) {
-    if (ascWs[camId] && ascWs[camId].readyState <= 1) return;
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ascWs[camId] = new WebSocket(`${proto}//${location.host}/ws/ascii`);
-    ascDots[camId].className = 'ascii-status-dot';
+// ============================================================
+//  LLM/CV CALIBRATION UI
+// ============================================================
+(function(){
+  const btnStart = document.getElementById('btnStartCalib');
+  const btnStop = document.getElementById('btnStopCalib');
+  const progress = document.getElementById('calibProgress');
+  const calibCur = document.getElementById('calibCurrent');
+  const calibTot = document.getElementById('calibTotal');
+  const progressBar = document.getElementById('calibProgressBar');
+  const resultsDiv = document.getElementById('calibResults');
+  let pollTimer = null;
 
-    ascWs[camId].onopen = () => {
-      ascDots[camId].className = 'ascii-status-dot on';
-      ascWs[camId].send(JSON.stringify(ascSettings(camId)));
-    };
-    ascWs[camId].onclose = () => {
-      ascDots[camId].className = 'ascii-status-dot';
-      ascWs[camId] = null;
-      if (document.getElementById('tabAscii').classList.contains('active')) {
-        ascReconnectTimers[camId] = setTimeout(() => connectCam(camId), 2000);
-      }
-    };
-    ascWs[camId].onerror = () => {
-      ascDots[camId].className = 'ascii-status-dot err';
-    };
-    ascWs[camId].onmessage = (evt) => {
-      if (ascPaused) return;
-      const data = JSON.parse(evt.data);
-      if (data.type === 'frame') {
-        renderFrame(camId, data);
-        ascFrameCount++;
-        const now = performance.now();
-        if (now - ascLastFpsTime >= 1000) {
-          ascFpsEl.textContent = (ascFrameCount / ((now - ascLastFpsTime) / 1000)).toFixed(1) + ' fps';
-          ascFrameCount = 0;
-          ascLastFpsTime = now;
+  if(btnStart) btnStart.addEventListener('click', async ()=>{
+    if(!confirm('Start LLM/CV calibration comparison? The arm will move through ~20 poses.')) return;
+    btnStart.disabled = true; btnStop.disabled = false;
+    progress.style.display = 'block'; resultsDiv.style.display = 'none';
+    try {
+      const r = await fetch('/api/calibration/start', {method:'POST'});
+      const d = await r.json();
+      if(d.ok) { startPolling(d.session_id); }
+      else { alert('Failed: '+(d.error||'unknown')); btnStart.disabled=false; btnStop.disabled=true; }
+    } catch(e) { alert('Error: '+e); btnStart.disabled=false; btnStop.disabled=true; }
+  });
+
+  if(btnStop) btnStop.addEventListener('click', async ()=>{
+    await fetch('/api/calibration/abort', {method:'POST'});
+    stopPolling(); btnStart.disabled=false; btnStop.disabled=true;
+  });
+
+  function startPolling(sessionId){
+    pollTimer = setInterval(async ()=>{
+      try {
+        const r = await fetch('/api/calibration/status');
+        const d = await r.json();
+        calibCur.textContent = d.current_pose || 0;
+        calibTot.textContent = d.total_poses || 20;
+        const pct = d.total_poses ? ((d.current_pose||0)/d.total_poses*100) : 0;
+        progressBar.style.width = pct+'%';
+        if(d.status === 'complete' || d.status === 'failed'){
+          stopPolling(); btnStart.disabled=false; btnStop.disabled=true;
+          if(d.status === 'complete' && sessionId) showResults(sessionId);
+          else if(d.status === 'failed') { resultsDiv.style.display='block'; resultsDiv.textContent='Calibration failed: '+(d.error||''); }
         }
-      }
-    };
+      } catch(e){}
+    }, 1000);
   }
 
-  function disconnectCam(camId) {
-    if (ascReconnectTimers[camId]) { clearTimeout(ascReconnectTimers[camId]); ascReconnectTimers[camId] = null; }
-    if (ascWs[camId]) { ascWs[camId].onclose = null; ascWs[camId].close(); ascWs[camId] = null; }
-    ascDots[camId].className = 'ascii-status-dot';
+  function stopPolling(){ if(pollTimer){clearInterval(pollTimer);pollTimer=null;} }
+
+  async function showResults(sessionId){
+    try {
+      const r = await fetch('/api/calibration/report/'+sessionId+'/json');
+      const d = await r.json();
+      resultsDiv.style.display = 'block';
+      let txt = `Recommendation: ${d.recommendation||'?'}\n`;
+      txt += `Poses: ${d.total_poses}, Cost: $${(d.total_llm_cost_usd||0).toFixed(4)}\n`;
+      if(d.joints) d.joints.forEach(j=>{
+        txt += `${j.name}: CV ${(j.cv_detection_rate*100).toFixed(0)}% LLM ${(j.llm_detection_rate*100).toFixed(0)}%\n`;
+      });
+      resultsDiv.textContent = txt;
+    } catch(e){ resultsDiv.style.display='block'; resultsDiv.textContent='Could not load report'; }
   }
+})();
 
-  window.asciiConnect = function() {
-    connectCam(0);
-    connectCam(1);
-    ascFitFont();
-  };
-
-  window.asciiDisconnect = function() {
-    disconnectCam(0);
-    disconnectCam(1);
-    ascFpsEl.textContent = '-- fps';
-  };
-
-  function ascFitFont() {
-    const vp = document.getElementById('asciiViewport');
-    if (!vp) return;
-    const w = parseInt(document.getElementById('ascWidth').value) || 320;
-    const h = parseInt(document.getElementById('ascHeight').value) || 140;
-    // Each pane gets half the viewport width (minus divider + gaps)
-    const maxW = (vp.clientWidth - 40) / 2;
-    const maxH = vp.clientHeight - 40;
-    const sizeByW = maxW / (w * 0.62);
-    const sizeByH = maxH / (h * 1.15);
-    const sz = Math.max(4, Math.min(16, Math.floor(Math.min(sizeByW, sizeByH)))) + 'px';
-    ascOutputs[0].style.fontSize = sz;
-    ascOutputs[1].style.fontSize = sz;
-  }
-
-  document.getElementById('ascCharset').addEventListener('change', ascSendAllSettings);
-  document.getElementById('ascWidth').addEventListener('change', () => { ascFitFont(); ascSendAllSettings(); });
-  document.getElementById('ascHeight').addEventListener('change', () => { ascFitFont(); ascSendAllSettings(); });
-
-  document.getElementById('ascColor').addEventListener('click', function() {
-    ascColorMode = !ascColorMode;
-    this.classList.toggle('on', ascColorMode);
-    ascSendAllSettings();
+// ============================================================
+//  PERFORMANCE MONITORING
+// ============================================================
+(function() {
+  const loadTime = performance.now();
+  window.addEventListener('load', () => {
+    console.log(`[perf] Page loaded in ${(performance.now()).toFixed(0)}ms`);
+    setInterval(() => {
+      const wsCount = typeof WSManager !== 'undefined' ? WSManager.activeCount : '?';
+      console.log(`[perf] Active WebSockets: ${wsCount} | Tab: ${window._activeTab || 'control'}`);
+    }, 10000);
   });
-  document.getElementById('ascInvert').addEventListener('click', function() {
-    ascInvertMode = !ascInvertMode;
-    this.classList.toggle('on', ascInvertMode);
-    ascSendAllSettings();
-  });
-  document.getElementById('ascPause').addEventListener('click', function() {
-    ascPaused = !ascPaused;
-    this.classList.toggle('on', ascPaused);
-    this.textContent = ascPaused ? 'RESUME' : 'PAUSE';
-  });
-
-  window.addEventListener('resize', ascFitFont);
 })();
 </script>
+<script src="ws-manager.js"></script>
+<script defer src="ascii-video.js"></script>
+<script defer src="factory3d.js"></script>
+<script defer src="realworld3d.js"></script>
 </body>
 </html>
