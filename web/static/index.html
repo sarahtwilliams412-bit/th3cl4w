@@ -148,6 +148,32 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .de-ERROR { color: #e94560; }
 .de-CAM_FRAME { color: #888; }
 
+/* === Tabs === */
+.tab-bar { display: flex; gap: 0; margin-left: 16px; }
+.tab-btn { font-family: var(--mono); font-size: 11px; padding: 6px 14px; border: 1px solid transparent; border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; background: transparent; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; transition: all 0.15s; position: relative; top: 1px; }
+.tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.tab-btn.active { background: var(--bg); color: var(--text); border-color: var(--card-border); }
+.tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.tab-content.active { display: flex; }
+.beta-pill { font-size: 8px; padding: 1px 5px; border-radius: 8px; background: rgba(240,173,78,0.2); color: var(--warning); margin-left: 6px; vertical-align: middle; font-weight: 700; letter-spacing: 0.5px; }
+
+/* === ASCII Tab === */
+.ascii-tab-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.ascii-controls-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--card); border-bottom: 1px solid var(--card-border); flex-wrap: wrap; flex-shrink: 0; }
+.ascii-controls-bar label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+.ascii-controls-bar select, .ascii-controls-bar input[type="number"] { font-family: var(--mono); font-size: 11px; padding: 3px 6px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 3px; color: var(--text); }
+.ascii-controls-bar input[type="number"] { width: 50px; }
+.ascii-toggle { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border: 1px solid var(--card-border); border-radius: 3px; cursor: pointer; background: var(--card); color: var(--text-dim); transition: all 0.15s; }
+.ascii-toggle:hover { background: var(--primary); }
+.ascii-toggle.on { background: #0a3d20; border-color: var(--success); color: var(--success); }
+.ascii-status-bar { display: flex; align-items: center; gap: 12px; padding: 4px 12px; background: #0d1117; border-bottom: 1px solid var(--card-border); font-family: var(--mono); font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+.ascii-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #666; }
+.ascii-status-dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.ascii-status-dot.err { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+.ascii-viewport { flex: 1; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 8px; }
+#asciiOutput { white-space: pre; line-height: 1.1; letter-spacing: 0.5px; color: #88cc88; text-align: center; user-select: text; font-family: var(--mono); }
+#asciiOutput.color-mode { color: unset; }
+
 /* === Responsive === */
 @media (max-width: 800px) {
   .main { flex-direction: column; }
@@ -182,6 +208,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="conn-dot" id="connDot"></div>
   <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">DISCONNECTED</span>
   <span class="conn-quality" id="connQuality"></span>
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="control">CONTROL</button>
+    <button class="tab-btn" data-tab="ascii">ASCII VIDEO <span class="beta-pill">BETA</span></button>
+  </div>
   <button class="btn" id="btnDebug" style="font-size:10px;padding:3px 8px">🔧 DEBUG</button>
   <button class="btn" id="btnCalibrateViz" style="font-size:10px;padding:3px 8px" title="Calibrate arm visualization using camera">📐 CALIBRATE VIZ</button>
   <a href="/telemetry" class="btn" style="font-size:10px;padding:3px 8px;text-decoration:none">📊 TELEMETRY</a>
@@ -191,6 +221,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="badge" id="badgeError">NO ERR</div>
 </div>
 
+<div class="tab-content active" id="tabControl">
 <div class="main">
   <div class="panel-left">
     <div class="viz-container">
@@ -265,6 +296,34 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="log-title">Action Log</div>
   <div class="log-scroll" id="logScroll"></div>
 </div>
+
+</div><!-- /tabControl -->
+
+<div class="tab-content" id="tabAscii">
+<div class="ascii-tab-wrap">
+  <div class="ascii-controls-bar">
+    <label>CAM</label>
+    <button class="ascii-toggle on" id="ascCam0" data-cam="0">0</button>
+    <button class="ascii-toggle" id="ascCam1" data-cam="1">1</button>
+    <label>CHARS</label>
+    <select id="ascCharset"><option value="standard">Standard</option><option value="detailed">Detailed</option><option value="blocks">Blocks</option><option value="minimal">Minimal</option></select>
+    <label>W</label><input type="number" id="ascWidth" value="120" min="20" max="300" step="10">
+    <label>H</label><input type="number" id="ascHeight" value="40" min="10" max="120" step="5">
+    <button class="ascii-toggle" id="ascColor">COLOR</button>
+    <button class="ascii-toggle on" id="ascInvert">INVERT</button>
+    <button class="ascii-toggle" id="ascPause">PAUSE</button>
+  </div>
+  <div class="ascii-status-bar">
+    <span class="ascii-status-dot" id="ascDot"></span>
+    <span id="ascStatusText">Idle</span>
+    <span style="flex:1"></span>
+    <span id="ascFps">-- fps</span>
+  </div>
+  <div class="ascii-viewport" id="asciiViewport">
+    <pre id="asciiOutput">Switch to this tab to start ASCII stream</pre>
+  </div>
+</div>
+</div><!-- /tabAscii -->
 
 <div class="debug-panel" id="debugPanel" style="display:none">
   <div class="debug-section">
@@ -1234,6 +1293,172 @@ function showCollisionAlert(data) {
 function dismissCollision() {
   document.getElementById('collisionAlert').classList.remove('visible');
 }
+
+// ============================================================
+//  TAB SWITCHING
+// ============================================================
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById(tab === 'ascii' ? 'tabAscii' : 'tabControl').classList.add('active');
+    if (tab === 'ascii') { asciiConnect(); }
+    else { asciiDisconnect(); }
+    if (tab === 'control') setTimeout(resizeCanvas, 50);
+  });
+});
+
+// ============================================================
+//  ASCII VIDEO TAB
+// ============================================================
+
+(function() {
+  let ascWs = null;
+  let ascPaused = false;
+  let ascColorMode = false;
+  let ascInvertMode = true;
+  let ascCam = 0;
+  let ascFrameCount = 0;
+  let ascLastFpsTime = performance.now();
+  let ascReconnectTimer = null;
+
+  const ascOutput = document.getElementById('asciiOutput');
+  const ascDot = document.getElementById('ascDot');
+  const ascStatusText = document.getElementById('ascStatusText');
+  const ascFps = document.getElementById('ascFps');
+
+  function ascSettings() {
+    return {
+      type: 'settings',
+      cam: ascCam,
+      charset: document.getElementById('ascCharset').value,
+      width: parseInt(document.getElementById('ascWidth').value) || 120,
+      height: parseInt(document.getElementById('ascHeight').value) || 40,
+      color: ascColorMode,
+      invert: ascInvertMode
+    };
+  }
+
+  function ascSendSettings() {
+    if (ascWs && ascWs.readyState === 1) ascWs.send(JSON.stringify(ascSettings()));
+  }
+
+  window.asciiConnect = function() {
+    if (ascWs && ascWs.readyState <= 1) return; // already connected
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ascWs = new WebSocket(`${proto}//${location.host}/ws/ascii`);
+    ascDot.className = 'ascii-status-dot';
+    ascStatusText.textContent = 'Connecting...';
+
+    ascWs.onopen = () => {
+      ascDot.className = 'ascii-status-dot on';
+      ascStatusText.textContent = 'Connected';
+      ascWs.send(JSON.stringify(ascSettings()));
+    };
+    ascWs.onclose = () => {
+      ascDot.className = 'ascii-status-dot';
+      ascStatusText.textContent = 'Disconnected';
+      ascWs = null;
+      // Only reconnect if tab is still active
+      if (document.getElementById('tabAscii').classList.contains('active')) {
+        ascReconnectTimer = setTimeout(window.asciiConnect, 2000);
+      }
+    };
+    ascWs.onerror = () => {
+      ascDot.className = 'ascii-status-dot err';
+      ascStatusText.textContent = 'Error';
+    };
+    ascWs.onmessage = (evt) => {
+      if (ascPaused) return;
+      const data = JSON.parse(evt.data);
+      if (data.type === 'frame') {
+        if (data.colors && ascColorMode) {
+          ascOutput.classList.add('color-mode');
+          ascOutput.innerHTML = '';
+          const frag = document.createDocumentFragment();
+          for (let y = 0; y < data.lines.length; y++) {
+            const line = data.lines[y], rowC = data.colors[y];
+            for (let x = 0; x < line.length; x++) {
+              const sp = document.createElement('span');
+              const c = rowC[x];
+              sp.style.color = `rgb(${c[0]},${c[1]},${c[2]})`;
+              sp.textContent = line[x];
+              frag.appendChild(sp);
+            }
+            frag.appendChild(document.createTextNode('\n'));
+          }
+          ascOutput.appendChild(frag);
+        } else {
+          ascOutput.classList.remove('color-mode');
+          ascOutput.textContent = data.lines.join('\n');
+        }
+        ascFrameCount++;
+        const now = performance.now();
+        if (now - ascLastFpsTime >= 1000) {
+          ascFps.textContent = (ascFrameCount / ((now - ascLastFpsTime) / 1000)).toFixed(1) + ' fps';
+          ascFrameCount = 0;
+          ascLastFpsTime = now;
+        }
+      }
+    };
+    ascFitFont();
+  };
+
+  window.asciiDisconnect = function() {
+    if (ascReconnectTimer) { clearTimeout(ascReconnectTimer); ascReconnectTimer = null; }
+    if (ascWs) { ascWs.onclose = null; ascWs.close(); ascWs = null; }
+    ascDot.className = 'ascii-status-dot';
+    ascStatusText.textContent = 'Idle';
+    ascFps.textContent = '-- fps';
+  };
+
+  function ascFitFont() {
+    const vp = document.getElementById('asciiViewport');
+    if (!vp) return;
+    const w = parseInt(document.getElementById('ascWidth').value) || 120;
+    const h = parseInt(document.getElementById('ascHeight').value) || 40;
+    const maxW = vp.clientWidth - 16;
+    const maxH = vp.clientHeight - 16;
+    const sizeByW = maxW / (w * 0.62);
+    const sizeByH = maxH / (h * 1.15);
+    ascOutput.style.fontSize = Math.max(4, Math.min(20, Math.floor(Math.min(sizeByW, sizeByH)))) + 'px';
+  }
+
+  // Camera buttons
+  document.querySelectorAll('#ascCam0, #ascCam1').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('ascCam0').classList.toggle('on', btn.dataset.cam === '0');
+      document.getElementById('ascCam1').classList.toggle('on', btn.dataset.cam === '1');
+      ascCam = parseInt(btn.dataset.cam);
+      ascSendSettings();
+    });
+  });
+
+  document.getElementById('ascCharset').addEventListener('change', ascSendSettings);
+  document.getElementById('ascWidth').addEventListener('change', () => { ascFitFont(); ascSendSettings(); });
+  document.getElementById('ascHeight').addEventListener('change', () => { ascFitFont(); ascSendSettings(); });
+
+  document.getElementById('ascColor').addEventListener('click', function() {
+    ascColorMode = !ascColorMode;
+    this.classList.toggle('on', ascColorMode);
+    ascSendSettings();
+  });
+  document.getElementById('ascInvert').addEventListener('click', function() {
+    ascInvertMode = !ascInvertMode;
+    this.classList.toggle('on', ascInvertMode);
+    ascSendSettings();
+  });
+  document.getElementById('ascPause').addEventListener('click', function() {
+    ascPaused = !ascPaused;
+    this.classList.toggle('on', ascPaused);
+    this.textContent = ascPaused ? 'RESUME' : 'PAUSE';
+  });
+
+  window.addEventListener('resize', ascFitFont);
+})();
 </script>
 </body>
 </html>
