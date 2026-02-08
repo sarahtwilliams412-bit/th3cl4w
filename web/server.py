@@ -63,6 +63,15 @@ try:
 except ImportError:
     _HAS_BIFOCAL = False
 
+try:
+    from src.vision.arm_tracker import DualCameraArmTracker
+    from src.vision.grasp_planner import VisualGraspPlanner
+    from src.planning.pick_executor import PickExecutor, PickPhase
+
+    _HAS_VISUAL_PICK = True
+except ImportError:
+    _HAS_VISUAL_PICK = False
+
 _web_dir = str(Path(__file__).resolve().parent)
 if _web_dir not in sys.path:
     sys.path.insert(0, _web_dir)
@@ -235,6 +244,9 @@ smoother: Optional[CommandSmoother] = None
 task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
 workspace_mapper: Any = None  # WorkspaceMapper for bifocal vision
 collision_preview: Any = None  # CollisionPreview for path checking
+arm_tracker: Any = None  # DualCameraArmTracker for visual object tracking
+grasp_planner: Any = None  # VisualGraspPlanner for grasp pose computation
+pick_executor: Any = None  # PickExecutor for autonomous pick operations
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -299,6 +311,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize bifocal workspace mapper and collision preview
     global workspace_mapper, collision_preview
+    calibrator = None
     if _HAS_BIFOCAL:
         calibrator = StereoCalibrator()
         # Try to load existing calibration
@@ -314,6 +327,14 @@ async def lifespan(app: FastAPI):
         action_log.add(
             "SYSTEM", "Bifocal workspace mapper initialized (disabled by default)", "info"
         )
+
+    # Initialize visual pick system (arm tracker + grasp planner + pick executor)
+    global arm_tracker, grasp_planner, pick_executor
+    if _HAS_VISUAL_PICK and calibrator is not None:
+        arm_tracker = DualCameraArmTracker(calibrator)
+        grasp_planner = VisualGraspPlanner()
+        pick_executor = PickExecutor(task_planner=task_planner if _HAS_PLANNING else None)
+        action_log.add("SYSTEM", "Visual pick system initialized (tracker + grasp planner)", "info")
 
     yield
 
@@ -1389,6 +1410,336 @@ async def bifocal_preview_target(req: SetAllJointsRequest):
         "checked": result.checked_points,
         "elapsed_ms": result.elapsed_ms,
     }
+
+
+# ---------------------------------------------------------------------------
+# Visual Pick endpoints — dual-camera object detection + autonomous grasp
+# ---------------------------------------------------------------------------
+
+
+class VisualPickRequest(BaseModel):
+    target: str = Field(default="redbull", description="Object to pick: redbull, red, blue, all")
+    speed: float = Field(default=0.5, ge=0.1, le=1.0)
+    execute: bool = Field(default=False, description="If True, execute immediately after planning")
+
+
+class VisualPickFromPositionRequest(BaseModel):
+    x_mm: float = Field(description="X position in arm-base frame (mm)")
+    y_mm: float = Field(description="Y position in arm-base frame (mm)")
+    z_mm: float = Field(description="Z position in arm-base frame (mm)")
+    label: str = Field(default="redbull")
+    speed: float = Field(default=0.5, ge=0.1, le=1.0)
+    execute: bool = Field(default=False)
+
+
+@app.get("/api/pick/status")
+async def pick_status():
+    """Get visual pick system status."""
+    if not _HAS_VISUAL_PICK or pick_executor is None:
+        return {"available": False, "error": "Visual pick module not available"}
+    status = pick_executor.get_status()
+    status["available"] = True
+    status["calibrated"] = arm_tracker.calibrator.is_calibrated if arm_tracker else False
+    return status
+
+
+@app.post("/api/pick/detect")
+async def pick_detect(req: VisualPickRequest = VisualPickRequest()):
+    """Detect objects using dual cameras without planning a grasp.
+
+    Returns detected objects with their 3D positions.
+    """
+    if not _HAS_VISUAL_PICK or arm_tracker is None:
+        return JSONResponse(
+            {"ok": False, "error": "Visual pick module not available"}, status_code=501
+        )
+
+    # Grab camera snapshots
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp0 = await client.get("http://localhost:8081/snap/0")
+            resp1 = await client.get("http://localhost:8081/snap/1")
+        if resp0.status_code != 200 or resp1.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
+
+        import cv2
+
+        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if left is None or right is None:
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode camera frames"}, status_code=502
+            )
+
+        result = arm_tracker.track(left, right, target_label=req.target, annotate=False)
+
+        objects_data = []
+        for obj in result.objects:
+            objects_data.append({
+                "label": obj.label,
+                "position_mm": [round(float(x), 1) for x in obj.position_mm],
+                "position_cam_mm": [round(float(x), 1) for x in obj.position_cam_mm],
+                "size_mm": list(obj.size_mm),
+                "depth_mm": round(obj.depth_mm, 1),
+                "confidence": round(obj.confidence, 3),
+                "bbox_left": list(obj.bbox_left),
+                "centroid_left": list(obj.centroid_left),
+            })
+
+        action_log.add(
+            "VISION",
+            f"Detected {len(result.objects)} '{req.target}' object(s) in {result.elapsed_ms:.0f}ms",
+            "info",
+        )
+
+        return {
+            "ok": True,
+            "objects": objects_data,
+            "count": len(result.objects),
+            "elapsed_ms": result.elapsed_ms,
+            "status": result.status,
+            "message": result.message,
+        }
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/pick/plan")
+async def pick_plan(req: VisualPickRequest = VisualPickRequest()):
+    """Detect object and plan a full pick trajectory.
+
+    Uses dual cameras to find the target, plans grasp approach, and optionally
+    executes the trajectory through the command smoother.
+    """
+    global _active_task
+    if not _HAS_VISUAL_PICK or pick_executor is None or arm_tracker is None or grasp_planner is None:
+        return JSONResponse(
+            {"ok": False, "error": "Visual pick module not available"}, status_code=501
+        )
+    if req.execute and not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled for execution"}, status_code=409)
+
+    # Grab camera snapshots
+    import httpx, cv2
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp0 = await client.get("http://localhost:8081/snap/0")
+            resp1 = await client.get("http://localhost:8081/snap/1")
+        if resp0.status_code != 200 or resp1.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
+
+        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if left is None or right is None:
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode camera frames"}, status_code=502
+            )
+
+        current = _get_current_joints()
+        gripper = armState_gripper()
+
+        result = pick_executor.plan_pick(
+            left_frame=left,
+            right_frame=right,
+            arm_tracker=arm_tracker,
+            grasp_planner=grasp_planner,
+            current_angles_deg=current,
+            current_gripper_mm=gripper,
+            target_label=req.target,
+            workspace_mapper=workspace_mapper,
+            collision_preview=collision_preview,
+        )
+
+        response_data = {
+            "ok": result.success,
+            "phase": result.phase.value,
+            "message": result.message,
+            "elapsed_ms": result.elapsed_ms,
+            "detected_count": len(result.detected_objects),
+        }
+
+        if result.success and result.trajectory is not None:
+            response_data["trajectory"] = {
+                "points": len(result.trajectory.points),
+                "duration_s": round(result.trajectory.duration, 1),
+            }
+            response_data["grasp"] = {
+                "approach_angles": result.approach_angles_deg,
+                "grasp_angles": result.grasp_angles_deg,
+                "retreat_angles": result.retreat_angles_deg,
+                "gripper_open_mm": result.gripper_open_mm,
+                "gripper_close_mm": result.gripper_close_mm,
+            }
+
+            if result.target_object is not None:
+                response_data["target"] = {
+                    "label": result.target_object.label,
+                    "position_mm": [round(float(x), 1) for x in result.target_object.position_mm],
+                    "depth_mm": round(result.target_object.depth_mm, 1),
+                    "confidence": round(result.target_object.confidence, 3),
+                }
+
+            action_log.add(
+                "PICK",
+                f"Pick planned for '{req.target}': {len(result.trajectory.points)} pts, "
+                f"{result.trajectory.duration:.1f}s",
+                "info",
+            )
+
+            # Execute if requested
+            if req.execute and smoother and smoother.arm_enabled:
+                if _active_task and not _active_task.done():
+                    _active_task.cancel()
+                _active_task = asyncio.create_task(
+                    _execute_trajectory(result.trajectory, f"Visual Pick ({req.target})")
+                )
+                response_data["executing"] = True
+                action_log.add("PICK", f"Executing pick trajectory for '{req.target}'", "info")
+        else:
+            action_log.add(
+                "PICK", f"Pick plan failed for '{req.target}': {result.message}", "warning"
+            )
+
+        return response_data
+
+    except Exception as e:
+        logger.exception("Pick plan error")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/pick/from-position")
+async def pick_from_position(req: VisualPickFromPositionRequest):
+    """Plan a pick from a known 3D position (skip camera detection).
+
+    Useful when the object position is already known.
+    """
+    global _active_task
+    if not _HAS_VISUAL_PICK or pick_executor is None or grasp_planner is None:
+        return JSONResponse(
+            {"ok": False, "error": "Visual pick module not available"}, status_code=501
+        )
+    if req.execute and not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled for execution"}, status_code=409)
+
+    current = _get_current_joints()
+    gripper = armState_gripper()
+    obj_pos = np.array([req.x_mm, req.y_mm, req.z_mm])
+
+    result = pick_executor.plan_pick_from_position(
+        object_position_mm=obj_pos,
+        grasp_planner=grasp_planner,
+        current_angles_deg=current,
+        current_gripper_mm=gripper,
+        object_label=req.label,
+    )
+
+    response_data = {
+        "ok": result.success,
+        "phase": result.phase.value,
+        "message": result.message,
+        "elapsed_ms": result.elapsed_ms,
+    }
+
+    if result.success and result.trajectory is not None:
+        response_data["trajectory"] = {
+            "points": len(result.trajectory.points),
+            "duration_s": round(result.trajectory.duration, 1),
+        }
+        response_data["grasp"] = {
+            "approach_angles": result.approach_angles_deg,
+            "grasp_angles": result.grasp_angles_deg,
+            "retreat_angles": result.retreat_angles_deg,
+            "gripper_open_mm": result.gripper_open_mm,
+            "gripper_close_mm": result.gripper_close_mm,
+        }
+        response_data["target_position_mm"] = [req.x_mm, req.y_mm, req.z_mm]
+
+        action_log.add(
+            "PICK",
+            f"Pick from position [{req.x_mm:.0f},{req.y_mm:.0f},{req.z_mm:.0f}]: "
+            f"{len(result.trajectory.points)} pts",
+            "info",
+        )
+
+        if req.execute and smoother and smoother.arm_enabled:
+            if _active_task and not _active_task.done():
+                _active_task.cancel()
+            _active_task = asyncio.create_task(
+                _execute_trajectory(result.trajectory, f"Pick from position ({req.label})")
+            )
+            response_data["executing"] = True
+
+    return response_data
+
+
+@app.post("/api/pick/calibrate-camera-arm")
+async def pick_calibrate_camera_arm():
+    """Calibrate camera-to-arm transform using current arm pose and visual detection.
+
+    Place a distinctive object (e.g. red marker) at the end-effector,
+    then this endpoint detects it in both cameras and computes the
+    camera-to-arm translation offset.
+    """
+    if not _HAS_VISUAL_PICK or arm_tracker is None:
+        return JSONResponse(
+            {"ok": False, "error": "Visual pick module not available"}, status_code=501
+        )
+
+    import httpx, cv2
+
+    try:
+        # Get camera frames
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp0 = await client.get("http://localhost:8081/snap/0")
+            resp1 = await client.get("http://localhost:8081/snap/1")
+
+        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if left is None or right is None:
+            return JSONResponse({"ok": False, "error": "Camera frames failed"}, status_code=502)
+
+        # Detect red marker at EE
+        result = arm_tracker.track(left, right, target_label="red", annotate=False)
+        if not result.objects:
+            return JSONResponse(
+                {"ok": False, "error": "No red marker detected at end-effector"},
+                status_code=400,
+            )
+
+        # Get current EE position from FK
+        current = _get_current_joints()
+        from src.kinematics.kinematics import D1Kinematics
+
+        kin = D1Kinematics()
+        q7 = np.zeros(7)
+        q7[:6] = np.deg2rad(current)
+        ee_pose = kin.forward_kinematics(q7)
+        ee_pos_mm = ee_pose[:3, 3] * 1000  # meters to mm
+
+        # Use the closest detection to EE as the calibration point
+        cam_pos = result.objects[0].position_cam_mm
+        arm_tracker.calibrate_cam_to_arm_from_known_point(cam_pos, ee_pos_mm)
+
+        action_log.add(
+            "CALIBRATION",
+            f"Camera-to-arm calibrated: cam={[round(x,1) for x in cam_pos]}, "
+            f"arm={[round(x,1) for x in ee_pos_mm]}",
+            "info",
+        )
+
+        return {
+            "ok": True,
+            "camera_point_mm": [round(float(x), 1) for x in cam_pos],
+            "arm_point_mm": [round(float(x), 1) for x in ee_pos_mm],
+            "message": "Camera-to-arm transform updated",
+        }
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------------------------
