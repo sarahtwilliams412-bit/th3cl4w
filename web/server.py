@@ -373,6 +373,10 @@ async def lifespan(app: FastAPI):
     global collision_detector, collision_analyzer
     if _HAS_COLLISION:
         collision_detector = CollisionDetector()
+        # TEMP: Disable collision detector — too aggressive for real arm
+        # (3° threshold triggers on normal motion lag, backs off every command)
+        collision_detector.enabled = False
+        logger.info("Collision detector initialized but DISABLED (too aggressive for real arm)")
         collision_analyzer = CollisionAnalyzer()
         action_log.add(
             "SYSTEM",
@@ -1545,18 +1549,21 @@ async def pick_detect(req: VisualPickRequest = VisualPickRequest()):
 
         objects_data = []
         for obj in result.objects:
-            objects_data.append(
-                {
-                    "label": obj.label,
-                    "position_mm": [round(float(x), 1) for x in obj.position_mm],
-                    "position_cam_mm": [round(float(x), 1) for x in obj.position_cam_mm],
-                    "size_mm": list(obj.size_mm),
-                    "depth_mm": round(obj.depth_mm, 1),
-                    "confidence": round(obj.confidence, 3),
-                    "bbox_left": list(obj.bbox_left),
-                    "centroid_left": list(obj.centroid_left),
-                }
-            )
+            obj_data = {
+                "label": obj.label,
+                "position_mm": [round(float(x), 1) for x in obj.position_mm],
+                "confidence": round(obj.confidence, 3),
+                "source": getattr(obj, "source", "unknown"),
+            }
+            if obj.bbox_cam0 is not None:
+                obj_data["bbox_cam0"] = list(obj.bbox_cam0)
+            if obj.bbox_cam1 is not None:
+                obj_data["bbox_cam1"] = list(obj.bbox_cam1)
+            if obj.centroid_cam0 is not None:
+                obj_data["centroid_cam0"] = list(obj.centroid_cam0)
+            if obj.centroid_cam1 is not None:
+                obj_data["centroid_cam1"] = list(obj.centroid_cam1)
+            objects_data.append(obj_data)
 
         action_log.add(
             "VISION",
@@ -1800,7 +1807,7 @@ async def pick_calibrate_camera_arm():
         ee_pos_mm = ee_pose[:3, 3] * 1000  # meters to mm
 
         # Use the closest detection to EE as the calibration point
-        cam_pos = result.objects[0].position_cam_mm
+        cam_pos = result.objects[0].position_mm
         arm_tracker.calibrate_cam_to_arm_from_known_point(cam_pos, ee_pos_mm)
 
         action_log.add(
@@ -2135,6 +2142,12 @@ async def run_viz_calibration():
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
 
     _viz_calib_running = True
+    # Disable collision detection during calibration — it fights the calibrator
+    _saved_collision = collision_detector
+    _saved_collision_enabled = None
+    if collision_detector and hasattr(collision_detector, 'enabled'):
+        _saved_collision_enabled = collision_detector.enabled
+        collision_detector.enabled = False
     try:
         result = await _run_viz_calibration()
         action_log.add(
@@ -2162,6 +2175,9 @@ async def run_viz_calibration():
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     finally:
         _viz_calib_running = False
+        # Re-enable collision detection
+        if collision_detector and hasattr(collision_detector, 'enabled') and _saved_collision_enabled is not None:
+            collision_detector.enabled = _saved_collision_enabled
 
 
 # ---------------------------------------------------------------------------
