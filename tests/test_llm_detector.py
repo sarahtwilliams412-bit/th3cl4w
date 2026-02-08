@@ -184,7 +184,7 @@ class TestDetectJoints:
         mock_model.generate_content.return_value = _mock_response()
         jpeg = _make_test_jpeg()
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             detector.detect_joints(jpeg, camera_id=0)
         )
         assert result.success is True
@@ -199,7 +199,7 @@ class TestDetectJoints:
         mock_model.generate_content.side_effect = RuntimeError("API timeout")
         jpeg = _make_test_jpeg()
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             detector.detect_joints(jpeg, camera_id=0)
         )
         assert result.success is False
@@ -211,7 +211,7 @@ class TestDetectJoints:
         mock_model.generate_content.return_value = _mock_response("garbage response")
         jpeg = _make_test_jpeg()
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             detector.detect_joints(jpeg, camera_id=0)
         )
         assert result.success is False
@@ -220,7 +220,7 @@ class TestDetectJoints:
     def test_bad_jpeg_returns_failure(self):
         detector, mock_model = _make_detector()
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             detector.detect_joints(b"not a jpeg", camera_id=0)
         )
         assert result.success is False
@@ -231,8 +231,8 @@ class TestDetectJoints:
         mock_model.generate_content.return_value = _mock_response()
         jpeg = _make_test_jpeg()
 
-        asyncio.get_event_loop().run_until_complete(detector.detect_joints(jpeg, 0))
-        asyncio.get_event_loop().run_until_complete(detector.detect_joints(jpeg, 1))
+        asyncio.run(detector.detect_joints(jpeg, 0))
+        asyncio.run(detector.detect_joints(jpeg, 1))
         assert detector.total_calls == 2
         assert detector.total_tokens == 2700
 
@@ -247,7 +247,7 @@ class TestBatchDetection:
             {"jpeg_bytes": jpeg, "camera_id": 0},
             {"jpeg_bytes": jpeg, "camera_id": 1, "joint_angles": [0.0] * 6},
         ]
-        results = asyncio.get_event_loop().run_until_complete(
+        results = asyncio.run(
             detector.detect_joints_batch(frames)
         )
         assert len(results) == 2
