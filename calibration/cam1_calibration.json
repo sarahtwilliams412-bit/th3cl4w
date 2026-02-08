@@ -96,5 +96,7 @@
       1.0
     ]
   ],
-  "notes": "Checkerboard flat on table. Perspective visible (spacing 24-29px). Scale ~0.89mm/px at board."
+  "notes": "Checkerboard flat on table. Perspective visible (spacing 24-29px). Scale ~0.89mm/px at board.",
+  "mm_per_pixel_ruler": 0.8458,
+  "ruler_notes": "From yellow tape measure (8 inches visible). Tape endpoints: [540, 478] to [780, 467]"
 }

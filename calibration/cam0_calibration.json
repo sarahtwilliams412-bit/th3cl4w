@@ -67,5 +67,7 @@
     "y_min": 364.1,
     "y_max": 404.4
   },
-  "notes": "Checkerboard propped vertically behind arm. Small apparent size (~57x40px). Scale ~1.26mm/px at board distance."
+  "notes": "Checkerboard propped vertically behind arm. Small apparent size (~57x40px). Scale ~1.26mm/px at board distance.",
+  "mm_per_pixel_ruler": 0.9429,
+  "ruler_notes": "From 15-inch silver ruler at arm base. Ruler endpoints: [478, 618] to [882, 610]"
 }
