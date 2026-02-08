@@ -289,6 +289,13 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 
       <button class="estop" id="btnEstop">⚠ EMERGENCY STOP</button>
 
+      <div class="section-title">3D Tracking Status</div>
+      <div id="calibStatusPanel" style="font-size:11px;color:#8899aa;padding:4px 0;line-height:1.6">
+        <span id="calibCams">Cameras: --</span><br>
+        <span id="calibLoaded">Calibration: --</span><br>
+        <span id="calibQuality">Tracking: --</span>
+      </div>
+
       <div class="section-title">Raw Command</div>
       <div class="raw-cmd">
         <input type="text" id="rawInput" placeholder='{"action":"set-joint","id":0,"angle":45}'>
@@ -315,6 +322,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <button class="ascii-toggle" id="ascColor">COLOR</button>
     <button class="ascii-toggle on" id="ascInvert">INVERT</button>
     <button class="ascii-toggle" id="ascPause">PAUSE</button>
+    <button class="ascii-toggle" id="ascFkOverlay" title="Show FK joint overlay on ASCII frames">FK OVERLAY</button>
   </div>
   <div class="ascii-status-bar">
     <span class="ascii-status-dot" id="ascDot0"></span>
@@ -1490,6 +1498,99 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 
   window.addEventListener('resize', ascFitFont);
+
+  // --- FK Overlay for calibration debugging ---
+  let fkOverlayEnabled = false;
+  const fkOverlayBtn = document.getElementById('ascFkOverlay');
+  const FK_MARKER_COLORS = ['#ff0000','#00ff00','#0088ff','#ffaa00','#ff00ff']; // base,shoulder,elbow,wrist,EE
+  const FK_MARKER_CHARS = ['●','●','●','●','◆'];
+
+  fkOverlayBtn.addEventListener('click', function() {
+    fkOverlayEnabled = !fkOverlayEnabled;
+    this.classList.toggle('on', fkOverlayEnabled);
+  });
+
+  // Inject FK markers into rendered ASCII frames
+  const origRenderFrame = renderFrame;
+  renderFrame = function(camId, data) {
+    origRenderFrame(camId, data);
+    if (!fkOverlayEnabled) return;
+
+    // Get current joint state and compute FK
+    fetch('/api/state').then(r=>r.json()).then(state=>{
+      if(!state||!state.joints) return;
+      const positions = fkPositions(state.joints);
+      if(!CAM_PARAMS) return; // Need calibration to project
+
+      const ascW = parseInt(document.getElementById('ascWidth').value)||320;
+      const ascH = parseInt(document.getElementById('ascHeight').value)||140;
+      const camW = 1920, camH = 1080; // assume standard resolution
+
+      // Project each joint and draw marker overlay
+      const out = ascOutputs[camId];
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
+      out.style.position = 'relative';
+
+      positions.forEach((p3d, idx) => {
+        const p2d = projectPoint3D(p3d, CAM_PARAMS);
+        if(!p2d) return;
+        // Map camera pixel to ASCII character position
+        const charX = Math.round(p2d[0] / camW * ascW);
+        const charY = Math.round(p2d[1] / camH * ascH);
+        if(charX<0||charX>=ascW||charY<0||charY>=ascH) return;
+
+        const marker = document.createElement('span');
+        marker.textContent = FK_MARKER_CHARS[idx];
+        marker.style.cssText = `position:absolute;color:${FK_MARKER_COLORS[idx]};font-weight:bold;text-shadow:0 0 3px #000;pointer-events:none;`;
+        // Position based on character grid
+        const fontSize = parseFloat(getComputedStyle(out).fontSize)||8;
+        marker.style.left = (charX * fontSize * 0.62) + 'px';
+        marker.style.top = (charY * fontSize * 1.15) + 'px';
+        overlay.appendChild(marker);
+      });
+
+      // Remove old overlay
+      const oldOverlay = out.querySelector('.fk-overlay');
+      if(oldOverlay) oldOverlay.remove();
+      overlay.className = 'fk-overlay';
+      out.appendChild(overlay);
+    }).catch(()=>{});
+  };
+})();
+
+// --- Calibration Status Fetcher (for Control tab) ---
+(function(){
+  const calibCams = document.getElementById('calibCams');
+  const calibLoaded = document.getElementById('calibLoaded');
+  const calibQuality = document.getElementById('calibQuality');
+  let calibInterval = null;
+
+  function fetchCalibStatus(){
+    fetch('/api/arm3d/status').then(r=>r.json()).then(d=>{
+      if(calibCams) calibCams.textContent = 'Cameras: '+(d.cameras_connected!=null?d.cameras_connected:'--');
+      if(calibLoaded) calibLoaded.textContent = 'Calibration: '+(d.calibration_loaded?'✅ Loaded':'❌ Not loaded');
+      if(calibQuality) calibQuality.textContent = 'Tracking: '+(d.tracking_quality||d.source||'--');
+    }).catch(()=>{
+      if(calibCams) calibCams.textContent = 'Cameras: N/A';
+      if(calibLoaded) calibLoaded.textContent = 'Calibration: N/A';
+      if(calibQuality) calibQuality.textContent = 'Tracking: N/A';
+    });
+  }
+
+  // Poll every 5 seconds when control tab is visible
+  const observer = new MutationObserver(()=>{
+    const ctrl = document.getElementById('tabControl');
+    if(ctrl && ctrl.classList.contains('active')){
+      if(!calibInterval){fetchCalibStatus();calibInterval=setInterval(fetchCalibStatus,5000);}
+    } else {
+      if(calibInterval){clearInterval(calibInterval);calibInterval=null;}
+    }
+  });
+  const tabCtrl = document.getElementById('tabControl');
+  if(tabCtrl) observer.observe(tabCtrl,{attributes:true,attributeFilter:['class']});
+  // Initial fetch
+  fetchCalibStatus();
 })();
 </script>
 <script>
@@ -1518,6 +1619,96 @@ let active=false, rafId=null, lastT=0;
 // Joint data from D1 arm
 let d1Joints=[0,0,0,0,0,0];
 let jointFetchInterval=null;
+
+// Arm 3D tracking via WebSocket
+let arm3dWs=null, arm3dPositions=null, arm3dSource='none', arm3dConnected=false;
+const ARM_LINK_LENGTHS={d0:0.1215,L1:0.2085,L2:0.2085,L3:0.113};
+const VOXEL_SCALE=40; // 1 meter ≈ 40 voxels
+
+function arm3dConnect(){
+  if(arm3dWs&&arm3dWs.readyState<2)return;
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  arm3dWs=new WebSocket(proto+'//'+location.host+'/ws/arm3d');
+  arm3dWs.onopen=()=>{arm3dConnected=true;};
+  arm3dWs.onclose=()=>{arm3dConnected=false;arm3dPositions=null;arm3dSource='none';arm3dWs=null;if(active)setTimeout(arm3dConnect,3000);};
+  arm3dWs.onerror=()=>{arm3dConnected=false;};
+  arm3dWs.onmessage=(ev)=>{
+    try{
+      const d=JSON.parse(ev.data);
+      if(d.type==='arm3d'&&Array.isArray(d.positions)&&d.positions.length>=5){
+        arm3dPositions=d.positions;
+        arm3dSource=d.source||'unknown';
+        updateArmVoxels(d.positions);
+      }
+    }catch(e){}
+  };
+}
+function arm3dDisconnect(){if(arm3dWs){arm3dWs.close();arm3dWs=null;}}
+
+// Store original static arm voxels for fallback
+let staticArmCells=[];
+let armVoxelsDirty=false;
+
+function captureStaticArm(){
+  staticArmCells=[];
+  const FX=256,FZ=256,armX2=FX-30,armZ2=FZ-40;
+  // Scan the arm area for MACHINE_ARM and nearby MACHINE_BASE
+  for(let dz=-5;dz<=15;dz++)for(let dx=-5;dx<=15;dx++){
+    const x=(armX2+dx)&WM,z=(armZ2+dz)&WM,i=z*WSIZE+x;
+    if(bmap[i]===MACHINE_ARM){staticArmCells.push({x,z,h:hmap[i],b:bmap[i]});}
+  }
+}
+
+function clearArmVoxels(){
+  const FX=256,FZ=256,armX2=FX-30,armZ2=FZ-40,FLOOR=2;
+  // Clear dynamic arm cells (wider scan)
+  for(let dz=-10;dz<=25;dz++)for(let dx=-10;dx<=25;dx++){
+    const x=(armX2+dx)&WM,z=(armZ2+dz)&WM,i=z*WSIZE+x;
+    if(bmap[i]===MACHINE_ARM){hmap[i]=FLOOR;bmap[i]=CONCRETE;}
+  }
+}
+
+function updateArmVoxels(positions){
+  // positions: [[x,y,z],...] in meters (5 joints: base,shoulder,elbow,wrist,EE)
+  // Map real arm coords to factory voxel grid
+  // Arm base in factory: armX=FX-30, armZ=FZ-40, height=FLOOR+10
+  const FX=256,FZ=256,armX2=FX-30,armZ2=FZ-40,FLOOR=2;
+
+  clearArmVoxels();
+
+  // Real arm base is at positions[0]. Map it to (armX2, armZ2).
+  const baseReal=positions[0];
+  for(let seg=0;seg<positions.length-1;seg++){
+    const p0=positions[seg], p1=positions[seg+1];
+    // Convert to voxel offsets relative to arm base
+    const dx0=(p0[0]-baseReal[0])*VOXEL_SCALE, dz0=(p0[1]-baseReal[1])*VOXEL_SCALE, dy0=(p0[2]-baseReal[2])*VOXEL_SCALE;
+    const dx1=(p1[0]-baseReal[0])*VOXEL_SCALE, dz1=(p1[1]-baseReal[1])*VOXEL_SCALE, dy1=(p1[2]-baseReal[2])*VOXEL_SCALE;
+
+    // Bresenham-like line in 2D (x,z) with height interpolation
+    const steps=Math.max(1,Math.ceil(Math.sqrt((dx1-dx0)**2+(dz1-dz0)**2)));
+    for(let s=0;s<=steps;s++){
+      const t=s/steps;
+      const vx=Math.round(armX2+dx0+(dx1-dx0)*t);
+      const vz=Math.round(armZ2+dz0+(dz1-dz0)*t);
+      const vh=FLOOR+10+dy0+(dy1-dy0)*t; // base height + vertical offset
+      const x=vx&WM,z=vz&WM,i=z*WSIZE+x;
+      // Only raise, don't lower existing base
+      if(vh>hmap[i]||bmap[i]===CONCRETE){hmap[i]=vh;bmap[i]=MACHINE_ARM;}
+      // Widen arm by 1 voxel
+      for(const[ox,oz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx=(vx+ox)&WM,nz=(vz+oz)&WM,ni=nz*WSIZE+nx;
+        const nh=vh-0.5;
+        if(nh>hmap[ni]&&bmap[ni]!==MACHINE_BASE){hmap[ni]=nh;bmap[ni]=MACHINE_ARM;}
+      }
+    }
+  }
+  armVoxelsDirty=true;
+}
+
+function restoreStaticArm(){
+  clearArmVoxels();
+  for(const c of staticArmCells){const i=c.z*WSIZE+c.x;hmap[i]=c.h;bmap[i]=c.b;}
+}
 
 function resize(){
   const rect=cvs.parentElement.getBoundingClientRect();
@@ -1632,9 +1823,11 @@ function updatePlayer(dt){
 let dogBob=0;
 function getAnimatedHeight(bx,bz,baseH,blk,time){
   const FX=256,FZ=256,armX=FX-30,armZ=FZ-40,dogX=FX+20,dogZ=FZ+25;
-  if(blk===MACHINE_ARM){const dx=bx-armX,dz=bz-armZ,dist=Math.sqrt(dx*dx+dz*dz);
+  if(blk===MACHINE_ARM){
+    // If arm3d WebSocket is providing real positions, voxels are already updated — no animation needed
+    if(arm3dPositions) return baseH;
+    const dx=bx-armX,dz=bz-armZ,dist=Math.sqrt(dx*dx+dz*dz);
     if(dist>1){
-      // Use D1 J0 (base yaw) and J1 (shoulder pitch) for arm animation
       const j0=d1Joints[0]||0, j1=d1Joints[1]||0;
       return baseH+Math.sin(j0+dist*0.2)*0.6+Math.cos(j1+dist*0.15)*0.3;
     }}
@@ -1725,8 +1918,9 @@ function drawHUD(t){
   fc++;if(t-fpsT>1000){fps=fc;fc=0;fpsT=t;}
   const blk=gB(pl.x,pl.z),bm=BN[blk]||'???';
   ctx.font='12px "Courier New",monospace';ctx.textBaseline='top';
+  const trackLabel=arm3dPositions?'3D:'+arm3dSource:'3D:off';
   const lines=['FACTORY EXPLORER (D1 Live)  FPS '+fps,'XYZ '+pl.x.toFixed(1)+' '+(pl.y-EYE_H).toFixed(1)+' '+pl.z.toFixed(1),bm,
-    'J0:'+d1Joints[0].toFixed(2)+' J1:'+d1Joints[1].toFixed(2)];
+    'J0:'+d1Joints[0].toFixed(2)+' J1:'+d1Joints[1].toFixed(2)+'  '+trackLabel];
   ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(8,8,310,lines.length*15+10);
   ctx.fillStyle='#ffaa33';lines.forEach((l,i)=>ctx.fillText(l,14,13+i*15));
 
@@ -1770,7 +1964,7 @@ fw_activate=function(){
   if(active)return;
   active=true;
   resize();
-  if(!worldGenerated){generateFactory();initPlayer();worldGenerated=true;}
+  if(!worldGenerated){generateFactory();captureStaticArm();initPlayer();worldGenerated=true;}
   cvs.addEventListener('keydown',onKeyDown);
   cvs.addEventListener('keyup',onKeyUp);
   window.addEventListener('resize',resize);
@@ -1779,6 +1973,7 @@ fw_activate=function(){
   rafId=requestAnimationFrame(loop);
   jointFetchInterval=setInterval(fetchJoints,500);
   fetchJoints();
+  arm3dConnect();
 };
 
 fw_deactivate=function(){
@@ -1786,6 +1981,8 @@ fw_deactivate=function(){
   active=false;
   if(rafId){cancelAnimationFrame(rafId);rafId=null;}
   if(jointFetchInterval){clearInterval(jointFetchInterval);jointFetchInterval=null;}
+  arm3dDisconnect();
+  if(arm3dPositions){restoreStaticArm();arm3dPositions=null;}
   cvs.removeEventListener('keydown',onKeyDown);
   cvs.removeEventListener('keyup',onKeyUp);
   window.removeEventListener('resize',resize);

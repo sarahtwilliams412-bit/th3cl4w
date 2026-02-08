@@ -95,6 +95,16 @@ except ImportError:
     _HAS_COLLISION = False
 
 try:
+    from src.vision.pose_fusion import PoseFusion, CameraCalib, FusionSource
+    from src.vision.fk_engine import fk_positions as fk_positions_fn
+    from src.vision.arm_segmenter import ArmSegmenter
+    from src.vision.joint_detector import JointDetector
+
+    _HAS_POSE_FUSION = True
+except ImportError:
+    _HAS_POSE_FUSION = False
+
+try:
     from src.vision.ascii_converter import (
         AsciiConverter,
         CHARSET_STANDARD,
@@ -288,6 +298,9 @@ claw_predictor: Any = None  # ClawPositionPredictor for visual claw tracking
 collision_detector: Any = None  # CollisionDetector for stall detection
 collision_analyzer: Any = None  # CollisionAnalyzer for camera + vision analysis
 collision_events: list = []  # Recent collision events for API
+pose_fusion: Any = None  # PoseFusion engine
+arm3d_segmenters: dict = {}  # Per-camera ArmSegmenter instances
+arm3d_detector: Any = None  # JointDetector for arm3d pipeline
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -381,6 +394,14 @@ async def lifespan(app: FastAPI):
         action_log.add(
             "SYSTEM", "Claw position predictor initialized (disabled by default)", "info"
         )
+
+    # Initialize pose fusion pipeline
+    global pose_fusion, arm3d_segmenters, arm3d_detector
+    if _HAS_POSE_FUSION:
+        pose_fusion = PoseFusion()
+        arm3d_segmenters = {0: ArmSegmenter(), 1: ArmSegmenter()}
+        arm3d_detector = JointDetector()
+        action_log.add("SYSTEM", "Pose fusion pipeline initialized", "info")
 
     # Initialize collision detector + analyzer
     global collision_detector, collision_analyzer
@@ -2590,6 +2611,126 @@ async def ws_realworld3d(ws: WebSocket):
         pass
     except Exception as e:
         logger.warning("RealWorld3D WS error: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Arm 3D Pose Fusion — WebSocket + REST endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/arm3d/status")
+async def arm3d_status():
+    """Pipeline health, per-camera status, fusion quality."""
+    if not _HAS_POSE_FUSION or pose_fusion is None:
+        return {"available": False, "error": "Pose fusion module not available"}
+
+    # Check cameras
+    import httpx
+    cam_status = {}
+    for cam_id in [0, 1]:
+        try:
+            async with httpx.AsyncClient(timeout=1.0) as client:
+                resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+                cam_status[f"cam{cam_id}"] = {"online": resp.status_code == 200}
+        except Exception:
+            cam_status[f"cam{cam_id}"] = {"online": False}
+
+    quality = pose_fusion.get_tracking_quality()
+    return {
+        "available": True,
+        "cameras": cam_status,
+        "fusion_quality": quality,
+        "arm_connected": arm is not None and arm.is_connected,
+    }
+
+
+@app.websocket("/ws/arm3d")
+async def ws_arm3d(ws: WebSocket):
+    """Stream fused 3D arm positions at ~10Hz.
+
+    Uses FK engine + optional visual joint detection from dual cameras.
+    Gracefully degrades to FK-only when cameras are unavailable.
+    """
+    await ws.accept()
+
+    if not _HAS_POSE_FUSION or pose_fusion is None:
+        await ws.send_json({"type": "error", "message": "Pose fusion not available"})
+        await ws.close()
+        return
+
+    import httpx
+
+    try:
+        while True:
+            # 1. Get joint angles from arm state
+            state = get_arm_state()
+            joints_deg = state.get("joints", [0.0] * 6)
+
+            # 2. Compute FK 3D positions
+            fk_pos = fk_positions_fn(joints_deg)
+
+            # 3. Try to get camera frames and run visual detection
+            cam0_dets = None
+            cam1_dets = None
+
+            try:
+                async with httpx.AsyncClient(timeout=0.5) as client:
+                    results = await asyncio.gather(
+                        client.get("http://localhost:8081/snap/0"),
+                        client.get("http://localhost:8081/snap/1"),
+                        return_exceptions=True,
+                    )
+
+                import cv2
+                for cam_id, resp in enumerate(results):
+                    if isinstance(resp, Exception) or resp.status_code != 200:
+                        continue
+                    frame = cv2.imdecode(
+                        np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR
+                    )
+                    if frame is None:
+                        continue
+
+                    segmenter = arm3d_segmenters.get(cam_id)
+                    if segmenter is None:
+                        continue
+
+                    seg = segmenter.segment_arm(frame)
+
+                    # Project FK to pixels for this camera (simplified — use pinhole at identity)
+                    # In production, use actual camera calibration
+                    fk_pixels = [(float(p[0] * 500 + 320), float(p[1] * 500 + 240)) for p in fk_pos]
+
+                    dets = arm3d_detector.detect_joints(seg, fk_pixels)
+                    if cam_id == 0:
+                        cam0_dets = dets
+                    else:
+                        cam1_dets = dets
+            except Exception:
+                pass  # Cameras unavailable — FK-only mode
+
+            # 4. Fuse
+            result = pose_fusion.fuse(
+                fk_pos,
+                cam0_detections=cam0_dets,
+                cam1_detections=cam1_dets,
+                # Note: calibrations would come from saved config in production
+            )
+
+            # 5. Send
+            await ws.send_json({
+                "type": "arm3d",
+                "positions": [[round(c, 4) for c in p] for p in result.positions],
+                "confidence": [round(c, 3) for c in result.confidence],
+                "source": result.source.value,
+            })
+
+            await asyncio.sleep(0.1)  # ~10Hz
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.warning("Arm3D WS error: %s", e)
 
 
 # ---------------------------------------------------------------------------
