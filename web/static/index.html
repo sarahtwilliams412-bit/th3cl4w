@@ -366,6 +366,10 @@ let localLog = []; // client-side log entries
 let armSynced = false; // SAFETY: don't send commands until first state received
 let updatingFromState = false; // Guard against state→slider→command feedback loop
 let vizDirty = true; // V4: only redraw when state changes
+let lastGoodJoints = [0,0,0,0,0,0]; // Client-side cache to prevent zero-snap
+let vizJoints = [0,0,0,0,0,0]; // Smoothed joints actually rendered
+let jointSource = 'init'; // Telemetry: where current joint values came from
+let wsUpdateCount = 0; // Telemetry: count of WS updates received
 
 function logLocal(action, details, level) {
   const now = new Date();
@@ -534,9 +538,28 @@ function connectWS() {
         logLocal('ACK', `${data.action}: ${data.ok ? 'OK' : 'FAIL'}`, data.ok ? 'info' : 'error');
         return;
       }
+      // Zero-snap protection: if server sends all-zero joints but we had real values, keep cached
+      const newJoints = data.joints || [0,0,0,0,0,0];
+      const allZero = newJoints.every(v => Math.abs(v) < 0.01);
+      const hadReal = lastGoodJoints.some(v => Math.abs(v) > 0.1);
+      if (allZero && hadReal && armSynced) {
+        // Server sent stale zeros — use cached joints instead
+        data.joints = lastGoodJoints.slice();
+        jointSource = 'cached (zero-snap blocked)';
+        console.log('[TELEM] Blocked zero-snap, using cached:', lastGoodJoints);
+      } else {
+        lastGoodJoints = newJoints.slice();
+        jointSource = 'ws';
+      }
+
+      // Only mark dirty if joints actually changed meaningfully (>0.05° on any joint)
+      const jointsDiff = newJoints.some((v, i) => Math.abs(v - vizJoints[i]) > 0.05);
+      const otherChanged = data.power !== armState.power || data.enabled !== armState.enabled || data.error !== armState.error;
+
       armState = data;
       lastStateTs = Date.now();
-      vizDirty = true;
+      wsUpdateCount++;
+      if (jointsDiff || otherChanged || !armSynced) vizDirty = true;
       if (!armSynced) {
         armSynced = true;
         logLocal('SYNC', 'First arm state received — sliders synced', 'info');
@@ -586,15 +609,16 @@ function updateUI() {
   // E-stop flash when enabled
   document.getElementById('btnEstop').className = armState.enabled ? 'estop flash' : 'estop';
 
-  // Joint sliders — guard against triggering input events, skip if unchanged
+  // Joint sliders — guard against triggering input events, dead-band to prevent jitter
   updatingFromState = true;
   const joints = armState.joints || [0,0,0,0,0,0];
   for (let i = 0; i < 6; i++) {
     if (userDragging !== i) {
       const val = joints[i] || 0;
       const slider = document.getElementById(`js${i}`);
-      const valStr = String(val);
-      if (slider.value !== valStr) slider.value = val;
+      const current = parseFloat(slider.value);
+      // Only update slider if value changed by more than half a step (0.25°)
+      if (Math.abs(current - val) > 0.25) slider.value = val;
       const label = document.getElementById(`jv${i}`);
       const txt = val.toFixed(1) + '°';
       if (label.textContent !== txt) label.textContent = txt;
@@ -604,8 +628,8 @@ function updateUI() {
   // Gripper
   if (userDragging !== 6) {
     const gv = armState.gripper || 0;
-    const gvStr = String(gv);
-    if (gripSlider.value !== gvStr) gripSlider.value = gv;
+    const current = parseFloat(gripSlider.value);
+    if (Math.abs(current - gv) > 0.25) gripSlider.value = gv;
     const gLabel = document.getElementById('gripperValue');
     const gTxt = gv.toFixed(1) + ' mm';
     if (gLabel.textContent !== gTxt) gLabel.textContent = gTxt;
@@ -646,7 +670,17 @@ function drawArm() {
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
 
-  const joints = armState.joints || [0,0,0,0,0,0];
+  const rawJoints = armState.joints || [0,0,0,0,0,0];
+  // Smooth viz joints — lerp toward target to reduce jitter
+  for (let i = 0; i < 6; i++) {
+    const diff = rawJoints[i] - vizJoints[i];
+    if (Math.abs(diff) > 0.05) {
+      vizJoints[i] += diff * 0.4; // smooth factor
+    } else {
+      vizJoints[i] = rawJoints[i];
+    }
+  }
+  const joints = vizJoints;
   const deg2rad = Math.PI / 180;
 
   // --- Grid ---
@@ -931,6 +965,13 @@ function drawArm() {
   ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(136,146,164,0.5)';
   ctx.fillText('D1 Arm (blue=pitch, gold=roll)', 8, 16 * scale);
+
+  // --- Telemetry overlay ---
+  const telY = H - 8 * scale;
+  ctx.font = `${8 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = 'rgba(136,146,164,0.4)';
+  const jStr = joints.map(v => v.toFixed(1)).join(', ');
+  ctx.fillText(`src:${jointSource} ws#${wsUpdateCount} [${jStr}]`, 8, telY);
 }
 
 // Animation loop — only redraw when state changes
