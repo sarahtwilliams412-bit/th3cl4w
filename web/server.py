@@ -278,6 +278,7 @@ async def lifespan(app: FastAPI):
         )
 
     # Initialize task planner for pre-built motion sequences
+    global task_planner
     if _HAS_PLANNING:
         task_planner = TaskPlanner()
         action_log.add("SYSTEM", "Task planner initialized", "info")
@@ -364,15 +365,17 @@ class RawCommandRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 _prev_state: Dict[str, Any] = {}
+_cached_joint_angles: list = [0.0] * 6
+_cached_gripper: float = 0.0
 
 
 def get_arm_state() -> Dict[str, Any]:
-    global _prev_state
+    global _prev_state, _cached_joint_angles, _cached_gripper
     if arm is None:
         return {
             "connected": False,
-            "joints": [0.0] * 6,
-            "gripper": 0.0,
+            "joints": list(_cached_joint_angles),
+            "gripper": _cached_gripper,
             "power": False,
             "enabled": False,
             "error": 0,
@@ -380,13 +383,20 @@ def get_arm_state() -> Dict[str, Any]:
         }
 
     angles_raw = arm.get_joint_angles()
-    angles = [round(float(a), 2) for a in angles_raw] if angles_raw is not None else [0.0] * 6
+    if angles_raw is not None:
+        angles = [round(float(a), 2) for a in angles_raw]
+    else:
+        # Use cached values instead of zeros to prevent viz jumping
+        angles = list(_cached_joint_angles)
     # Ensure exactly 6 joints
     angles = angles[:6] if len(angles) >= 6 else angles + [0.0] * (6 - len(angles))
+    # Cache last known good values to avoid zero-snap on transient None reads
+    _cached_joint_angles = list(angles)
 
     gripper = 0.0
     if hasattr(arm, "get_gripper_position"):
         gripper = round(float(arm.get_gripper_position()), 2)
+    _cached_gripper = gripper
 
     status = arm.get_status() or {}
 
