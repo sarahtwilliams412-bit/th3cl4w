@@ -2354,10 +2354,13 @@ static_dir.mkdir(parents=True, exist_ok=True)
 
 v1_dir = static_dir / "v1"
 v2_dir = static_dir / "v2"
+v3_dir = static_dir / "v3"
 if v1_dir.is_dir():
     app.mount("/v1", StaticFiles(directory=str(v1_dir), html=True), name="static-v1")
 if v2_dir.is_dir():
     app.mount("/v2", StaticFiles(directory=str(v2_dir), html=True), name="static-v2")
+if v3_dir.is_dir():
+    app.mount("/v3", StaticFiles(directory=str(v3_dir), html=True), name="static-v3")
 app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 # ---------------------------------------------------------------------------

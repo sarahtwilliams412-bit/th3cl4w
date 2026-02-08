@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>th3cl4w V3 — D1 Arm 3D Visualization</title>
+<style>
+/* === Variables & Reset === */
+:root {
+  --bg: #08080f;
+  --surface: #10101c;
+  --surface-raised: #181830;
+  --border: #252548;
+  --border-focus: #4a90d9;
+  --danger: #e94560;
+  --danger-bg: #2d0f15;
+  --success: #53d769;
+  --success-bg: #0f2d15;
+  --warning: #f0ad4e;
+  --info: #4a90d9;
+  --accent: #6c5ce7;
+  --text: #e0e0f0;
+  --text-dim: #7b7b98;
+  --text-muted: #3d3d55;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --j1: #e94560;
+  --j2: #f0ad4e;
+  --j3: #53d769;
+  --j4: #4a90d9;
+  --j5: #6c5ce7;
+  --j6: #e056a0;
+  --gripper-color: #53d769;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); height: 100vh; display: flex; flex-direction: column; overflow: hidden; user-select: none; }
+
+/* === TOPBAR === */
+.topbar { display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 44px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 100; }
+.logo { font-family: var(--mono); font-size: 17px; font-weight: 700; letter-spacing: 2px; color: var(--danger); }
+.version { font-family: var(--mono); font-size: 10px; padding: 2px 6px; border-radius: 3px; background: var(--accent); color: #fff; letter-spacing: 1px; }
+.conn-indicator { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #555; transition: all .3s; }
+.conn-dot.on { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.conn-dot.off { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+.conn-label { color: var(--text-dim); font-size: 11px; }
+.latency { font-family: var(--mono); font-size: 10px; color: var(--text-muted); }
+.topbar-spacer { flex: 1; }
+.btn-topbar { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-raised); color: var(--text-dim); cursor: pointer; letter-spacing: 1px; text-transform: uppercase; transition: all .15s; }
+.btn-topbar:hover { border-color: var(--border-focus); color: var(--text); }
+.btn-topbar.active { border-color: var(--accent); color: var(--accent); background: rgba(108,92,231,.1); }
+
+/* === MAIN LAYOUT === */
+.main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+/* === 3D VIEWPORT === */
+.viewport { flex: 1; position: relative; min-width: 0; }
+#three-canvas { width: 100%; height: 100%; display: block; }
+.viewport-overlay { position: absolute; top: 10px; left: 10px; font-family: var(--mono); font-size: 10px; color: var(--text-dim); pointer-events: none; line-height: 1.6; }
+.viewport-overlay .label { color: var(--text-muted); }
+.viewport-overlay .value { color: var(--text); }
+.viewport-overlay .ee-pos { color: var(--info); }
+
+/* === RIGHT PANEL === */
+.right-panel { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
+.panel-section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.panel-title { font-family: var(--mono); font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; }
+
+/* === JOINT READOUT === */
+.joint-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.joint-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.joint-name { font-family: var(--mono); font-size: 11px; width: 24px; color: var(--text-dim); }
+.joint-bar-bg { flex: 1; height: 6px; background: #0d0d1a; border-radius: 3px; overflow: hidden; position: relative; }
+.joint-bar { height: 100%; border-radius: 3px; transition: width .1s; min-width: 1px; }
+.joint-bar-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border); }
+.joint-val { font-family: var(--mono); font-size: 10px; width: 52px; text-align: right; color: var(--text); }
+
+/* === GRIPPER === */
+.gripper-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.gripper-icon { font-size: 14px; color: var(--gripper-color); }
+.gripper-bar-bg { flex: 1; height: 6px; background: #0d0d1a; border-radius: 3px; overflow: hidden; }
+.gripper-bar { height: 100%; background: var(--gripper-color); border-radius: 3px; transition: width .1s; }
+.gripper-val { font-family: var(--mono); font-size: 10px; width: 52px; text-align: right; color: var(--gripper-color); }
+
+/* === CAMERA PANELS === */
+.cam-panel { position: relative; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 16/9; }
+.cam-panel img { width: 100%; height: 100%; object-fit: cover; }
+.cam-panel canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+.cam-label { position: absolute; top: 6px; left: 8px; font-family: var(--mono); font-size: 9px; color: var(--text-dim); background: rgba(0,0,0,.6); padding: 2px 6px; border-radius: 3px; letter-spacing: 1px; text-transform: uppercase; }
+.cam-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--mono); font-size: 11px; background: #0a0a14; }
+.cam-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+/* === CALIBRATION PANEL === */
+.calib-section { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.calib-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.calib-label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); width: 70px; flex-shrink: 0; }
+.calib-slider { flex: 1; -webkit-appearance: none; appearance: none; height: 4px; background: #1a1a30; border-radius: 2px; outline: none; }
+.calib-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+.calib-val { font-family: var(--mono); font-size: 10px; width: 44px; text-align: right; color: var(--text); }
+.calib-btn { font-family: var(--mono); font-size: 9px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-raised); color: var(--text-dim); cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
+.calib-btn:hover { border-color: var(--accent); color: var(--accent); }
+.calib-btn.active { background: rgba(108,92,231,.15); border-color: var(--accent); color: var(--accent); }
+.calib-info { font-family: var(--mono); font-size: 9px; color: var(--text-muted); line-height: 1.5; margin-top: 4px; }
+.calib-metric { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; padding: 3px 0; }
+.calib-metric .label { color: var(--text-dim); }
+.calib-metric .val { color: var(--info); }
+.calib-metric .val.good { color: var(--success); }
+.calib-metric .val.warn { color: var(--warning); }
+.calib-metric .val.bad { color: var(--danger); }
+
+/* === VIEW BUTTONS (bottom-left of viewport) === */
+.view-controls { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 4px; z-index: 10; }
+.view-btn { font-family: var(--mono); font-size: 9px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 3px; background: rgba(16,16,28,.85); color: var(--text-dim); cursor: pointer; letter-spacing: 1px; text-transform: uppercase; backdrop-filter: blur(4px); }
+.view-btn:hover { border-color: var(--info); color: var(--info); }
+.view-btn.active { border-color: var(--info); color: var(--info); background: rgba(74,144,217,.1); }
+
+/* === SCROLLBAR === */
+.right-panel::-webkit-scrollbar { width: 6px; }
+.right-panel::-webkit-scrollbar-track { background: var(--surface); }
+.right-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.right-panel::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <span class="logo">th3cl4w</span>
+  <span class="version">V3</span>
+  <div class="conn-indicator">
+    <div class="conn-dot" id="connDot"></div>
+    <span class="conn-label" id="connLabel">Connecting...</span>
+  </div>
+  <span class="latency" id="latency"></span>
+  <div class="topbar-spacer"></div>
+  <button class="btn-topbar" id="btnCalib" onclick="toggleCalibPanel()">Calibrate</button>
+  <button class="btn-topbar" id="btnOverlay" onclick="toggleOverlay()">Overlay</button>
+  <button class="btn-topbar" id="btnAxes" onclick="toggleAxes()">Axes</button>
+  <button class="btn-topbar active" id="btnGhost" onclick="toggleGhost()">Ghost</button>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- 3D VIEWPORT -->
+  <div class="viewport" id="viewport">
+    <canvas id="three-canvas"></canvas>
+    <div class="viewport-overlay" id="overlay">
+      <div><span class="label">EE Position:</span> <span class="value ee-pos" id="eePos">—</span></div>
+      <div><span class="label">EE Orient:</span> <span class="value" id="eeOri">—</span></div>
+      <div><span class="label">Reach:</span> <span class="value" id="eeReach">—</span></div>
+    </div>
+    <div class="view-controls">
+      <button class="view-btn" onclick="setView('front')">Front</button>
+      <button class="view-btn" onclick="setView('side')">Side</button>
+      <button class="view-btn" onclick="setView('top')">Top</button>
+      <button class="view-btn" onclick="setView('iso')" id="viewIso">Iso</button>
+      <button class="view-btn" onclick="setView('cam0')">Cam 0</button>
+      <button class="view-btn" onclick="setView('cam1')">Cam 1</button>
+      <button class="view-btn" onclick="resetView()">Reset</button>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel" id="rightPanel">
+
+    <!-- Joint Readout -->
+    <div class="panel-section">
+      <div class="panel-title">Joint Angles</div>
+      <div id="jointReadout"></div>
+      <div class="gripper-row">
+        <span class="gripper-icon">&#9775;</span>
+        <span class="joint-name" style="color:var(--gripper-color)">G</span>
+        <div class="gripper-bar-bg"><div class="gripper-bar" id="gripperBar" style="width:0%"></div></div>
+        <span class="gripper-val" id="gripperVal">0.0 mm</span>
+      </div>
+    </div>
+
+    <!-- Camera Feeds -->
+    <div class="panel-section">
+      <div class="panel-title">Camera Feeds</div>
+      <div class="cam-grid">
+        <div class="cam-panel" id="camPanel0">
+          <div class="cam-placeholder" id="camPlaceholder0">cam0 — front/side</div>
+          <img id="camImg0" style="display:none" crossorigin="anonymous">
+          <canvas id="camOverlay0"></canvas>
+          <div class="cam-label">CAM 0 — FRONT</div>
+        </div>
+        <div class="cam-panel" id="camPanel1">
+          <div class="cam-placeholder" id="camPlaceholder1">cam1 — overhead</div>
+          <img id="camImg1" style="display:none" crossorigin="anonymous">
+          <canvas id="camOverlay1"></canvas>
+          <div class="cam-label">CAM 1 — OVERHEAD</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Calibration Panel (collapsible) -->
+    <div class="panel-section" id="calibPanel" style="display:none">
+      <div class="panel-title">Calibration</div>
+
+      <div class="calib-info" style="margin-bottom:8px">
+        Adjust joint offsets so the 3D model matches what the cameras see.
+        Toggle <b>Overlay</b> to project FK skeleton onto camera feeds.
+      </div>
+
+      <!-- Joint Offsets -->
+      <div style="margin-bottom:10px">
+        <div class="panel-title" style="font-size:9px;margin-bottom:4px">Joint Offsets (deg)</div>
+        <div id="calibOffsets"></div>
+      </div>
+
+      <!-- Camera 0 Extrinsics -->
+      <div style="margin-bottom:10px">
+        <div class="panel-title" style="font-size:9px;margin-bottom:4px">Cam 0 — Position (m)</div>
+        <div class="calib-row">
+          <span class="calib-label">X</span>
+          <input type="range" class="calib-slider" min="-1" max="1" step="0.01" value="0.35" oninput="updateCamExtrinsic(0,'x',this.value)">
+          <span class="calib-val" id="cam0X">0.35</span>
+        </div>
+        <div class="calib-row">
+          <span class="calib-label">Y</span>
+          <input type="range" class="calib-slider" min="-1" max="1" step="0.01" value="0.25" oninput="updateCamExtrinsic(0,'y',this.value)">
+          <span class="calib-val" id="cam0Y">0.25</span>
+        </div>
+        <div class="calib-row">
+          <span class="calib-label">Z</span>
+          <input type="range" class="calib-slider" min="-0.5" max="1.5" step="0.01" value="0.30" oninput="updateCamExtrinsic(0,'z',this.value)">
+          <span class="calib-val" id="cam0Z">0.30</span>
+        </div>
+      </div>
+
+      <!-- Camera 1 Extrinsics -->
+      <div style="margin-bottom:10px">
+        <div class="panel-title" style="font-size:9px;margin-bottom:4px">Cam 1 — Position (m)</div>
+        <div class="calib-row">
+          <span class="calib-label">X</span>
+          <input type="range" class="calib-slider" min="-1" max="1" step="0.01" value="0.0" oninput="updateCamExtrinsic(1,'x',this.value)">
+          <span class="calib-val" id="cam1X">0.00</span>
+        </div>
+        <div class="calib-row">
+          <span class="calib-label">Y</span>
+          <input type="range" class="calib-slider" min="-1" max="1" step="0.01" value="-0.05" oninput="updateCamExtrinsic(1,'y',this.value)">
+          <span class="calib-val" id="cam1Y">-0.05</span>
+        </div>
+        <div class="calib-row">
+          <span class="calib-label">Z</span>
+          <input type="range" class="calib-slider" min="0" max="2" step="0.01" value="0.80" oninput="updateCamExtrinsic(1,'z',this.value)">
+          <span class="calib-val" id="cam1Z">0.80</span>
+        </div>
+      </div>
+
+      <!-- Calibration Metrics -->
+      <div style="margin-bottom:8px">
+        <div class="panel-title" style="font-size:9px;margin-bottom:4px">Calibration Quality</div>
+        <div class="calib-metric"><span class="label">FK vs Cam0 error</span><span class="val" id="calibErr0">—</span></div>
+        <div class="calib-metric"><span class="label">FK vs Cam1 error</span><span class="val" id="calibErr1">—</span></div>
+        <div class="calib-metric"><span class="label">Stereo reprojection</span><span class="val" id="calibStereo">—</span></div>
+        <div class="calib-metric"><span class="label">Joint offset RMS</span><span class="val" id="calibRMS">—</span></div>
+      </div>
+
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="calib-btn" onclick="resetCalibration()">Reset Offsets</button>
+        <button class="calib-btn" onclick="autoCalibrate()">Auto-Calibrate</button>
+        <button class="calib-btn" onclick="saveCalibration()">Save</button>
+        <button class="calib-btn" onclick="loadCalibration()">Load</button>
+      </div>
+    </div>
+
+    <!-- Arm Info -->
+    <div class="panel-section">
+      <div class="panel-title">D1 Arm Info</div>
+      <div class="calib-metric"><span class="label">Model</span><span class="val">Unitree D1</span></div>
+      <div class="calib-metric"><span class="label">DOF</span><span class="val">6 + Gripper</span></div>
+      <div class="calib-metric"><span class="label">Reach</span><span class="val">550 mm</span></div>
+      <div class="calib-metric"><span class="label">Payload</span><span class="val">500 g</span></div>
+      <div class="calib-metric"><span class="label">Encoder</span><span class="val">17-bit (±0.01°)</span></div>
+      <div class="calib-metric"><span class="label">Weight</span><span class="val">2.37 kg</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- THREE.JS + OrbitControls from CDN -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// =========================================================================
+// DH Parameters — matches src/kinematics/kinematics.py exactly
+// =========================================================================
+const DH_PARAMS = [
+  { a: 0, d: 0.1215, alpha: -Math.PI / 2 }, // J1 — Base Rotation (Yaw)
+  { a: 0, d: 0,      alpha:  Math.PI / 2 }, // J2 — Shoulder Pitch
+  { a: 0, d: 0.2085, alpha: -Math.PI / 2 }, // J3 — Elbow Pitch
+  { a: 0, d: 0,      alpha:  Math.PI / 2 }, // J4 — Forearm Roll
+  { a: 0, d: 0.2085, alpha: -Math.PI / 2 }, // J5 — Wrist Pitch
+  { a: 0, d: 0,      alpha:  Math.PI / 2 }, // J6 — Wrist Roll
+  { a: 0, d: 0.1130, alpha:  0           }, // J7 — End-effector
+];
+
+const JOINT_LIMITS_DEG = [
+  [-135, 135], // J1
+  [-90,   90], // J2
+  [-90,   90], // J3
+  [-135, 135], // J4
+  [-90,   90], // J5
+  [-135, 135], // J6
+];
+
+const JOINT_NAMES = ['J1 Yaw', 'J2 Shoulder', 'J3 Elbow', 'J4 Roll', 'J5 Wrist', 'J6 Roll'];
+const JOINT_COLORS = ['#e94560', '#f0ad4e', '#53d769', '#4a90d9', '#6c5ce7', '#e056a0'];
+
+// =========================================================================
+// State
+// =========================================================================
+let jointsDeg = [0, 0, 0, 0, 0, 0];
+let gripperMm = 0;
+let connected = false;
+let wsLatency = 0;
+let showOverlay = false;
+let showAxesHelper = false;
+let showGhost = true;
+let jointOffsets = [0, 0, 0, 0, 0, 0]; // calibration offsets in degrees
+
+// Ghost trail — stores recent joint states
+const ghostHistory = [];
+const GHOST_MAX = 8;
+const GHOST_INTERVAL = 200; // ms between ghost captures
+let lastGhostTime = 0;
+
+// Camera extrinsics (estimated positions in arm-base frame, meters)
+// cam0: front/side camera — looking roughly from +X, +Z
+// cam1: overhead camera — looking down from +Z
+const camExtrinsics = [
+  { x: 0.35, y: 0.25, z: 0.30, lookAt: [0, 0, 0.15] },
+  { x: 0.0,  y: -0.05, z: 0.80, lookAt: [0, 0, 0.10] },
+];
+
+// =========================================================================
+// DH Forward Kinematics (matches Python _dh_transform exactly)
+// =========================================================================
+function dhMatrix(dh, theta) {
+  const ct = Math.cos(theta), st = Math.sin(theta);
+  const ca = Math.cos(dh.alpha), sa = Math.sin(dh.alpha);
+  const m = new THREE.Matrix4();
+  m.set(
+    ct, -st * ca,  st * sa, dh.a * ct,
+    st,  ct * ca, -ct * sa, dh.a * st,
+    0,   sa,       ca,      dh.d,
+    0,   0,        0,       1
+  );
+  return m;
+}
+
+function forwardKinematics(anglesDeg) {
+  // anglesDeg: 6 angles in degrees (from API)
+  // Returns array of 8 Vector3 positions: base + 7 DH frames
+  const T = new THREE.Matrix4().identity();
+  const positions = [new THREE.Vector3(0, 0, 0)];
+  const transforms = [T.clone()];
+
+  for (let i = 0; i < DH_PARAMS.length; i++) {
+    const angleDeg = i < anglesDeg.length ? anglesDeg[i] : 0;
+    const angleRad = (angleDeg + (i < jointOffsets.length ? jointOffsets[i] : 0)) * Math.PI / 180;
+    const dh = DH_PARAMS[i];
+    T.multiply(dhMatrix(dh, angleRad));
+    const pos = new THREE.Vector3();
+    pos.setFromMatrixPosition(T);
+    positions.push(pos);
+    transforms.push(T.clone());
+  }
+  return { positions, transforms };
+}
+
+// Compute axis direction for a joint given its transform
+function getJointAxis(transform) {
+  const z = new THREE.Vector3(0, 0, 1);
+  z.applyMatrix4(new THREE.Matrix4().extractRotation(transform));
+  return z;
+}
+
+// =========================================================================
+// Three.js Scene Setup
+// =========================================================================
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x08080f);
+scene.fog = new THREE.Fog(0x08080f, 2, 5);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10);
+camera.position.set(0.6, 0.4, 0.5);
+camera.up.set(0, 0, 1); // Z-up to match DH convention
+
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 0, 0.2);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.15;
+controls.maxDistance = 3;
+controls.update();
+
+// --- Lighting ---
+const ambient = new THREE.AmbientLight(0x404060, 0.6);
+scene.add(ambient);
+
+const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+dirLight.position.set(0.5, 0.8, 1.0);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.camera.near = 0.1;
+dirLight.shadow.camera.far = 4;
+dirLight.shadow.camera.left = -1;
+dirLight.shadow.camera.right = 1;
+dirLight.shadow.camera.top = 1;
+dirLight.shadow.camera.bottom = -1;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x8888cc, 0.3);
+fillLight.position.set(-0.5, -0.3, 0.5);
+scene.add(fillLight);
+
+const rimLight = new THREE.PointLight(0x4a90d9, 0.4, 2);
+rimLight.position.set(-0.3, 0.5, 0.6);
+scene.add(rimLight);
+
+// --- Ground plane ---
+const groundGeo = new THREE.PlaneGeometry(4, 4);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0a14,
+  roughness: 0.9,
+  metalness: 0.1,
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.receiveShadow = true;
+scene.add(ground);
+
+// --- Grid ---
+const gridHelper = new THREE.GridHelper(1, 20, 0x1a1a40, 0x101028);
+gridHelper.rotation.x = Math.PI / 2; // lay flat in Z-up
+scene.add(gridHelper);
+
+// Axis labels at grid edge
+const axisLinesMat = new THREE.LineBasicMaterial({ color: 0x252548, transparent: true, opacity: 0.4 });
+
+// --- Workspace boundary (reach circle) ---
+const reachRadius = 0.55; // 550mm
+const reachGeo = new THREE.RingGeometry(reachRadius - 0.002, reachRadius + 0.002, 64);
+const reachMat = new THREE.MeshBasicMaterial({ color: 0x4a90d9, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+const reachRing = new THREE.Mesh(reachGeo, reachMat);
+reachRing.position.z = 0.001;
+scene.add(reachRing);
+
+// --- Joint axes helper group ---
+const axesGroup = new THREE.Group();
+axesGroup.visible = false;
+scene.add(axesGroup);
+
+// =========================================================================
+// Arm Materials
+// =========================================================================
+const matAluminum = new THREE.MeshStandardMaterial({
+  color: 0x8899aa,
+  roughness: 0.35,
+  metalness: 0.7,
+});
+const matDarkMetal = new THREE.MeshStandardMaterial({
+  color: 0x334455,
+  roughness: 0.5,
+  metalness: 0.6,
+});
+const matJointRing = new THREE.MeshStandardMaterial({
+  color: 0x2a4060,
+  roughness: 0.3,
+  metalness: 0.8,
+  emissive: 0x0a1525,
+  emissiveIntensity: 0.3,
+});
+const matGripper = new THREE.MeshStandardMaterial({
+  color: 0x445566,
+  roughness: 0.4,
+  metalness: 0.5,
+});
+const matGripperPad = new THREE.MeshStandardMaterial({
+  color: 0x222222,
+  roughness: 0.8,
+  metalness: 0.1,
+});
+
+// =========================================================================
+// Build Arm Geometry Group
+// =========================================================================
+const armGroup = new THREE.Group();
+scene.add(armGroup);
+
+// Base plate
+const basePlateGeo = new THREE.CylinderGeometry(0.045, 0.05, 0.015, 32);
+const basePlate = new THREE.Mesh(basePlateGeo, matDarkMetal);
+basePlate.rotation.x = Math.PI / 2;
+basePlate.position.z = 0.0075;
+basePlate.castShadow = true;
+armGroup.add(basePlate);
+
+// We'll draw the arm links dynamically based on FK positions
+// Link meshes: cylinders between joint positions
+const linkMeshes = [];
+const jointMeshes = [];
+
+// Create link cylinder template function
+function createLink(radius, color) {
+  const geo = new THREE.CylinderGeometry(radius, radius, 1, 16);
+  geo.translate(0, 0.5, 0); // pivot at bottom
+  const mat = matAluminum.clone();
+  if (color) mat.color.set(color);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  return mesh;
+}
+
+// Create joint sphere/ring
+function createJoint(radius, colorHex) {
+  const group = new THREE.Group();
+  const sphereGeo = new THREE.SphereGeometry(radius, 16, 12);
+  const sphereMat = matJointRing.clone();
+  sphereMat.color.set(colorHex);
+  sphereMat.emissive.set(colorHex);
+  sphereMat.emissiveIntensity = 0.15;
+  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+  sphere.castShadow = true;
+  group.add(sphere);
+
+  // Rotation ring indicator
+  const ringGeo = new THREE.TorusGeometry(radius * 1.3, 0.002, 8, 32);
+  const ringMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.5 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  group.add(ring);
+  group.userData.ring = ring;
+
+  return group;
+}
+
+// Pre-create 7 links and 7 joints (will be repositioned each frame)
+const linkRadii = [0.018, 0.016, 0.014, 0.012, 0.010, 0.009, 0.008];
+for (let i = 0; i < 7; i++) {
+  const link = createLink(linkRadii[i]);
+  linkMeshes.push(link);
+  armGroup.add(link);
+}
+for (let i = 0; i < 7; i++) {
+  const color = i < 6 ? JOINT_COLORS[i] : '#53d769';
+  const radius = 0.018 - i * 0.0013;
+  const joint = createJoint(Math.max(radius, 0.008), color);
+  jointMeshes.push(joint);
+  armGroup.add(joint);
+}
+
+// Gripper visualization
+const gripperGroup = new THREE.Group();
+armGroup.add(gripperGroup);
+
+function buildGripper() {
+  // Two-finger parallel jaw gripper
+  const fingerLen = 0.04;
+  const fingerWidth = 0.008;
+  const fingerDepth = 0.005;
+
+  const fingerGeo = new THREE.BoxGeometry(fingerWidth, fingerLen, fingerDepth);
+  const padGeo = new THREE.BoxGeometry(fingerWidth, fingerLen * 0.6, 0.003);
+
+  const leftFinger = new THREE.Mesh(fingerGeo, matGripper);
+  const rightFinger = new THREE.Mesh(fingerGeo, matGripper);
+  const leftPad = new THREE.Mesh(padGeo, matGripperPad);
+  const rightPad = new THREE.Mesh(padGeo, matGripperPad);
+
+  leftFinger.castShadow = true;
+  rightFinger.castShadow = true;
+
+  gripperGroup.add(leftFinger);
+  gripperGroup.add(rightFinger);
+  gripperGroup.add(leftPad);
+  gripperGroup.add(rightPad);
+
+  gripperGroup.userData = { leftFinger, rightFinger, leftPad, rightPad, fingerLen };
+}
+buildGripper();
+
+// =========================================================================
+// Ghost (trail) meshes
+// =========================================================================
+const ghostGroup = new THREE.Group();
+scene.add(ghostGroup);
+const ghostArmSets = [];
+
+function createGhostArm(opacity) {
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x4a90d9,
+    transparent: true,
+    opacity: opacity,
+    wireframe: true,
+  });
+  const links = [];
+  for (let i = 0; i < 7; i++) {
+    const geo = new THREE.CylinderGeometry(linkRadii[i] * 0.7, linkRadii[i] * 0.7, 1, 8);
+    geo.translate(0, 0.5, 0);
+    const mesh = new THREE.Mesh(geo, mat.clone());
+    links.push(mesh);
+    ghostGroup.add(mesh);
+  }
+  return links;
+}
+
+for (let g = 0; g < GHOST_MAX; g++) {
+  const opacity = 0.05 + (g / GHOST_MAX) * 0.1;
+  ghostArmSets.push(createGhostArm(opacity));
+}
+
+// =========================================================================
+// Camera visualization (virtual cameras in the scene)
+// =========================================================================
+const camHelpers = [];
+function createCameraHelper(color, label) {
+  const group = new THREE.Group();
+  // Camera frustum wireframe
+  const frustumGeo = new THREE.ConeGeometry(0.03, 0.06, 4);
+  frustumGeo.rotateX(Math.PI / 2);
+  const frustumMat = new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0.6 });
+  const frustum = new THREE.Mesh(frustumGeo, frustumMat);
+  group.add(frustum);
+
+  // Camera body
+  const bodyGeo = new THREE.BoxGeometry(0.025, 0.018, 0.018);
+  bodyGeo.translate(0, 0, -0.015);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.6, metalness: 0.4 });
+  group.add(new THREE.Mesh(bodyGeo, bodyMat));
+
+  scene.add(group);
+  return group;
+}
+camHelpers.push(createCameraHelper(0xe94560, 'cam0'));
+camHelpers.push(createCameraHelper(0x4a90d9, 'cam1'));
+
+function updateCameraHelpers() {
+  for (let i = 0; i < 2; i++) {
+    const ex = camExtrinsics[i];
+    camHelpers[i].position.set(ex.x, ex.y, ex.z);
+    camHelpers[i].lookAt(ex.lookAt[0], ex.lookAt[1], ex.lookAt[2]);
+  }
+}
+updateCameraHelpers();
+
+// =========================================================================
+// Update Arm Visualization
+// =========================================================================
+function positionLink(mesh, from, to) {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const len = dir.length();
+  if (len < 0.0001) {
+    mesh.visible = false;
+    return;
+  }
+  mesh.visible = true;
+  mesh.position.copy(from);
+  mesh.scale.set(1, len, 1);
+  // Orient cylinder to point from -> to
+  const up = new THREE.Vector3(0, 1, 0);
+  const quat = new THREE.Quaternion().setFromUnitVectors(up, dir.normalize());
+  mesh.quaternion.copy(quat);
+}
+
+function updateArmVisuals(anglesDeg, gripper) {
+  const { positions, transforms } = forwardKinematics(anglesDeg);
+
+  // Update links
+  for (let i = 0; i < 7; i++) {
+    positionLink(linkMeshes[i], positions[i], positions[i + 1]);
+  }
+
+  // Update joints
+  for (let i = 0; i < 7; i++) {
+    jointMeshes[i].position.copy(positions[i + 1]);
+
+    // Orient joint ring to show rotation axis
+    if (i < 6 && transforms[i + 1]) {
+      const axis = getJointAxis(transforms[i]);
+      const ring = jointMeshes[i].userData.ring;
+      if (ring) {
+        const up = new THREE.Vector3(0, 0, 1);
+        ring.quaternion.setFromUnitVectors(up, axis);
+      }
+    }
+  }
+
+  // Update gripper at end-effector
+  const eePos = positions[positions.length - 1];
+  const eeTransform = transforms[transforms.length - 1];
+  gripperGroup.position.copy(eePos);
+
+  // Extract EE orientation
+  const eeRot = new THREE.Quaternion();
+  eeTransform.decompose(new THREE.Vector3(), eeRot, new THREE.Vector3());
+  gripperGroup.quaternion.copy(eeRot);
+
+  // Gripper opening: 0-50mm maps to finger spread
+  const openFraction = Math.min(gripper / 50, 1);
+  const halfSpread = 0.005 + openFraction * 0.02; // 5mm to 25mm half-spread
+  const fl = gripperGroup.userData.fingerLen || 0.04;
+  const { leftFinger, rightFinger, leftPad, rightPad } = gripperGroup.userData;
+  if (leftFinger) {
+    leftFinger.position.set(halfSpread, fl / 2, 0);
+    rightFinger.position.set(-halfSpread, fl / 2, 0);
+    leftPad.position.set(halfSpread - 0.001, fl * 0.35, 0);
+    rightPad.position.set(-halfSpread + 0.001, fl * 0.35, 0);
+  }
+
+  // Update axes helper
+  if (showAxesHelper) {
+    updateAxesViz(positions, transforms);
+  }
+
+  // Update EE overlay info
+  const eePosScaled = eePos.clone().multiplyScalar(1000); // to mm
+  document.getElementById('eePos').textContent =
+    `X:${eePosScaled.x.toFixed(1)} Y:${eePosScaled.y.toFixed(1)} Z:${eePosScaled.z.toFixed(1)} mm`;
+
+  // Orientation as Euler
+  const euler = new THREE.Euler().setFromQuaternion(eeRot, 'XYZ');
+  const deg = (r) => (r * 180 / Math.PI).toFixed(1);
+  document.getElementById('eeOri').textContent =
+    `R:${deg(euler.x)} P:${deg(euler.y)} Y:${deg(euler.z)}°`;
+
+  // Reach (horizontal distance from base)
+  const reach = Math.sqrt(eePos.x * eePos.x + eePos.y * eePos.y) * 1000;
+  document.getElementById('eeReach').textContent = `${reach.toFixed(1)} mm`;
+
+  return positions;
+}
+
+// =========================================================================
+// Axes Visualization (per-joint rotation axes)
+// =========================================================================
+function updateAxesViz(positions, transforms) {
+  // Clear existing
+  while (axesGroup.children.length > 0) {
+    axesGroup.remove(axesGroup.children[0]);
+  }
+  axesGroup.visible = showAxesHelper;
+
+  for (let i = 0; i < Math.min(6, positions.length - 1); i++) {
+    const axis = getJointAxis(transforms[i]);
+    const origin = positions[i + 1].clone();
+    const end = origin.clone().add(axis.clone().multiplyScalar(0.06));
+
+    const points = [origin, end];
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({ color: JOINT_COLORS[i], linewidth: 2 });
+    const line = new THREE.Line(geo, mat);
+    axesGroup.add(line);
+
+    // Arrow head
+    const coneGeo = new THREE.ConeGeometry(0.004, 0.012, 8);
+    const coneMat = new THREE.MeshBasicMaterial({ color: JOINT_COLORS[i] });
+    const cone = new THREE.Mesh(coneGeo, coneMat);
+    cone.position.copy(end);
+    const up = new THREE.Vector3(0, 1, 0);
+    cone.quaternion.setFromUnitVectors(up, axis);
+    axesGroup.add(cone);
+  }
+}
+
+// =========================================================================
+// Ghost Trail
+// =========================================================================
+function updateGhostTrail(anglesDeg) {
+  if (!showGhost) {
+    ghostGroup.visible = false;
+    return;
+  }
+  ghostGroup.visible = true;
+
+  const now = performance.now();
+  if (now - lastGhostTime > GHOST_INTERVAL) {
+    ghostHistory.push([...anglesDeg]);
+    if (ghostHistory.length > GHOST_MAX) ghostHistory.shift();
+    lastGhostTime = now;
+  }
+
+  for (let g = 0; g < GHOST_MAX; g++) {
+    const ghostLinks = ghostArmSets[g];
+    if (g < ghostHistory.length) {
+      const { positions } = forwardKinematics(ghostHistory[g]);
+      for (let i = 0; i < 7; i++) {
+        positionLink(ghostLinks[i], positions[i], positions[i + 1]);
+        ghostLinks[i].visible = true;
+      }
+    } else {
+      for (let i = 0; i < 7; i++) ghostLinks[i].visible = false;
+    }
+  }
+}
+
+// =========================================================================
+// Camera Overlay — Project FK skeleton onto camera feed panels
+// =========================================================================
+function projectToCamera(point3D, camIdx) {
+  // Simple pinhole projection using estimated camera extrinsics
+  // This provides a visual reference for calibration alignment
+  const ex = camExtrinsics[camIdx];
+  const camPos = new THREE.Vector3(ex.x, ex.y, ex.z);
+  const lookTarget = new THREE.Vector3(...ex.lookAt);
+
+  // Build view matrix
+  const viewMat = new THREE.Matrix4();
+  viewMat.lookAt(camPos, lookTarget, new THREE.Vector3(0, 0, 1));
+  const viewMatInv = viewMat.clone().invert();
+
+  // Transform point to camera space
+  const localPt = point3D.clone().sub(camPos);
+  localPt.applyMatrix4(viewMatInv);
+
+  // Simple perspective projection (assume ~60deg FOV, 16:9)
+  const focalPx = 800; // approximate focal length in pixels
+  if (localPt.z <= 0.001) return null; // behind camera
+
+  const u = (localPt.x / localPt.z) * focalPx + 0.5;
+  const v = -(localPt.y / localPt.z) * focalPx + 0.5;
+  return { u, v };
+}
+
+function drawCameraOverlay(camIdx) {
+  const canvas = document.getElementById(`camOverlay${camIdx}`);
+  if (!canvas) return;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * window.devicePixelRatio;
+  canvas.height = rect.height * window.devicePixelRatio;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  if (!showOverlay) return;
+
+  const { positions } = forwardKinematics(jointsDeg);
+  const w = rect.width, h = rect.height;
+
+  // Project each joint position
+  const projected = positions.map(p => {
+    const proj = projectToCamera(p, camIdx);
+    if (!proj) return null;
+    return { x: proj.u * w, y: proj.v * h };
+  });
+
+  // Draw links
+  ctx.strokeStyle = 'rgba(74, 144, 217, 0.7)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 3]);
+  for (let i = 0; i < projected.length - 1; i++) {
+    if (projected[i] && projected[i + 1]) {
+      ctx.beginPath();
+      ctx.moveTo(projected[i].x, projected[i].y);
+      ctx.lineTo(projected[i + 1].x, projected[i + 1].y);
+      ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
+
+  // Draw joints
+  for (let i = 0; i < projected.length; i++) {
+    if (!projected[i]) continue;
+    const color = i > 0 && i <= 6 ? JOINT_COLORS[i - 1] : '#53d769';
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(projected[i].x, projected[i].y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Label EE
+  const ee = projected[projected.length - 1];
+  if (ee) {
+    ctx.fillStyle = '#53d769';
+    ctx.font = '9px monospace';
+    ctx.fillText('EE', ee.x + 6, ee.y - 6);
+  }
+}
+
+// =========================================================================
+// Joint Readout UI
+// =========================================================================
+function buildJointReadout() {
+  const container = document.getElementById('jointReadout');
+  let html = '';
+  for (let i = 0; i < 6; i++) {
+    html += `
+    <div class="joint-row">
+      <div class="joint-dot" style="background:${JOINT_COLORS[i]}"></div>
+      <span class="joint-name">J${i + 1}</span>
+      <div class="joint-bar-bg">
+        <div class="joint-bar-center"></div>
+        <div class="joint-bar" id="jbar${i}" style="background:${JOINT_COLORS[i]};width:50%"></div>
+      </div>
+      <span class="joint-val" id="jval${i}">0.0°</span>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function updateJointReadout() {
+  for (let i = 0; i < 6; i++) {
+    const [lo, hi] = JOINT_LIMITS_DEG[i];
+    const range = hi - lo;
+    const pct = ((jointsDeg[i] - lo) / range) * 100;
+    const bar = document.getElementById(`jbar${i}`);
+    const val = document.getElementById(`jval${i}`);
+    if (bar) bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    if (val) val.textContent = `${jointsDeg[i].toFixed(1)}°`;
+  }
+  const gripperBar = document.getElementById('gripperBar');
+  const gripperVal = document.getElementById('gripperVal');
+  if (gripperBar) gripperBar.style.width = `${(gripperMm / 50) * 100}%`;
+  if (gripperVal) gripperVal.textContent = `${gripperMm.toFixed(1)} mm`;
+}
+
+// =========================================================================
+// Calibration Offset UI
+// =========================================================================
+function buildCalibOffsets() {
+  const container = document.getElementById('calibOffsets');
+  let html = '';
+  for (let i = 0; i < 6; i++) {
+    html += `
+    <div class="calib-row">
+      <span class="calib-label" style="color:${JOINT_COLORS[i]}">J${i + 1}</span>
+      <input type="range" class="calib-slider" min="-20" max="20" step="0.1" value="${jointOffsets[i]}"
+        oninput="updateOffset(${i}, this.value)">
+      <span class="calib-val" id="coff${i}">${jointOffsets[i].toFixed(1)}°</span>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+// Expose to global scope for onclick handlers
+window.updateOffset = function(idx, val) {
+  jointOffsets[idx] = parseFloat(val);
+  document.getElementById(`coff${idx}`).textContent = `${jointOffsets[idx].toFixed(1)}°`;
+  updateCalibMetrics();
+};
+
+window.updateCamExtrinsic = function(camIdx, axis, val) {
+  const v = parseFloat(val);
+  camExtrinsics[camIdx][axis] = v;
+  document.getElementById(`cam${camIdx}${axis.toUpperCase()}`).textContent = v.toFixed(2);
+  updateCameraHelpers();
+};
+
+function updateCalibMetrics() {
+  const rms = Math.sqrt(jointOffsets.reduce((s, o) => s + o * o, 0) / 6);
+  const rmsEl = document.getElementById('calibRMS');
+  if (rmsEl) {
+    rmsEl.textContent = `${rms.toFixed(2)}°`;
+    rmsEl.className = 'val ' + (rms < 1 ? 'good' : rms < 5 ? 'warn' : 'bad');
+  }
+}
+
+window.resetCalibration = function() {
+  jointOffsets = [0, 0, 0, 0, 0, 0];
+  buildCalibOffsets();
+  updateCalibMetrics();
+};
+
+window.autoCalibrate = function() {
+  // Auto-calibration would compare FK projections with detected arm positions
+  // in camera feeds. This is a placeholder that shows the concept.
+  // In a real setup, this would:
+  // 1. Capture current camera frames
+  // 2. Detect arm joint positions using computer vision
+  // 3. Compare with FK projections
+  // 4. Minimize reprojection error via optimization
+  const el = document.getElementById('calibStereo');
+  if (el) el.textContent = 'Needs camera feeds';
+};
+
+window.saveCalibration = function() {
+  const data = {
+    jointOffsets,
+    camExtrinsics: camExtrinsics.map(c => ({ ...c })),
+    timestamp: new Date().toISOString(),
+  };
+  localStorage.setItem('th3cl4w_v3_calibration', JSON.stringify(data));
+  console.log('Calibration saved to localStorage');
+};
+
+window.loadCalibration = function() {
+  const raw = localStorage.getItem('th3cl4w_v3_calibration');
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    if (data.jointOffsets) jointOffsets = data.jointOffsets;
+    if (data.camExtrinsics) {
+      for (let i = 0; i < 2; i++) {
+        Object.assign(camExtrinsics[i], data.camExtrinsics[i]);
+      }
+    }
+    buildCalibOffsets();
+    updateCameraHelpers();
+    updateCalibMetrics();
+    console.log('Calibration loaded from localStorage');
+  } catch (e) {
+    console.warn('Failed to load calibration:', e);
+  }
+};
+
+// =========================================================================
+// Toggle Controls
+// =========================================================================
+window.toggleCalibPanel = function() {
+  const panel = document.getElementById('calibPanel');
+  const btn = document.getElementById('btnCalib');
+  const visible = panel.style.display !== 'none';
+  panel.style.display = visible ? 'none' : 'block';
+  btn.classList.toggle('active', !visible);
+};
+
+window.toggleOverlay = function() {
+  showOverlay = !showOverlay;
+  document.getElementById('btnOverlay').classList.toggle('active', showOverlay);
+};
+
+window.toggleAxes = function() {
+  showAxesHelper = !showAxesHelper;
+  axesGroup.visible = showAxesHelper;
+  document.getElementById('btnAxes').classList.toggle('active', showAxesHelper);
+};
+
+window.toggleGhost = function() {
+  showGhost = !showGhost;
+  document.getElementById('btnGhost').classList.toggle('active', showGhost);
+  if (!showGhost) ghostHistory.length = 0;
+};
+
+// =========================================================================
+// Camera View Presets
+// =========================================================================
+function animateCamera(pos, target, duration) {
+  const startPos = camera.position.clone();
+  const startTarget = controls.target.clone();
+  const endPos = new THREE.Vector3(...pos);
+  const endTarget = new THREE.Vector3(...target);
+  const t0 = performance.now();
+
+  function step() {
+    const elapsed = performance.now() - t0;
+    const t = Math.min(elapsed / duration, 1);
+    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // easeInOutQuad
+    camera.position.lerpVectors(startPos, endPos, ease);
+    controls.target.lerpVectors(startTarget, endTarget, ease);
+    controls.update();
+    if (t < 1) requestAnimationFrame(step);
+  }
+  step();
+}
+
+window.setView = function(name) {
+  const target = [0, 0, 0.2];
+  switch (name) {
+    case 'front': animateCamera([0.8, 0, 0.25], target, 500); break;
+    case 'side': animateCamera([0, 0.8, 0.25], target, 500); break;
+    case 'top': animateCamera([0, 0, 1.0], [0, 0, 0], 500); break;
+    case 'iso': animateCamera([0.6, 0.4, 0.5], target, 500); break;
+    case 'cam0': {
+      const ex = camExtrinsics[0];
+      animateCamera([ex.x, ex.y, ex.z], ex.lookAt, 500);
+      break;
+    }
+    case 'cam1': {
+      const ex = camExtrinsics[1];
+      animateCamera([ex.x, ex.y, ex.z], ex.lookAt, 500);
+      break;
+    }
+  }
+};
+
+window.resetView = function() {
+  animateCamera([0.6, 0.4, 0.5], [0, 0, 0.2], 500);
+};
+
+// =========================================================================
+// Camera Feed Integration
+// =========================================================================
+function initCameraFeeds() {
+  for (let i = 0; i < 2; i++) {
+    const img = document.getElementById(`camImg${i}`);
+    const placeholder = document.getElementById(`camPlaceholder${i}`);
+    // Try MJPEG stream from camera server or proxy
+    // Cameras may be on port 8082 (camera_server) or proxied through 8081
+    const urls = [
+      `${location.protocol}//${location.hostname}:8082/cam/${i}`,
+      `${location.protocol}//${location.hostname}:8081/cam/${i}`,
+      `${location.protocol}//${location.host}/cam/${i}`,
+    ];
+
+    let loaded = false;
+    function tryNext(urlIdx) {
+      if (urlIdx >= urls.length || loaded) return;
+      img.onerror = () => tryNext(urlIdx + 1);
+      img.onload = () => {
+        if (!loaded) {
+          loaded = true;
+          img.style.display = 'block';
+          placeholder.style.display = 'none';
+        }
+      };
+      img.src = urls[urlIdx];
+    }
+    tryNext(0);
+  }
+}
+
+// =========================================================================
+// WebSocket Connection
+// =========================================================================
+let ws = null;
+let wsReconnectTimer = null;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/state`);
+
+  ws.onopen = () => {
+    connected = true;
+    document.getElementById('connDot').className = 'conn-dot on';
+    document.getElementById('connLabel').textContent = 'Connected';
+    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+  };
+
+  ws.onmessage = (e) => {
+    const t0 = performance.now();
+    try {
+      const state = JSON.parse(e.data);
+      if (state.joints && state.joints.length >= 6) {
+        jointsDeg = state.joints.map(Number);
+      }
+      if (state.gripper !== undefined) {
+        gripperMm = Number(state.gripper);
+      }
+      wsLatency = performance.now() - t0;
+      document.getElementById('latency').textContent = `${wsLatency.toFixed(0)}ms parse`;
+    } catch (err) {
+      console.warn('WS parse error:', err);
+    }
+  };
+
+  ws.onclose = () => {
+    connected = false;
+    document.getElementById('connDot').className = 'conn-dot off';
+    document.getElementById('connLabel').textContent = 'Disconnected';
+    wsReconnectTimer = setTimeout(connectWS, 2000);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+// =========================================================================
+// Resize Handler
+// =========================================================================
+function onResize() {
+  const container = document.getElementById('viewport');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+window.addEventListener('resize', onResize);
+
+// =========================================================================
+// Animation Loop
+// =========================================================================
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+
+  // Update arm from current joint state
+  const positions = updateArmVisuals(jointsDeg, gripperMm);
+  updateJointReadout();
+  updateGhostTrail(jointsDeg);
+
+  // Camera overlays
+  if (showOverlay) {
+    drawCameraOverlay(0);
+    drawCameraOverlay(1);
+  }
+
+  renderer.render(scene, camera);
+}
+
+// =========================================================================
+// Init
+// =========================================================================
+buildJointReadout();
+buildCalibOffsets();
+loadCalibration(); // Restore saved calibration
+onResize();
+connectWS();
+initCameraFeeds();
+animate();
+
+// Initial view
+document.getElementById('viewIso').classList.add('active');
+
+</script>
+</body>
+</html>
