@@ -28,6 +28,8 @@ try:
 except ImportError:
     _HAS_TELEMETRY = False
 
+from command_smoother import CommandSmoother
+
 # ---------------------------------------------------------------------------
 # CLI args (parsed early so lifespan can access them)
 # ---------------------------------------------------------------------------
@@ -181,6 +183,7 @@ class SimulatedArm:
 # ---------------------------------------------------------------------------
 
 arm: Any = None
+smoother: Optional[CommandSmoother] = None
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -188,7 +191,14 @@ arm: Any = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global arm
+    global arm, smoother
+    # Start telemetry collector
+    if _HAS_TELEMETRY:
+        tc = get_collector()
+        tc.start()
+        tc.enable()
+        tc.log_system_event("startup", "system", "th3cl4w starting up")
+
     if args.simulate:
         arm = SimulatedArm()
         action_log.add("SYSTEM", "Simulated arm initialized", "info")
@@ -202,20 +212,37 @@ async def lifespan(app: FastAPI):
             arm = D1DDSConnection()
             if arm.connect(interface_name=args.interface):
                 action_log.add("SYSTEM", f"DDS connected on {args.interface}", "info")
+                if _HAS_TELEMETRY:
+                    get_collector().log_system_event("connect", "dds", f"Connected on {args.interface}")
             else:
                 action_log.add("SYSTEM", f"DDS connection FAILED on {args.interface}", "error")
+                if _HAS_TELEMETRY:
+                    get_collector().log_system_event("connect_failed", "dds", f"Failed on {args.interface}", level="error")
         except Exception as e:
             action_log.add("SYSTEM", f"DDS init error: {e}", "error")
             logger.exception("Failed to initialize DDS connection")
             arm = None
 
+    # Start the command smoother for smooth motion
+    if arm is not None:
+        tc_ref = get_collector() if _HAS_TELEMETRY else None
+        smoother = CommandSmoother(arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=15.0, collector=tc_ref)
+        await smoother.start()
+        action_log.add("SYSTEM", "Command smoother started (10Hz, α=0.35)", "info")
+
     yield
 
+    if smoother is not None:
+        await smoother.stop()
     if arm is not None:
         try:
             arm.disconnect()
         except Exception:
             pass
+    # Stop telemetry collector
+    if _HAS_TELEMETRY:
+        get_collector().log_system_event("shutdown", "system", "th3cl4w shutting down")
+        get_collector().stop()
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -229,6 +256,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def telemetry_middleware(request, call_next):
+    """Log all /api/ requests to telemetry."""
+    if _HAS_TELEMETRY and request.url.path.startswith("/api/"):
+        t0 = time.monotonic()
+        response = await call_next(request)
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        tc = get_collector()
+        if tc.enabled:
+            tc.log_web_request(
+                endpoint=request.url.path, method=request.method,
+                params=None, response_ms=elapsed_ms,
+                status_code=response.status_code,
+                ok=response.status_code < 400,
+            )
+        return response
+    return await call_next(request)
+
 
 # ---------------------------------------------------------------------------
 # Connected WebSocket clients for command acks
@@ -374,6 +421,8 @@ async def cmd_enable():
             resp_data["correlation_id"] = cid
         return JSONResponse(resp_data)
     ok = arm.enable_motors(_correlation_id=cid)
+    if _HAS_TELEMETRY:
+        get_collector().log_system_event("enable", "web", f"Motors enable: {'OK' if ok else 'FAILED'}", correlation_id=cid, level="info" if ok else "error")
     resp = cmd_response(ok, "ENABLE", correlation_id=cid)
     await broadcast_ack("ENABLE", ok)
     return resp
@@ -383,6 +432,8 @@ async def cmd_disable():
     cid = _new_cid()
     _telem_cmd_sent("disable", {}, cid)
     ok = arm.disable_motors(_correlation_id=cid) if arm else False
+    if _HAS_TELEMETRY:
+        get_collector().log_system_event("disable", "web", f"Motors disable: {'OK' if ok else 'FAILED'}", correlation_id=cid)
     resp = cmd_response(ok, "DISABLE", correlation_id=cid)
     await broadcast_ack("DISABLE", ok)
     return resp
@@ -392,6 +443,8 @@ async def cmd_power_on():
     cid = _new_cid()
     _telem_cmd_sent("power-on", {}, cid)
     ok = arm.power_on(_correlation_id=cid) if arm else False
+    if _HAS_TELEMETRY:
+        get_collector().log_system_event("power_on", "web", f"Power on: {'OK' if ok else 'FAILED'}", correlation_id=cid)
     resp = cmd_response(ok, "POWER_ON", correlation_id=cid)
     await broadcast_ack("POWER_ON", ok)
     return resp
@@ -401,6 +454,8 @@ async def cmd_power_off():
     cid = _new_cid()
     _telem_cmd_sent("power-off", {}, cid)
     ok = arm.power_off(_correlation_id=cid) if arm else False
+    if _HAS_TELEMETRY:
+        get_collector().log_system_event("power_off", "web", f"Power off: {'OK' if ok else 'FAILED'}", correlation_id=cid)
     resp = cmd_response(ok, "POWER_OFF", correlation_id=cid)
     await broadcast_ack("POWER_OFF", ok)
     return resp
@@ -426,7 +481,11 @@ async def cmd_set_joint(req: SetJointRequest):
         if cid:
             resp_data["correlation_id"] = cid
         return JSONResponse(resp_data, status_code=400)
-    ok = arm.set_joint(req.id, req.angle, _correlation_id=cid) if arm else False
+    if smoother and smoother.running:
+        smoother.set_joint_target(req.id, req.angle)
+        ok = True
+    else:
+        ok = arm.set_joint(req.id, req.angle, _correlation_id=cid) if arm else False
     resp = cmd_response(ok, "SET_JOINT", f"J{req.id} = {req.angle}°", cid)
     await broadcast_ack("SET_JOINT", ok)
     return resp
@@ -444,7 +503,11 @@ async def cmd_set_all_joints(req: SetAllJointsRequest):
             if cid:
                 resp_data2["correlation_id"] = cid
             return JSONResponse(resp_data2, status_code=400)
-    ok = arm.set_all_joints(req.angles, _correlation_id=cid) if arm else False
+    if smoother and smoother.running:
+        smoother.set_all_joints_target(req.angles)
+        ok = True
+    else:
+        ok = arm.set_all_joints(req.angles, _correlation_id=cid) if arm else False
     resp = cmd_response(ok, "SET_ALL_JOINTS", correlation_id=cid)
     await broadcast_ack("SET_ALL_JOINTS", ok)
     return resp
@@ -454,9 +517,13 @@ async def cmd_set_gripper(req: SetGripperRequest):
     cid = _new_cid()
     _telem_cmd_sent("set-gripper", {"position": req.position}, cid)
     action_log.add("SET_GRIPPER", f"Request: {req.position} mm", "info")
-    ok = False
-    if arm and hasattr(arm, "set_gripper"):
-        ok = arm.set_gripper(req.position, _correlation_id=cid)
+    if smoother and smoother.running:
+        smoother.set_gripper_target(req.position)
+        ok = True
+    else:
+        ok = False
+        if arm and hasattr(arm, "set_gripper"):
+            ok = arm.set_gripper(req.position, _correlation_id=cid)
     resp = cmd_response(ok, "SET_GRIPPER", f"{req.position} mm", cid)
     await broadcast_ack("SET_GRIPPER", ok)
     return resp
@@ -467,6 +534,8 @@ async def cmd_stop():
     cid = _new_cid()
     _telem_cmd_sent("stop", {}, cid)
     action_log.add("EMERGENCY_STOP", "⚠ TRIGGERED", "error")
+    if _HAS_TELEMETRY:
+        get_collector().log_system_event("estop", "web", "Emergency stop triggered", correlation_id=cid, level="error")
     ok1 = arm.disable_motors(_correlation_id=cid) if arm else False
     ok2 = arm.power_off(_correlation_id=cid) if arm else False
     ok = ok1 and ok2
@@ -565,6 +634,49 @@ async def debug_pipeline(correlation_id: str):
         },
         "latency_ms": entry["latency_ms"],
     } for entry in pipeline]
+
+# ---------------------------------------------------------------------------
+# WebSocket — stream telemetry events in real-time
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws/telemetry")
+async def ws_telemetry(ws: WebSocket):
+    """Stream telemetry events to clients in real-time."""
+    await ws.accept()
+    if not _HAS_TELEMETRY:
+        await ws.close(code=1011, reason="Telemetry not available")
+        return
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+    loop = asyncio.get_event_loop()
+
+    def on_event(event_dict):
+        try:
+            loop.call_soon_threadsafe(queue.put_nowait, event_dict)
+        except Exception:
+            pass
+
+    tc = get_collector()
+    tc.subscribe(on_event)
+    try:
+        while True:
+            event_dict = await queue.get()
+            await ws.send_json(event_dict)
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        tc.unsubscribe(on_event)
+
+
+# ---------------------------------------------------------------------------
+# Telemetry viewer page route
+# ---------------------------------------------------------------------------
+
+@app.get("/telemetry")
+async def telemetry_page():
+    from fastapi.responses import FileResponse
+    return FileResponse(Path(__file__).parent / "static" / "telemetry.html")
+
 
 # ---------------------------------------------------------------------------
 # Static files

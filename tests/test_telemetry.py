@@ -107,12 +107,12 @@ class TestCorrelation:
         assert c.get_pipeline("nonexistent") == []
 
     def test_correlation_eviction(self):
-        c = TelemetryCollector()
+        c = TelemetryCollector(maxlen=500)
         c.enable()
         # fill 500 correlations then add one more
         for i in range(501):
             c.emit("s", EventType.CMD_SENT, {}, correlation_id=f"cid-{i:04d}")
-        # first should be evicted
+        # first should be evicted from the ring buffer
         assert c.get_pipeline("cid-0000") == []
         assert len(c.get_pipeline("cid-0500")) == 1
 

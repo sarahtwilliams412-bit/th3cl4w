@@ -26,6 +26,12 @@ try:
 except ImportError:
     _HAS_MONITOR = False
 
+try:
+    from src.telemetry import get_collector
+    _HAS_TELEMETRY = True
+except ImportError:
+    _HAS_TELEMETRY = False
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("th3cl4w.camera")
 
@@ -129,6 +135,14 @@ class CameraThread:
                 if self._frame_count % 5 == 0:
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     self._health.compute_motion(gray)
+                # Log camera health every ~5 seconds
+                if self._frame_count % (self.fps * 5) == 0 and _HAS_TELEMETRY:
+                    try:
+                        tc = get_collector()
+                        if tc.enabled:
+                            tc.log_camera_health(str(self.device_id), self._health.stats)
+                    except Exception:
+                        pass
 
             time.sleep(1.0 / self.fps)
 
