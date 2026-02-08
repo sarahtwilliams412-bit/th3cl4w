@@ -62,10 +62,20 @@ trap cleanup EXIT INT TERM
 CAM_WATCH_PID=$!
 
 # --- Main web server watchdog ---
+FIRST_RUN=true
 while true; do
-    kill_server  # Ensure clean state before starting
+    if [ "$FIRST_RUN" = true ]; then
+        kill_server  # Ensure clean state on first start only
+        FIRST_RUN=false
+    fi
     echo "[$(date)] Starting server..."
     python3.12 web/server.py --interface eno1 2>&1 | tee -a /tmp/server.log
-    echo "[$(date)] Server exited ($?), restarting in 3s..."
+    RC=$?
+    echo "[$(date)] Server exited ($RC), restarting in 3s..."
+    # Only kill if port is still held (zombie process)
+    if fuser 8080/tcp >/dev/null 2>&1; then
+        echo "[$(date)] Port 8080 still in use, cleaning up..."
+        kill_server
+    fi
     sleep 3
 done
