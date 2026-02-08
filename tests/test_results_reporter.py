@@ -16,61 +16,52 @@ from src.calibration.results_reporter import (
 )
 
 
-def _make_joint_comparisons(
-    cv_rates=None, llm_rates=None, cv_errors=None, llm_errors=None, agreements=None
-):
-    cv_rates = cv_rates or [0.8, 0.7, 0.6, 0.5, 0.9]
-    llm_rates = llm_rates or [0.6, 0.5, 0.7, 0.4, 0.8]
-    cv_errors = cv_errors or [10.0, 15.0, 20.0, 25.0, 8.0]
-    llm_errors = llm_errors or [30.0, 35.0, 25.0, 40.0, 20.0]
-    agreements = agreements or [0.5, 0.4, 0.6, 0.3, 0.7]
-    return [
-        JointComparison(
-            joint_name=JOINT_NAMES[i],
-            cv_detection_rate=cv_rates[i],
-            llm_detection_rate=llm_rates[i],
-            cv_mean_error_px=cv_errors[i],
-            llm_mean_error_px=llm_errors[i],
-            agreement_rate=agreements[i],
-        )
-        for i in range(5)
-    ]
+def _jc(name, cv_px=(100, 200), llm_px=(110, 210), cv_err=10.0, llm_err=15.0):
+    """Helper to make a JointComparison."""
+    return JointComparison(
+        name=name,
+        fk_pixel=(100, 200),
+        cv_pixel=cv_px,
+        llm_pixel=llm_px,
+        cv_error_px=cv_err,
+        llm_error_px=llm_err,
+        agreement_px=5.0 if cv_px and llm_px else None,
+        cv_source="centroid",
+        llm_confidence=0.8,
+    )
 
 
 def _make_results(n=5):
     results = []
     for i in range(n):
-        results.append(
-            ComparisonResult(
-                pose_index=i,
-                camera_id=0,
-                timestamp=1000.0 + i,
-                joint_angles=[10.0 * i, 20.0, 30.0],
-                cv_errors_px=[10.0, 15.0, None, 20.0, 8.0],
-                llm_errors_px=[30.0, None, 25.0, 40.0, 20.0],
-                cv_detected=[True, True, False, True, True],
-                llm_detected=[False, False, True, True, True],
-                llm_input_tokens=1000,
-                llm_output_tokens=200,
-                llm_cost_usd=0.000135,
-                cv_latency_ms=5.0,
-                llm_latency_ms=2500.0,
-            )
-        )
+        joints = [
+            _jc("base", cv_px=(100, 200), llm_px=None, cv_err=10.0, llm_err=None),
+            _jc("shoulder", cv_px=(150, 180), llm_px=(155, 185), cv_err=12.0, llm_err=18.0),
+            _jc("elbow", cv_px=None, llm_px=(200, 150), cv_err=None, llm_err=25.0),
+            _jc("wrist", cv_px=(250, 120), llm_px=(260, 130), cv_err=20.0, llm_err=35.0),
+            _jc("end_effector", cv_px=(300, 100), llm_px=(310, 105), cv_err=8.0, llm_err=12.0),
+        ]
+        results.append(ComparisonResult(
+            pose_index=i,
+            camera_id=0,
+            joint_angles=[10.0 * i, 20.0, 30.0],
+            joints=joints,
+            cv_latency_ms=5.0,
+            llm_latency_ms=2500.0,
+            llm_tokens=1200,
+        ))
     return results
 
 
 def _make_report(**kwargs):
     defaults = dict(
-        session_id="test_session_001",
-        created_at="2026-02-08T13:00:00",
-        total_poses=5,
         results=_make_results(),
-        joint_comparisons=_make_joint_comparisons(),
-        cv_mean_latency_ms=5.0,
-        llm_mean_latency_ms=2500.0,
-        total_llm_input_tokens=5000,
-        total_llm_output_tokens=1000,
+        cv_detection_rate=0.8,
+        llm_detection_rate=0.8,
+        cv_mean_error_px=12.5,
+        llm_mean_error_px=22.5,
+        agreement_rate=0.6,
+        total_llm_tokens=6000,
         total_llm_cost_usd=0.000675,
         recommendation="",
     )
@@ -121,15 +112,21 @@ class TestMarkdownGeneration:
     def test_llm_helped_section(self):
         reporter = CalibrationReporter()
         md = reporter.generate_markdown(_make_report())
-        # In our test data, CV missed elbow but LLM found it
+        # In test data, CV missed elbow but LLM found it
         assert "LLM Helped" in md
         assert "elbow" in md
 
     def test_llm_failed_section(self):
         # Create result where LLM detected but error > 50px
-        results = _make_results(1)
-        results[0].llm_errors_px = [80.0, None, 25.0, 60.0, 20.0]
-        results[0].llm_detected = [True, False, True, True, True]
+        joints = [
+            _jc("base", llm_px=(200, 300), llm_err=80.0),
+            _jc("shoulder", llm_px=None, llm_err=None),
+            _jc("elbow", llm_px=(200, 150), llm_err=25.0),
+            _jc("wrist", llm_px=(260, 130), llm_err=60.0),
+            _jc("end_effector", llm_px=(310, 105), llm_err=12.0),
+        ]
+        results = [ComparisonResult(pose_index=0, camera_id=0, joint_angles=[], joints=joints,
+                                     cv_latency_ms=5.0, llm_latency_ms=2500.0, llm_tokens=1200)]
         report = _make_report(results=results)
         reporter = CalibrationReporter()
         md = reporter.generate_markdown(report)
@@ -142,52 +139,83 @@ class TestMarkdownGeneration:
 
 
 class TestRecommendation:
+    def _report_with_joints(self, cv_rates, llm_rates, llm_errors):
+        """Build a report where each joint has controlled detection rates and errors."""
+        results = []
+        n_poses = 10
+        for pi in range(n_poses):
+            joints = []
+            for ji, name in enumerate(JOINT_NAMES):
+                cv_det = (pi / n_poses) < cv_rates[ji]
+                llm_det = (pi / n_poses) < llm_rates[ji]
+                joints.append(JointComparison(
+                    name=name,
+                    fk_pixel=(100, 100),
+                    cv_pixel=(100, 100) if cv_det else None,
+                    llm_pixel=(110, 110) if llm_det else None,
+                    cv_error_px=10.0 if cv_det else None,
+                    llm_error_px=llm_errors[ji] if llm_det else None,
+                    agreement_px=None, cv_source=None, llm_confidence=None,
+                ))
+            results.append(ComparisonResult(
+                pose_index=pi, camera_id=0, joint_angles=[],
+                joints=joints, cv_latency_ms=5.0, llm_latency_ms=2000.0, llm_tokens=1000,
+            ))
+        return _make_report(results=results)
+
     def test_archive_low_llm_detection(self):
         reporter = CalibrationReporter()
-        jcs = _make_joint_comparisons(llm_rates=[0.1, 0.2, 0.15, 0.1, 0.2])
-        report = _make_report(joint_comparisons=jcs)
+        report = self._report_with_joints(
+            cv_rates=[0.8, 0.7, 0.6, 0.5, 0.8],
+            llm_rates=[0.1, 0.2, 0.1, 0.1, 0.2],
+            llm_errors=[20.0, 25.0, 30.0, 20.0, 15.0],
+        )
         rec = reporter._compute_recommendation(report)
         assert rec == "archive"
 
     def test_archive_high_llm_error(self):
         reporter = CalibrationReporter()
-        jcs = _make_joint_comparisons(llm_errors=[120.0, 110.0, 130.0, 105.0, 115.0])
-        report = _make_report(joint_comparisons=jcs)
+        report = self._report_with_joints(
+            cv_rates=[0.8, 0.7, 0.6, 0.5, 0.8],
+            llm_rates=[0.6, 0.6, 0.6, 0.6, 0.6],
+            llm_errors=[120.0, 110.0, 130.0, 105.0, 115.0],
+        )
         rec = reporter._compute_recommendation(report)
         assert rec == "archive"
 
     def test_archive_cv_sufficient(self):
         reporter = CalibrationReporter()
-        jcs = _make_joint_comparisons(cv_rates=[0.9, 0.95, 0.88, 0.92, 0.87])
-        report = _make_report(joint_comparisons=jcs)
+        report = self._report_with_joints(
+            cv_rates=[0.9, 0.95, 0.88, 0.92, 0.87],
+            llm_rates=[0.6, 0.6, 0.6, 0.6, 0.6],
+            llm_errors=[20.0, 25.0, 22.0, 18.0, 15.0],
+        )
         rec = reporter._compute_recommendation(report)
         assert rec == "archive"
 
     def test_continue_llm_helps_weak_cv(self):
         reporter = CalibrationReporter()
-        # CV low on elbow, LLM high
-        jcs = _make_joint_comparisons(
+        report = self._report_with_joints(
             cv_rates=[0.8, 0.7, 0.3, 0.5, 0.8],
             llm_rates=[0.6, 0.5, 0.7, 0.5, 0.8],
+            llm_errors=[20.0, 25.0, 22.0, 18.0, 15.0],
         )
-        report = _make_report(joint_comparisons=jcs)
         rec = reporter._compute_recommendation(report)
         assert rec == "continue"
 
     def test_continue_low_llm_error(self):
         reporter = CalibrationReporter()
-        jcs = _make_joint_comparisons(
+        report = self._report_with_joints(
             cv_rates=[0.8, 0.7, 0.6, 0.5, 0.8],
             llm_rates=[0.5, 0.5, 0.5, 0.5, 0.5],
             llm_errors=[20.0, 25.0, 22.0, 18.0, 15.0],
         )
-        report = _make_report(joint_comparisons=jcs)
         rec = reporter._compute_recommendation(report)
         assert rec == "continue"
 
     def test_inconclusive_empty(self):
         reporter = CalibrationReporter()
-        report = _make_report(joint_comparisons=[])
+        report = _make_report(results=[])
         rec = reporter._compute_recommendation(report)
         assert rec == "inconclusive"
 
@@ -219,49 +247,47 @@ class TestJsonOutput:
 class TestEmptyPartialReports:
     def test_empty_results(self):
         reporter = CalibrationReporter()
-        report = _make_report(results=[], total_poses=0)
+        report = _make_report(results=[])
         md = reporter.generate_markdown(report)
         assert "# Calibration Comparison Report" in md
 
-    def test_no_joint_comparisons(self):
+    def test_no_joints_in_results(self):
         reporter = CalibrationReporter()
-        report = _make_report(joint_comparisons=[], results=[])
+        results = [ComparisonResult(pose_index=0, camera_id=0, joint_angles=[],
+                                     joints=[], cv_latency_ms=0, llm_latency_ms=0, llm_tokens=0)]
+        report = _make_report(results=results)
         md = reporter.generate_markdown(report)
         assert "# Calibration Comparison Report" in md
         js = reporter.generate_json(report)
         assert js["joints"] == []
 
-    def test_partial_detections(self):
-        """Results with some None errors."""
+    def test_all_none_detections(self):
+        """Results with no detections at all."""
         reporter = CalibrationReporter()
-        results = [
-            ComparisonResult(
-                pose_index=0,
-                cv_errors_px=[None, None, None, None, None],
-                llm_errors_px=[None, None, None, None, None],
-                cv_detected=[False, False, False, False, False],
-                llm_detected=[False, False, False, False, False],
-            )
-        ]
-        report = _make_report(results=results, total_poses=1)
+        joints = [JointComparison(name="base", fk_pixel=(100, 100), cv_pixel=None, llm_pixel=None,
+                                   cv_error_px=None, llm_error_px=None, agreement_px=None,
+                                   cv_source=None, llm_confidence=None)]
+        results = [ComparisonResult(pose_index=0, camera_id=0, joint_angles=[],
+                                     joints=joints, cv_latency_ms=0, llm_latency_ms=0, llm_tokens=0)]
+        report = _make_report(results=results)
         md = reporter.generate_markdown(report)
-        assert "0/5" in md
+        assert "0/1" in md
 
 
 class TestAsciiVisualizations:
     def test_bar_chart_renders(self):
         reporter = CalibrationReporter()
-        report = _make_report()
-        chart = reporter._ascii_detection_bar_chart(report)
+        from src.calibration.results_reporter import _joint_stats
+        jstats = _joint_stats(_make_report())
+        chart = reporter._ascii_detection_bar_chart(jstats)
         assert "█" in chart or "▓" in chart
         assert "CV" in chart
         assert "LLM" in chart
 
     def test_scatter_renders(self):
         reporter = CalibrationReporter()
-        report = _make_report()
-        scatter = reporter._ascii_error_scatter(report)
-        assert "CV" in scatter.lower() or "cv" in scatter.lower()
+        scatter = reporter._ascii_error_scatter(_make_report())
+        assert "cv" in scatter.lower()
 
     def test_scatter_empty_data(self):
         reporter = CalibrationReporter()
@@ -271,8 +297,7 @@ class TestAsciiVisualizations:
 
     def test_bar_chart_no_joints(self):
         reporter = CalibrationReporter()
-        report = _make_report(joint_comparisons=[])
-        chart = reporter._ascii_detection_bar_chart(report)
+        chart = reporter._ascii_detection_bar_chart([])
         assert "```" in chart
 
 
@@ -287,9 +312,8 @@ class TestSaveReport:
             assert os.path.exists(os.path.join(path, "report.md"))
             assert os.path.exists(os.path.join(path, "summary.json"))
             assert os.path.exists(os.path.join(path, "raw_results.json"))
-            # Verify JSON is valid
             with open(os.path.join(path, "summary.json")) as f:
                 data = json.load(f)
-            assert data["session_id"] == "test_session_001"
+            assert "recommendation" in data
         finally:
             shutil.rmtree(tmpdir)
