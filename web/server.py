@@ -1783,44 +1783,57 @@ class VisionPlanRequest(BaseModel):
     instruction: str = Field(
         ..., min_length=1, max_length=500, description="What to do, e.g. 'pick up the red object'"
     )
-    camera: int = Field(default=0, ge=0, le=1, description="Camera index to use (0 or 1)")
+    camera: int = Field(default=1, ge=0, le=1, description="Primary camera (0=front, 1=overhead)")
+    use_both_cameras: bool = Field(default=True, description="Use both cameras for richer scene")
     execute: bool = Field(default=False, description="Execute the plan immediately if True")
+
+
+async def _grab_camera_frame(camera: int) -> Optional[np.ndarray]:
+    """Fetch a snapshot from the camera server and decode it."""
+    import httpx
+    import cv2
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"http://localhost:8081/snap/{camera}")
+        if resp.status_code != 200:
+            return None
+        return cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
+    except Exception:
+        return None
 
 
 @app.post("/api/vision/plan")
 async def vision_plan(req: VisionPlanRequest):
-    """Analyze camera feed and build a task plan from an instruction."""
+    """Analyze camera feeds and build a task plan from an instruction.
+
+    Camera layout: cam0=front/side, cam1=overhead (default primary).
+    Uses both cameras by default for dual-view scene understanding.
+    """
     if not _HAS_VISION_PLANNING or vision_task_planner is None or scene_analyzer is None:
         return JSONResponse(
             {"ok": False, "error": "Vision planning module not available"}, status_code=501
         )
 
-    import httpx
+    frame = await _grab_camera_frame(req.camera)
+    if frame is None:
+        return JSONResponse(
+            {"ok": False, "error": f"Camera {req.camera} snapshot failed"}, status_code=502
+        )
 
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(f"http://localhost:8081/snap/{req.camera}")
-        if resp.status_code != 200:
-            return JSONResponse(
-                {"ok": False, "error": f"Camera {req.camera} snapshot failed"}, status_code=502
-            )
-
-        import cv2
-
-        frame = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
-        if frame is None:
-            return JSONResponse(
-                {"ok": False, "error": "Failed to decode camera frame"}, status_code=502
-            )
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": f"Camera error: {e}"}, status_code=502)
+    # Grab second camera for cross-referencing
+    cam0_frame = None
+    if req.use_both_cameras:
+        other_cam = 0 if req.camera == 1 else 1
+        cam0_frame = await _grab_camera_frame(other_cam)
 
     import time as _time
 
-    scene = scene_analyzer.analyze(frame, timestamp=_time.time())
+    scene = scene_analyzer.analyze(frame, cam0_frame=cam0_frame, timestamp=_time.time())
+    cameras_str = ", ".join(scene.cameras_used)
     action_log.add(
         "VISION",
-        f"Scene analyzed: {scene.object_count} objects from camera {req.camera}",
+        f"Scene analyzed: {scene.object_count} objects (cameras: {cameras_str})",
         "info",
     )
 
@@ -1862,39 +1875,34 @@ async def vision_plan(req: VisionPlanRequest):
 
 
 @app.post("/api/vision/analyze")
-async def vision_analyze(camera: int = 0):
-    """Analyze the current camera view and return a scene description."""
+async def vision_analyze(camera: int = 1, use_both: bool = True):
+    """Analyze the current camera view and return a scene description.
+
+    Camera layout: cam0=front/side, cam1=overhead (default).
+    """
     if not _HAS_VISION_PLANNING or scene_analyzer is None:
         return JSONResponse(
             {"ok": False, "error": "Vision planning module not available"}, status_code=501
         )
 
-    import httpx
+    frame = await _grab_camera_frame(camera)
+    if frame is None:
+        return JSONResponse(
+            {"ok": False, "error": f"Camera {camera} snapshot failed"}, status_code=502
+        )
 
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(f"http://localhost:8081/snap/{camera}")
-        if resp.status_code != 200:
-            return JSONResponse(
-                {"ok": False, "error": f"Camera {camera} snapshot failed"}, status_code=502
-            )
-
-        import cv2
-
-        frame = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
-        if frame is None:
-            return JSONResponse(
-                {"ok": False, "error": "Failed to decode camera frame"}, status_code=502
-            )
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": f"Camera error: {e}"}, status_code=502)
+    cam0_frame = None
+    if use_both:
+        other_cam = 0 if camera == 1 else 1
+        cam0_frame = await _grab_camera_frame(other_cam)
 
     import time as _time
 
-    scene = scene_analyzer.analyze(frame, timestamp=_time.time())
+    scene = scene_analyzer.analyze(frame, cam0_frame=cam0_frame, timestamp=_time.time())
+    cameras_str = ", ".join(scene.cameras_used)
     action_log.add(
         "VISION",
-        f"Scene analysis: {scene.object_count} objects from camera {camera}",
+        f"Scene analysis: {scene.object_count} objects (cameras: {cameras_str})",
         "info",
     )
 

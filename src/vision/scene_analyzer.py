@@ -1,9 +1,16 @@
 """
-Scene Analyzer — Structured scene understanding from camera feeds.
+Scene Analyzer — Structured scene understanding from dual independent cameras.
 
-Captures a frame from the camera, runs object detection, computes spatial
-relationships, and produces a SceneDescription that the VisionTaskPlanner
-can reason about to build executable arm plans.
+Analyzes frames from cam0 (front/side) and cam1 (overhead) independently,
+runs object detection on each, cross-references detections by color label,
+and produces a SceneDescription with workspace positions derived from
+camera calibration data.
+
+Camera layout:
+  cam0 (front/side): provides object color, height (Z) from vertical position
+  cam1 (overhead):   provides object X/Y position on workspace table
+
+No stereo pair or stereo matching required.
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ import cv2
 import numpy as np
 
 from .object_detection import ObjectDetector, DetectedObject, ColorRange, COLOR_PRESETS
+from .calibration import CameraCalibration
 
 logger = logging.getLogger("th3cl4w.vision.scene_analyzer")
 
@@ -41,17 +49,19 @@ class SceneObject:
 
     label: str
     color: str
-    centroid_2d: tuple[int, int]
-    centroid_3d: Optional[tuple[float, float, float]]
-    bbox: tuple[int, int, int, int]  # (x, y, w, h)
+    centroid_2d: tuple[int, int]  # primary camera pixel coords
+    centroid_3d: Optional[tuple[float, float, float]]  # workspace XYZ (mm)
+    bbox: tuple[int, int, int, int]  # (x, y, w, h) from primary camera
     area: float
-    depth_mm: float
+    depth_mm: float  # distance from arm base (X/Y distance on workspace)
     confidence: float
-    # Relative position in the frame (normalized 0-1)
+    # Relative position in the overhead frame (normalized 0-1)
     normalized_x: float  # 0=left, 1=right
     normalized_y: float  # 0=top, 1=bottom
-    # Qualitative position
+    # Qualitative position on workspace
     region: str  # e.g. "center", "top-left", "bottom-right"
+    # Which cameras detected this object
+    source: str = "cam1"  # "cam0", "cam1", or "both"
 
     @property
     def size_category(self) -> str:
@@ -62,6 +72,10 @@ class SceneObject:
             return "medium"
         else:
             return "large"
+
+    @property
+    def has_workspace_position(self) -> bool:
+        return self.centroid_3d is not None
 
 
 @dataclass
@@ -79,10 +93,12 @@ class SceneDescription:
 
     objects: list[SceneObject] = field(default_factory=list)
     relationships: list[ObjectRelationship] = field(default_factory=list)
-    frame_width: int = 640
-    frame_height: int = 480
+    frame_width: int = 1920
+    frame_height: int = 1080
     timestamp: float = 0.0
     summary: str = ""
+    # Which cameras were used
+    cameras_used: list[str] = field(default_factory=lambda: ["cam1"])
 
     @property
     def object_count(self) -> int:
@@ -103,11 +119,11 @@ class SceneDescription:
         return max(self.objects, key=lambda o: o.area)
 
     def nearest_object(self) -> Optional[SceneObject]:
-        """Get the nearest object (smallest depth)."""
-        with_depth = [o for o in self.objects if o.depth_mm > 0]
-        if not with_depth:
+        """Get the object closest to the arm base (smallest workspace distance)."""
+        with_pos = [o for o in self.objects if o.centroid_3d is not None]
+        if not with_pos:
             return self.largest_object()
-        return min(with_depth, key=lambda o: o.depth_mm)
+        return min(with_pos, key=lambda o: math.sqrt(o.centroid_3d[0] ** 2 + o.centroid_3d[1] ** 2))
 
     def leftmost_object(self) -> Optional[SceneObject]:
         """Get the leftmost object in the frame."""
@@ -139,6 +155,7 @@ class SceneDescription:
                     "normalized_y": round(o.normalized_y, 3),
                     "region": o.region,
                     "size_category": o.size_category,
+                    "source": o.source,
                 }
                 for o in self.objects
             ],
@@ -151,49 +168,74 @@ class SceneDescription:
                 for r in self.relationships
             ],
             "frame_size": [self.frame_width, self.frame_height],
+            "cameras_used": self.cameras_used,
             "summary": self.summary,
         }
 
 
 class SceneAnalyzer:
-    """Analyzes camera frames to produce structured scene descriptions.
+    """Analyzes independent camera feeds to produce structured scene descriptions.
 
-    Uses ObjectDetector for detection, then adds spatial reasoning
-    on top: regions, relationships, and a human-readable summary.
+    Uses ObjectDetector on each camera independently, then merges detections
+    by color label. Overhead camera (cam1) provides the primary spatial layout;
+    front camera (cam0) adds height information when available.
+
+    Can also work with a single camera frame for simpler setups.
     """
 
     def __init__(
         self,
         detector: Optional[ObjectDetector] = None,
-        depth_threshold_near_mm: float = 300.0,
-        depth_threshold_far_mm: float = 800.0,
+        cal_cam0: Optional[CameraCalibration] = None,
+        cal_cam1: Optional[CameraCalibration] = None,
     ):
         self.detector = detector or ObjectDetector(min_area=300)
-        self.depth_near = depth_threshold_near_mm
-        self.depth_far = depth_threshold_far_mm
+        self.cal_cam0 = cal_cam0
+        self.cal_cam1 = cal_cam1
+
+    def set_calibration(
+        self,
+        cal_cam0: Optional[CameraCalibration] = None,
+        cal_cam1: Optional[CameraCalibration] = None,
+    ):
+        """Update camera calibrations."""
+        if cal_cam0 is not None:
+            self.cal_cam0 = cal_cam0
+        if cal_cam1 is not None:
+            self.cal_cam1 = cal_cam1
 
     def analyze(
         self,
         image: np.ndarray,
-        depth_map: Optional[np.ndarray] = None,
-        Q: Optional[np.ndarray] = None,
+        cam0_frame: Optional[np.ndarray] = None,
         timestamp: float = 0.0,
     ) -> SceneDescription:
-        """Analyze an image and produce a structured scene description.
+        """Analyze camera frame(s) and produce a structured scene description.
 
         Args:
-            image: BGR image from camera.
-            depth_map: Optional depth map (mm) for 3D positioning.
-            Q: Optional disparity-to-depth matrix.
+            image: Primary frame — overhead (cam1) preferred, or any single cam.
+            cam0_frame: Optional front camera frame for height estimation.
             timestamp: Frame timestamp.
 
         Returns:
             SceneDescription with detected objects and spatial relationships.
         """
         h, w = image.shape[:2]
+        cameras_used = ["cam1"]
 
-        # Run object detection
-        detections = self.detector.detect(image, depth_map=depth_map, Q=Q)
+        # Detect objects in the primary (overhead) frame
+        detections = self.detector.detect(image)
+
+        # If front camera frame provided, detect there too for cross-referencing
+        cam0_detections: list[DetectedObject] = []
+        if cam0_frame is not None:
+            cam0_detections = self.detector.detect(cam0_frame)
+            cameras_used.append("cam0")
+
+        # Build a lookup of cam0 detections by color for height cross-reference
+        cam0_by_color: dict[str, list[DetectedObject]] = {}
+        for det in cam0_detections:
+            cam0_by_color.setdefault(det.label, []).append(det)
 
         # Convert detections to scene objects with spatial context
         scene_objects = []
@@ -203,18 +245,39 @@ class SceneAnalyzer:
             norm_y = cy / max(h, 1)
             region = self._classify_region(norm_x, norm_y)
 
+            # Try to get workspace 3D position from calibration
+            centroid_3d = None
+            depth_mm = 0.0
+            source = "cam1"
+
+            if self.cal_cam1 is not None and self.cal_cam1.cam_to_workspace is not None:
+                ws_pos = self.cal_cam1.pixel_to_workspace(float(cx), float(cy), known_z=0.0)
+                if ws_pos is not None:
+                    # X/Y from overhead, Z=0 (table surface) by default
+                    z_mm = 0.0
+                    # Cross-reference with front camera for height
+                    if det.label in cam0_by_color and cam0_by_color[det.label]:
+                        cam0_det = cam0_by_color[det.label][0]
+                        z_mm = self._estimate_height_from_front(cam0_det)
+                        source = "both"
+                    centroid_3d = (float(ws_pos[0]), float(ws_pos[1]), z_mm)
+                    depth_mm = float(math.sqrt(ws_pos[0] ** 2 + ws_pos[1] ** 2))
+            elif det.label in cam0_by_color:
+                source = "both"
+
             scene_obj = SceneObject(
                 label=det.label,
-                color=det.label,  # color name from detector
+                color=det.label,
                 centroid_2d=det.centroid_2d,
-                centroid_3d=det.centroid_3d,
+                centroid_3d=centroid_3d,
                 bbox=det.bbox,
                 area=det.area,
-                depth_mm=det.depth_mm,
+                depth_mm=depth_mm,
                 confidence=det.confidence,
                 normalized_x=norm_x,
                 normalized_y=norm_y,
                 region=region,
+                source=source,
             )
             scene_objects.append(scene_obj)
 
@@ -231,11 +294,34 @@ class SceneAnalyzer:
             frame_height=h,
             timestamp=timestamp,
             summary=summary,
+            cameras_used=cameras_used,
         )
+
+    def _estimate_height_from_front(self, cam0_det: DetectedObject) -> float:
+        """Estimate object height (Z) from front camera vertical position.
+
+        Objects lower in the front camera frame are on the table (Z=0).
+        Objects higher in the frame are taller. Uses cam0 calibration
+        or falls back to a simple linear estimate.
+        """
+        if self.cal_cam0 is not None:
+            _, cy = cam0_det.centroid_2d
+            _, bbox_y, _, bbox_h = cam0_det.bbox
+            # Bottom of bounding box is roughly where the object meets the table
+            # Height is estimated from bbox size scaled by mm_per_pixel
+            img_h = self.cal_cam0.image_size[1]
+            # Rough: objects near bottom of frame are at table level
+            # Height proportional to how far centroid is above bbox bottom
+            bbox_bottom = bbox_y + bbox_h
+            table_fraction = bbox_bottom / max(img_h, 1)
+            # Very rough estimate: ~300mm visible height in frame
+            height_mm = max(0.0, (1.0 - table_fraction) * 300.0)
+            return height_mm
+
+        return 0.0  # no calibration, assume table level
 
     def _classify_region(self, norm_x: float, norm_y: float) -> str:
         """Classify a normalized position into a named region."""
-        # 3x3 grid
         if norm_x < 0.33:
             h_label = "left"
         elif norm_x > 0.66:
@@ -301,22 +387,30 @@ class SceneAnalyzer:
                             ObjectRelationship(id_a, SpatialRelation.BELOW, id_b)
                         )
 
-                # Depth relationship (if available)
-                if obj_a.depth_mm > 0 and obj_b.depth_mm > 0:
-                    depth_diff = obj_b.depth_mm - obj_a.depth_mm
-                    if abs(depth_diff) > 50:
-                        if depth_diff > 0:
-                            relationships.append(
-                                ObjectRelationship(
-                                    id_a, SpatialRelation.IN_FRONT_OF, id_b
+                # Workspace distance relationship (if both have 3D positions)
+                if obj_a.centroid_3d is not None and obj_b.centroid_3d is not None:
+                    dist_ws = math.sqrt(
+                        (obj_a.centroid_3d[0] - obj_b.centroid_3d[0]) ** 2
+                        + (obj_a.centroid_3d[1] - obj_b.centroid_3d[1]) ** 2
+                    )
+                    if dist_ws > 100:  # >100mm apart in workspace
+                        # Determine front/behind from Y axis in workspace
+                        dy_ws = obj_b.centroid_3d[1] - obj_a.centroid_3d[1]
+                        if abs(dy_ws) > 50:
+                            if dy_ws > 0:
+                                relationships.append(
+                                    ObjectRelationship(
+                                        id_a, SpatialRelation.IN_FRONT_OF, id_b
+                                    )
                                 )
-                            )
-                        else:
-                            relationships.append(
-                                ObjectRelationship(id_a, SpatialRelation.BEHIND, id_b)
-                            )
+                            else:
+                                relationships.append(
+                                    ObjectRelationship(
+                                        id_a, SpatialRelation.BEHIND, id_b
+                                    )
+                                )
 
-                # Proximity
+                # Proximity (in normalized image space)
                 dist_2d = math.sqrt(
                     (obj_a.normalized_x - obj_b.normalized_x) ** 2
                     + (obj_a.normalized_y - obj_b.normalized_y) ** 2
@@ -355,12 +449,13 @@ class SceneAnalyzer:
 
         # Describe positions
         for i, obj in enumerate(objects):
-            depth_str = ""
-            if obj.depth_mm > 0:
-                depth_str = f" at {obj.depth_mm:.0f}mm depth"
+            pos_str = ""
+            if obj.centroid_3d is not None:
+                x, y, z = obj.centroid_3d
+                pos_str = f" at ({x:.0f}, {y:.0f}, {z:.0f})mm"
             parts.append(
                 f"  {self._object_id(obj, i)}: {obj.region}, "
-                f"{obj.size_category}{depth_str}"
+                f"{obj.size_category}{pos_str}"
             )
 
         # Key relationships
@@ -387,10 +482,10 @@ class SceneAnalyzer:
             # Centroid
             cv2.circle(vis, obj.centroid_2d, 5, (0, 0, 255), -1)
 
-            # Label with region info
+            # Label with region and workspace position
             label = f"{obj.color} [{obj.region}]"
-            if obj.depth_mm > 0:
-                label += f" {obj.depth_mm:.0f}mm"
+            if obj.centroid_3d is not None:
+                label += f" ({obj.centroid_3d[0]:.0f},{obj.centroid_3d[1]:.0f})mm"
             cv2.putText(
                 vis,
                 label,

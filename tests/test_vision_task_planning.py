@@ -1,10 +1,11 @@
 """
 Tests for the vision task planning pipeline.
 
-Tests SceneAnalyzer (scene understanding) and VisionTaskPlanner
+Tests SceneAnalyzer (dual-camera scene understanding) and VisionTaskPlanner
 (instruction parsing, object matching, trajectory generation).
 
 Uses synthetic images — no real cameras required.
+Camera layout: cam0=front/side, cam1=overhead. Both independent (no stereo).
 """
 
 import sys
@@ -24,6 +25,7 @@ from src.vision.scene_analyzer import (
     SpatialRelation,
 )
 from src.vision.object_detection import ObjectDetector, ColorRange
+from src.vision.calibration import CameraCalibration
 from src.planning.vision_task_planner import (
     VisionTaskPlanner,
     VisionTaskPlan,
@@ -81,8 +83,22 @@ class TestSceneAnalyzer:
     def test_init_defaults(self):
         sa = SceneAnalyzer()
         assert sa.detector is not None
-        assert sa.depth_near == 300.0
-        assert sa.depth_far == 800.0
+        assert sa.cal_cam0 is None
+        assert sa.cal_cam1 is None
+
+    def test_init_with_calibration(self):
+        cal0 = CameraCalibration(camera_id="cam0")
+        cal1 = CameraCalibration(camera_id="cam1")
+        sa = SceneAnalyzer(cal_cam0=cal0, cal_cam1=cal1)
+        assert sa.cal_cam0 is not None
+        assert sa.cal_cam1 is not None
+
+    def test_set_calibration(self):
+        sa = SceneAnalyzer()
+        cal0 = CameraCalibration(camera_id="cam0")
+        sa.set_calibration(cal_cam0=cal0)
+        assert sa.cal_cam0 is not None
+        assert sa.cal_cam1 is None
 
     def test_analyze_empty_scene(self, analyzer):
         img = np.ones((480, 640, 3), dtype=np.uint8) * 128
@@ -90,6 +106,7 @@ class TestSceneAnalyzer:
         assert scene.object_count == 0
         assert not scene.has_objects
         assert "No objects" in scene.summary
+        assert "cam1" in scene.cameras_used
 
     def test_analyze_single_red_object(self, analyzer):
         img = make_colored_circle_image(color_bgr=(0, 0, 255), center=(320, 240))
@@ -101,6 +118,7 @@ class TestSceneAnalyzer:
         assert obj.region == "center"
         assert 0.4 < obj.normalized_x < 0.6
         assert 0.4 < obj.normalized_y < 0.6
+        assert obj.source == "cam1"  # single camera
 
     def test_analyze_object_left_side(self, analyzer):
         img = make_colored_circle_image(color_bgr=(0, 0, 255), center=(80, 240))
@@ -134,11 +152,29 @@ class TestSceneAnalyzer:
         assert "red" in colors
         assert "blue" in colors
 
+    def test_analyze_with_both_cameras(self, analyzer):
+        """Scene uses both cam1 (overhead) and cam0 (front) frames."""
+        overhead = make_colored_circle_image(color_bgr=(0, 0, 255), center=(320, 240))
+        front = make_colored_circle_image(color_bgr=(0, 0, 255), center=(320, 300))
+        scene = analyzer.analyze(overhead, cam0_frame=front)
+        assert "cam1" in scene.cameras_used
+        assert "cam0" in scene.cameras_used
+        # Should have detected objects and marked source as "both"
+        if scene.object_count > 0:
+            assert any(o.source == "both" for o in scene.objects)
+
+    def test_analyze_only_primary_camera(self, analyzer):
+        """When cam0_frame is None, only cam1 is used."""
+        img = make_colored_circle_image(color_bgr=(0, 0, 255))
+        scene = analyzer.analyze(img, cam0_frame=None)
+        assert scene.cameras_used == ["cam1"]
+        for obj in scene.objects:
+            assert obj.source == "cam1"
+
     def test_spatial_relationships(self, analyzer):
         img = make_multi_object_image()
         scene = analyzer.analyze(img)
         assert len(scene.relationships) > 0
-        # Red is on the left, blue on the right — should have left_of relationship
         has_left_of = any(
             r.relation == SpatialRelation.LEFT_OF for r in scene.relationships
         )
@@ -181,7 +217,11 @@ class TestSceneAnalyzer:
         assert "relationships" in d
         assert "summary" in d
         assert "frame_size" in d
+        assert "cameras_used" in d
         assert d["object_count"] >= 1
+        # Check source field is present
+        if d["objects"]:
+            assert "source" in d["objects"][0]
 
     def test_scene_summary_content(self, analyzer):
         img = make_three_object_image()
@@ -214,7 +254,6 @@ class TestSceneAnalyzer:
         scene = analyzer.analyze(img)
         vis = analyzer.annotate_frame(img, scene)
         assert vis.shape == img.shape
-        # Should be modified (has annotations)
         if scene.object_count > 0:
             assert not np.array_equal(vis, img)
 
@@ -239,6 +278,47 @@ class TestSceneAnalyzer:
 
         obj.area = 20000.0
         assert obj.size_category == "large"
+
+    def test_has_workspace_position(self):
+        obj = SceneObject(
+            label="test", color="red", centroid_2d=(320, 240),
+            centroid_3d=None, bbox=(300, 220, 40, 40), area=1000.0,
+            depth_mm=0.0, confidence=0.5, normalized_x=0.5,
+            normalized_y=0.5, region="center",
+        )
+        assert not obj.has_workspace_position
+
+        obj.centroid_3d = (100.0, 200.0, 0.0)
+        assert obj.has_workspace_position
+
+    def test_scene_default_frame_size(self):
+        """Default frame size should be 1920x1080 (1080p cameras)."""
+        scene = SceneDescription()
+        assert scene.frame_width == 1920
+        assert scene.frame_height == 1080
+
+    def test_nearest_object_with_workspace(self):
+        """nearest_object uses workspace distance when 3D positions available."""
+        scene = SceneDescription(
+            objects=[
+                SceneObject(
+                    label="red", color="red", centroid_2d=(100, 100),
+                    centroid_3d=(300.0, 200.0, 0.0), bbox=(80, 80, 40, 40),
+                    area=5000.0, depth_mm=360.0, confidence=0.5,
+                    normalized_x=0.15, normalized_y=0.2, region="top-left",
+                ),
+                SceneObject(
+                    label="blue", color="blue", centroid_2d=(500, 400),
+                    centroid_3d=(50.0, 50.0, 0.0), bbox=(480, 380, 40, 40),
+                    area=5000.0, depth_mm=70.0, confidence=0.5,
+                    normalized_x=0.78, normalized_y=0.83, region="bottom-right",
+                ),
+            ]
+        )
+        nearest = scene.nearest_object()
+        assert nearest is not None
+        # Blue is closer to arm base (50, 50) vs red (300, 200)
+        assert nearest.color == "blue"
 
 
 # ======================================================================
@@ -320,34 +400,25 @@ class TestObjectMatching:
         return SceneDescription(
             objects=[
                 SceneObject(
-                    label="red",
-                    color="red",
-                    centroid_2d=(160, 240),
-                    centroid_3d=None,
-                    bbox=(110, 190, 100, 100),
-                    area=7854.0,
-                    depth_mm=500.0,
-                    confidence=0.5,
-                    normalized_x=0.25,
-                    normalized_y=0.5,
-                    region="left",
+                    label="red", color="red",
+                    centroid_2d=(160, 240), centroid_3d=(-100.0, 200.0, 0.0),
+                    bbox=(110, 190, 100, 100), area=7854.0,
+                    depth_mm=224.0, confidence=0.5,
+                    normalized_x=0.25, normalized_y=0.5,
+                    region="left", source="both",
                 ),
                 SceneObject(
-                    label="blue",
-                    color="blue",
-                    centroid_2d=(480, 240),
-                    centroid_3d=None,
-                    bbox=(430, 190, 100, 100),
-                    area=7854.0,
-                    depth_mm=600.0,
-                    confidence=0.5,
-                    normalized_x=0.75,
-                    normalized_y=0.5,
-                    region="right",
+                    label="blue", color="blue",
+                    centroid_2d=(480, 240), centroid_3d=(100.0, 200.0, 0.0),
+                    bbox=(430, 190, 100, 100), area=7854.0,
+                    depth_mm=224.0, confidence=0.5,
+                    normalized_x=0.75, normalized_y=0.5,
+                    region="right", source="both",
                 ),
             ],
             frame_width=640,
             frame_height=480,
+            cameras_used=["cam1", "cam0"],
         )
 
     def test_match_by_color_red(self, planner, scene_two_objects):
@@ -378,29 +449,39 @@ class TestObjectMatching:
         assert target is not None
         assert target.region == "right"
 
-    def test_match_nearest(self, planner, scene_two_objects):
+    def test_match_nearest_workspace(self, planner):
+        """Nearest should use workspace distance when available."""
+        scene = SceneDescription(
+            objects=[
+                SceneObject(
+                    label="red", color="red", centroid_2d=(160, 240),
+                    centroid_3d=(300.0, 200.0, 0.0), bbox=(110, 190, 100, 100),
+                    area=7854.0, depth_mm=360.0, confidence=0.5,
+                    normalized_x=0.25, normalized_y=0.5, region="left",
+                ),
+                SceneObject(
+                    label="blue", color="blue", centroid_2d=(480, 240),
+                    centroid_3d=(50.0, 50.0, 0.0), bbox=(430, 190, 100, 100),
+                    area=7854.0, depth_mm=70.0, confidence=0.5,
+                    normalized_x=0.75, normalized_y=0.5, region="right",
+                ),
+            ],
+        )
         target, detail = planner._match_target(
-            "pick up the nearest object", scene_two_objects
+            "pick up the nearest object", scene
         )
         assert target is not None
-        # Red is at 500mm, blue at 600mm — red is nearest
-        assert target.color == "red"
+        assert target.color == "blue"
 
     def test_match_default_to_largest(self, planner):
         scene = SceneDescription(
             objects=[
                 SceneObject(
-                    label="green",
-                    color="green",
-                    centroid_2d=(320, 240),
-                    centroid_3d=None,
-                    bbox=(270, 190, 100, 100),
-                    area=5000.0,
-                    depth_mm=0.0,
-                    confidence=0.5,
-                    normalized_x=0.5,
-                    normalized_y=0.5,
-                    region="center",
+                    label="green", color="green",
+                    centroid_2d=(320, 240), centroid_3d=None,
+                    bbox=(270, 190, 100, 100), area=5000.0,
+                    depth_mm=0.0, confidence=0.5,
+                    normalized_x=0.5, normalized_y=0.5, region="center",
                 ),
             ]
         )
@@ -428,8 +509,15 @@ class TestObjectMatching:
             scene_two_objects,
             scene_two_objects.objects[0],
         )
-        # Should recognize "right" as a position keyword
         assert "right" in detail.lower()
+
+    def test_match_includes_workspace_in_detail(self, planner, scene_two_objects):
+        """When workspace position is available, match detail should mention it."""
+        target, detail = planner._match_target(
+            "pick up the red object", scene_two_objects
+        )
+        assert target is not None
+        assert "workspace" in detail
 
 
 # ======================================================================
@@ -452,22 +540,18 @@ class TestVisionTaskPlan:
         return SceneDescription(
             objects=[
                 SceneObject(
-                    label="red",
-                    color="red",
-                    centroid_2d=(320, 240),
-                    centroid_3d=None,
-                    bbox=(270, 190, 100, 100),
-                    area=7854.0,
-                    depth_mm=400.0,
-                    confidence=0.7,
-                    normalized_x=0.5,
-                    normalized_y=0.5,
-                    region="center",
+                    label="red", color="red",
+                    centroid_2d=(320, 240), centroid_3d=(150.0, 200.0, 0.0),
+                    bbox=(270, 190, 100, 100), area=7854.0,
+                    depth_mm=250.0, confidence=0.7,
+                    normalized_x=0.5, normalized_y=0.5,
+                    region="center", source="both",
                 ),
             ],
             frame_width=640,
             frame_height=480,
             summary="Scene contains 1 red object.",
+            cameras_used=["cam1", "cam0"],
         )
 
     @pytest.fixture
@@ -475,35 +559,26 @@ class TestVisionTaskPlan:
         return SceneDescription(
             objects=[
                 SceneObject(
-                    label="red",
-                    color="red",
-                    centroid_2d=(160, 240),
-                    centroid_3d=None,
-                    bbox=(110, 190, 100, 100),
-                    area=7854.0,
-                    depth_mm=500.0,
-                    confidence=0.5,
-                    normalized_x=0.25,
-                    normalized_y=0.5,
-                    region="left",
+                    label="red", color="red",
+                    centroid_2d=(160, 240), centroid_3d=(-100.0, 200.0, 0.0),
+                    bbox=(110, 190, 100, 100), area=7854.0,
+                    depth_mm=224.0, confidence=0.5,
+                    normalized_x=0.25, normalized_y=0.5,
+                    region="left", source="both",
                 ),
                 SceneObject(
-                    label="blue",
-                    color="blue",
-                    centroid_2d=(480, 240),
-                    centroid_3d=None,
-                    bbox=(430, 190, 100, 100),
-                    area=7854.0,
-                    depth_mm=600.0,
-                    confidence=0.5,
-                    normalized_x=0.75,
-                    normalized_y=0.5,
-                    region="right",
+                    label="blue", color="blue",
+                    centroid_2d=(480, 240), centroid_3d=(100.0, 200.0, 0.0),
+                    bbox=(430, 190, 100, 100), area=7854.0,
+                    depth_mm=224.0, confidence=0.5,
+                    normalized_x=0.75, normalized_y=0.5,
+                    region="right", source="both",
                 ),
             ],
             frame_width=640,
             frame_height=480,
             summary="Scene contains 1 red object, 1 blue object.",
+            cameras_used=["cam1", "cam0"],
         )
 
     def test_plan_pick_up_red(self, planner, current_pose, scene_with_red):
@@ -515,13 +590,27 @@ class TestVisionTaskPlan:
         assert plan.trajectory is not None
         assert plan.trajectory.num_points > 0
 
+    def test_plan_target_includes_workspace(self, planner, current_pose, scene_with_red):
+        """Target object dict should include workspace_mm when available."""
+        plan = planner.plan("pick up the red object", scene_with_red, current_pose)
+        assert plan.target_object is not None
+        assert "workspace_mm" in plan.target_object
+        assert "source" in plan.target_object
+
     def test_plan_has_reasoning_steps(self, planner, current_pose, scene_with_red):
         plan = planner.plan("pick up the red object", scene_with_red, current_pose)
         assert len(plan.reasoning) >= 4
-        # Check that reasoning steps are numbered
         for i, step in enumerate(plan.reasoning):
             assert step.step == i + 1
             assert step.description != ""
+
+    def test_plan_reasoning_mentions_cameras(self, planner, current_pose, scene_with_red):
+        """Reasoning should reference which cameras were used."""
+        plan = planner.plan("pick up the red object", scene_with_red, current_pose)
+        # Scene analysis step should mention cameras
+        scene_steps = [r for r in plan.reasoning if r.description == "Analyze scene"]
+        assert len(scene_steps) == 1
+        assert "cam" in scene_steps[0].detail.lower()
 
     def test_plan_wave(self, planner, current_pose, scene_with_red):
         plan = planner.plan("wave hello", scene_with_red, current_pose)
@@ -587,7 +676,6 @@ class TestVisionTaskPlan:
     def test_plan_unknown_action(self, planner, current_pose, scene_with_red):
         plan = planner.plan("do something impossible", scene_with_red, current_pose)
         assert plan.action == ActionType.UNKNOWN
-        # Unknown defaults to go_ready, which should succeed
         assert plan.success
 
     def test_plan_to_dict(self, planner, current_pose, scene_with_red):
@@ -608,21 +696,14 @@ class TestVisionTaskPlan:
     def test_scene_to_joint_pose(self, planner):
         """Test that scene-to-joint mapping produces valid poses."""
         obj = SceneObject(
-            label="test",
-            color="red",
-            centroid_2d=(320, 240),
-            centroid_3d=None,
-            bbox=(270, 190, 100, 100),
-            area=5000.0,
-            depth_mm=0.0,
-            confidence=0.5,
-            normalized_x=0.5,
-            normalized_y=0.5,
-            region="center",
+            label="test", color="red",
+            centroid_2d=(320, 240), centroid_3d=None,
+            bbox=(270, 190, 100, 100), area=5000.0,
+            depth_mm=0.0, confidence=0.5,
+            normalized_x=0.5, normalized_y=0.5, region="center",
         )
         pose = planner._scene_to_joint_pose(obj)
         assert pose.shape == (NUM_ARM_JOINTS,)
-        # Should be within joint limits
         from src.planning.motion_planner import JOINT_LIMITS_DEG
 
         for i in range(NUM_ARM_JOINTS):
@@ -631,34 +712,19 @@ class TestVisionTaskPlan:
     def test_scene_to_joint_pose_varies_with_position(self, planner):
         """Objects at different positions should map to different poses."""
         left_obj = SceneObject(
-            label="test",
-            color="red",
-            centroid_2d=(100, 240),
-            centroid_3d=None,
-            bbox=(50, 190, 100, 100),
-            area=5000.0,
-            depth_mm=0.0,
-            confidence=0.5,
-            normalized_x=0.15,
-            normalized_y=0.5,
-            region="left",
+            label="test", color="red", centroid_2d=(100, 240),
+            centroid_3d=None, bbox=(50, 190, 100, 100), area=5000.0,
+            depth_mm=0.0, confidence=0.5, normalized_x=0.15,
+            normalized_y=0.5, region="left",
         )
         right_obj = SceneObject(
-            label="test",
-            color="blue",
-            centroid_2d=(540, 240),
-            centroid_3d=None,
-            bbox=(490, 190, 100, 100),
-            area=5000.0,
-            depth_mm=0.0,
-            confidence=0.5,
-            normalized_x=0.85,
-            normalized_y=0.5,
-            region="right",
+            label="test", color="blue", centroid_2d=(540, 240),
+            centroid_3d=None, bbox=(490, 190, 100, 100), area=5000.0,
+            depth_mm=0.0, confidence=0.5, normalized_x=0.85,
+            normalized_y=0.5, region="right",
         )
         left_pose = planner._scene_to_joint_pose(left_obj)
         right_pose = planner._scene_to_joint_pose(right_obj)
-        # J0 (base yaw) should differ significantly
         assert abs(left_pose[0] - right_pose[0]) > 10.0
 
 
@@ -688,6 +754,22 @@ class TestIntegration:
         assert plan.trajectory.num_points > 0
         assert plan.trajectory.duration > 0
 
+    def test_full_pipeline_dual_camera(self):
+        """Pipeline with both overhead and front camera frames."""
+        analyzer = SceneAnalyzer(detector=ObjectDetector(min_area=100))
+        planner = VisionTaskPlanner()
+
+        overhead = make_multi_object_image()
+        front = make_colored_circle_image(color_bgr=(0, 0, 255), center=(320, 300))
+
+        scene = analyzer.analyze(overhead, cam0_frame=front)
+        assert "cam1" in scene.cameras_used
+        assert "cam0" in scene.cameras_used
+
+        current = np.zeros(NUM_ARM_JOINTS)
+        plan = planner.plan("pick up the red object", scene, current)
+        assert plan.success
+
     def test_full_pipeline_three_objects(self):
         """Pipeline with three objects and specific instruction."""
         analyzer = SceneAnalyzer(detector=ObjectDetector(min_area=100))
@@ -695,7 +777,7 @@ class TestIntegration:
 
         img = make_three_object_image()
         scene = analyzer.analyze(img)
-        assert scene.object_count >= 2  # at least red and green
+        assert scene.object_count >= 2
 
         current = np.zeros(NUM_ARM_JOINTS)
         plan = planner.plan(
@@ -718,7 +800,6 @@ class TestIntegration:
         plan_dict = plan.to_dict()
         scene_dict = scene.to_dict()
 
-        # Should be JSON-serializable
         import json
 
         json.dumps(plan_dict)
@@ -736,7 +817,6 @@ class TestIntegration:
         inspect_plan = planner.plan("look at the green object", scene, current)
         assert inspect_plan.success
 
-        # After inspection, plan a pick from the new position
         new_pose = inspect_plan.trajectory.points[-1].positions
         pick_plan = planner.plan("pick up the green object", scene, new_pose)
         assert pick_plan.success
