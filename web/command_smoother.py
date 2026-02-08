@@ -346,7 +346,7 @@ class CommandSmoother:
                             "dirty": jid in self._dirty_joints,
                         }
                     )
-                if self._collector.enabled:
+                if self._collector is not None:
                     self._collector.log_smoother_state(states)
             except Exception:
                 pass
