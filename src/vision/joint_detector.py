@@ -15,6 +15,7 @@ from enum import Enum
 from typing import Optional
 
 import cv2
+from .gpu_preprocess import to_hsv
 import numpy as np
 
 from .arm_segmenter import ArmSegmentation
@@ -122,7 +123,7 @@ class JointDetector:
         Returns list of MarkerDetection with centroid, color name, area.
         """
         blurred = cv2.GaussianBlur(frame, (self.blur_kernel, self.blur_kernel), 0)
-        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+        hsv = to_hsv(blurred)
 
         markers: list[MarkerDetection] = []
         for color_name, (lower, upper) in self.marker_colors.items():

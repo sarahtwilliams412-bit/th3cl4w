@@ -173,7 +173,7 @@ class ArmSegmenter:
         Returns list of (x, y) centroids sorted left-to-right.
         """
         blurred = cv2.GaussianBlur(frame, (self.blur_kernel, self.blur_kernel), 0)
-        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+        hsv = to_hsv(blurred)
 
         centroids: list[tuple[float, float]] = []
         for color_name, (lower, upper) in self.marker_colors.items():
