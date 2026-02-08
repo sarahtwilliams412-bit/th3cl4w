@@ -593,7 +593,7 @@ async def move_joint_slowly(joint_id: int, target_angle: float, step_deg: float 
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.post(
-                    f"{ARM_API}/api/joint",
+                    f"{ARM_API}/api/command/set-joint",
                     json={"id": joint_id, "angle": round(angle, 1)},
                 )
                 if resp.status_code != 200:
