@@ -29,14 +29,16 @@ DEFAULT_MAX_JOINT_SPEED = np.array([90.0, 90.0, 120.0, 120.0, 150.0, 150.0])  # 
 DEFAULT_MAX_JOINT_ACCEL = np.array([180.0, 180.0, 240.0, 240.0, 300.0, 300.0])  # deg/s²
 
 # Joint limits in degrees
-JOINT_LIMITS_DEG = np.array([
-    [-135.0, 135.0],  # J0
-    [-90.0,  90.0],   # J1
-    [-90.0,  90.0],   # J2
-    [-135.0, 135.0],  # J3
-    [-90.0,  90.0],   # J4
-    [-135.0, 135.0],  # J5
-])
+JOINT_LIMITS_DEG = np.array(
+    [
+        [-135.0, 135.0],  # J0
+        [-90.0, 90.0],  # J1
+        [-90.0, 90.0],  # J2
+        [-135.0, 135.0],  # J3
+        [-90.0, 90.0],  # J4
+        [-135.0, 135.0],  # J5
+    ]
+)
 
 GRIPPER_MIN_MM = 0.0
 GRIPPER_MAX_MM = 65.0
@@ -45,6 +47,7 @@ GRIPPER_MAX_MM = 65.0
 @dataclass
 class Waypoint:
     """A target configuration in joint space (degrees) with optional gripper (mm)."""
+
     joint_angles: np.ndarray  # shape (6,), degrees
     gripper_mm: float = 0.0
     max_speed_factor: float = 1.0  # 0-1 scale factor on speed limits
@@ -53,7 +56,9 @@ class Waypoint:
     def __post_init__(self):
         self.joint_angles = np.asarray(self.joint_angles, dtype=float)
         if self.joint_angles.shape != (NUM_ARM_JOINTS,):
-            raise ValueError(f"joint_angles must have {NUM_ARM_JOINTS} elements, got {self.joint_angles.shape}")
+            raise ValueError(
+                f"joint_angles must have {NUM_ARM_JOINTS} elements, got {self.joint_angles.shape}"
+            )
         self.gripper_mm = float(np.clip(self.gripper_mm, GRIPPER_MIN_MM, GRIPPER_MAX_MM))
         self.max_speed_factor = float(np.clip(self.max_speed_factor, 0.01, 1.0))
 
@@ -61,6 +66,7 @@ class Waypoint:
 @dataclass
 class TrajectoryPoint:
     """A single point along a trajectory."""
+
     time: float  # seconds from trajectory start
     positions: np.ndarray  # (6,) degrees
     velocities: np.ndarray  # (6,) deg/s
@@ -71,6 +77,7 @@ class TrajectoryPoint:
 @dataclass
 class Trajectory:
     """A complete trajectory: ordered list of TrajectoryPoints."""
+
     points: list[TrajectoryPoint] = field(default_factory=list)
     label: str = ""
 
@@ -104,8 +111,16 @@ class MotionPlanner:
         dt: float = 0.01,
     ):
         self.kinematics = kinematics or D1Kinematics()
-        self.max_joint_speed = np.array(max_joint_speed) if max_joint_speed is not None else DEFAULT_MAX_JOINT_SPEED.copy()
-        self.max_joint_accel = np.array(max_joint_accel) if max_joint_accel is not None else DEFAULT_MAX_JOINT_ACCEL.copy()
+        self.max_joint_speed = (
+            np.array(max_joint_speed)
+            if max_joint_speed is not None
+            else DEFAULT_MAX_JOINT_SPEED.copy()
+        )
+        self.max_joint_accel = (
+            np.array(max_joint_accel)
+            if max_joint_accel is not None
+            else DEFAULT_MAX_JOINT_ACCEL.copy()
+        )
         self.dt = dt
 
     # ------------------------------------------------------------------
@@ -168,7 +183,7 @@ class MotionPlanner:
                 continue
             # Trapezoidal: check if we reach max speed
             t_accel = max_speed[i] / max_accel[i]
-            d_accel = 0.5 * max_accel[i] * t_accel ** 2
+            d_accel = 0.5 * max_accel[i] * t_accel**2
             if 2 * d_accel <= d:
                 # Trapezoidal: accel + cruise + decel
                 t_cruise = (d - 2 * d_accel) / max_speed[i]
@@ -205,10 +220,15 @@ class MotionPlanner:
             acc = delta * dds
             g = gripper_start + gripper_delta * s_smooth
 
-            points.append(TrajectoryPoint(
-                time=t, positions=pos, velocities=vel,
-                accelerations=acc, gripper_mm=g,
-            ))
+            points.append(
+                TrajectoryPoint(
+                    time=t,
+                    positions=pos,
+                    velocities=vel,
+                    accelerations=acc,
+                    gripper_mm=g,
+                )
+            )
 
         return Trajectory(points=points)
 
@@ -241,13 +261,15 @@ class MotionPlanner:
                 # Skip first point of subsequent segments (overlap)
                 if i > 0 and j == 0:
                     continue
-                combined.points.append(TrajectoryPoint(
-                    time=pt.time + time_offset,
-                    positions=pt.positions.copy(),
-                    velocities=pt.velocities.copy(),
-                    accelerations=pt.accelerations.copy(),
-                    gripper_mm=pt.gripper_mm,
-                ))
+                combined.points.append(
+                    TrajectoryPoint(
+                        time=pt.time + time_offset,
+                        positions=pt.positions.copy(),
+                        velocities=pt.velocities.copy(),
+                        accelerations=pt.accelerations.copy(),
+                        gripper_mm=pt.gripper_mm,
+                    )
+                )
             time_offset += seg.duration
 
         return combined
@@ -295,6 +317,7 @@ class MotionPlanner:
         end_R = target_pose[:3, :3]
 
         from scipy.spatial.transform import Rotation, Slerp
+
         rots = Rotation.from_matrix(np.stack([start_R, end_R]))
         slerp = Slerp([0.0, 1.0], rots)
 
@@ -316,11 +339,13 @@ class MotionPlanner:
             angles_deg = self.clamp_joint_angles(angles_deg)
             g = gripper_start + s * (gripper_end - gripper_start)
 
-            waypoints.append(Waypoint(
-                joint_angles=angles_deg,
-                gripper_mm=g,
-                max_speed_factor=speed_factor,
-            ))
+            waypoints.append(
+                Waypoint(
+                    joint_angles=angles_deg,
+                    gripper_mm=g,
+                    max_speed_factor=speed_factor,
+                )
+            )
 
         if len(waypoints) < 2:
             waypoints.append(waypoints[0])
@@ -365,14 +390,17 @@ class MotionPlanner:
         Raises ValueError if any point along the trajectory is in collision.
         """
         traj = self.linear_joint_trajectory(
-            start, end, speed_factor, gripper_start, gripper_end,
+            start,
+            end,
+            speed_factor,
+            gripper_start,
+            gripper_end,
         )
 
         for pt in traj.points:
             if not self.check_self_collision(pt.positions, min_clearance):
                 raise ValueError(
-                    f"Self-collision detected at t={pt.time:.3f}s, "
-                    f"angles={pt.positions}"
+                    f"Self-collision detected at t={pt.time:.3f}s, " f"angles={pt.positions}"
                 )
 
         return traj
@@ -409,12 +437,14 @@ class MotionPlanner:
 
         new_points = []
         for pt in trajectory.points:
-            new_points.append(TrajectoryPoint(
-                time=pt.time * scale,
-                positions=pt.positions.copy(),
-                velocities=pt.velocities / scale,
-                accelerations=pt.accelerations / (scale ** 2),
-                gripper_mm=pt.gripper_mm,
-            ))
+            new_points.append(
+                TrajectoryPoint(
+                    time=pt.time * scale,
+                    positions=pt.positions.copy(),
+                    velocities=pt.velocities / scale,
+                    accelerations=pt.accelerations / (scale**2),
+                    gripper_mm=pt.gripper_mm,
+                )
+            )
 
         return Trajectory(points=new_points, label=trajectory.label)

@@ -28,6 +28,7 @@ MAX_WORKSPACE_RADIUS_M = MAX_WORKSPACE_RADIUS_MM / 1000.0
 
 class ViolationType(Enum):
     """Categories of safety violations."""
+
     POSITION_LIMIT = "position_limit"
     VELOCITY_LIMIT = "velocity_limit"
     TORQUE_LIMIT = "torque_limit"
@@ -39,6 +40,7 @@ class ViolationType(Enum):
 @dataclass(frozen=True)
 class SafetyViolation:
     """A single safety violation with context."""
+
     violation_type: ViolationType
     joint_index: Optional[int]  # None for workspace / e-stop violations
     message: str
@@ -49,6 +51,7 @@ class SafetyViolation:
 @dataclass(frozen=True)
 class SafetyResult:
     """Result of validating a command."""
+
     is_safe: bool
     violations: tuple[SafetyViolation, ...] = ()
 
@@ -66,6 +69,7 @@ class JointLimits:
 
     Arrays are length NUM_JOINTS (7): joints 0-5 are arm, joint 6 is gripper.
     """
+
     # Position limits (radians)
     position_min: np.ndarray
     position_max: np.ndarray
@@ -108,8 +112,8 @@ def d1_default_limits() -> JointLimits:
     """
     return JointLimits(
         position_min=np.array([-2.9, -2.9, -2.9, -2.9, -3.14, -3.14, 0.0]),
-        position_max=np.array([2.9,   2.9,  2.9,  2.9,  3.14,  3.14, 1.0]),
-        velocity_max=np.array([2.0,   2.0,  2.5,  2.5,  3.0,   3.0,  2.0]),
+        position_max=np.array([2.9, 2.9, 2.9, 2.9, 3.14, 3.14, 1.0]),
+        velocity_max=np.array([2.0, 2.0, 2.5, 2.5, 3.0, 3.0, 2.0]),
         torque_max=np.array([20.0, 20.0, 15.0, 10.0, 5.0, 5.0, 5.0]),
     )
 
@@ -184,13 +188,15 @@ class SafetyMonitor:
 
         # E-stop check first
         if self._estop:
-            violations.append(SafetyViolation(
-                violation_type=ViolationType.ESTOP_ACTIVE,
-                joint_index=None,
-                message="Emergency stop is active — all commands blocked",
-                actual_value=0.0,
-                limit_value=0.0,
-            ))
+            violations.append(
+                SafetyViolation(
+                    violation_type=ViolationType.ESTOP_ACTIVE,
+                    joint_index=None,
+                    message="Emergency stop is active — all commands blocked",
+                    actual_value=0.0,
+                    limit_value=0.0,
+                )
+            )
             return SafetyResult(is_safe=False, violations=tuple(violations))
 
         lim = self._limits
@@ -200,58 +206,68 @@ class SafetyMonitor:
             for i in range(NUM_JOINTS):
                 val = float(cmd.joint_positions[i])
                 if val < lim.position_min[i]:
-                    violations.append(SafetyViolation(
-                        violation_type=ViolationType.POSITION_LIMIT,
-                        joint_index=i,
-                        message=f"Joint {i} position {val:.4f} rad below minimum {lim.position_min[i]:.4f} rad",
-                        actual_value=val,
-                        limit_value=float(lim.position_min[i]),
-                    ))
+                    violations.append(
+                        SafetyViolation(
+                            violation_type=ViolationType.POSITION_LIMIT,
+                            joint_index=i,
+                            message=f"Joint {i} position {val:.4f} rad below minimum {lim.position_min[i]:.4f} rad",
+                            actual_value=val,
+                            limit_value=float(lim.position_min[i]),
+                        )
+                    )
                 elif val > lim.position_max[i]:
-                    violations.append(SafetyViolation(
-                        violation_type=ViolationType.POSITION_LIMIT,
-                        joint_index=i,
-                        message=f"Joint {i} position {val:.4f} rad above maximum {lim.position_max[i]:.4f} rad",
-                        actual_value=val,
-                        limit_value=float(lim.position_max[i]),
-                    ))
+                    violations.append(
+                        SafetyViolation(
+                            violation_type=ViolationType.POSITION_LIMIT,
+                            joint_index=i,
+                            message=f"Joint {i} position {val:.4f} rad above maximum {lim.position_max[i]:.4f} rad",
+                            actual_value=val,
+                            limit_value=float(lim.position_max[i]),
+                        )
+                    )
 
         # Velocity limits
         if cmd.joint_velocities is not None:
             for i in range(NUM_JOINTS):
                 val = float(cmd.joint_velocities[i])
                 if abs(val) > lim.velocity_max[i]:
-                    violations.append(SafetyViolation(
-                        violation_type=ViolationType.VELOCITY_LIMIT,
-                        joint_index=i,
-                        message=f"Joint {i} velocity {val:.4f} rad/s exceeds limit ±{lim.velocity_max[i]:.4f} rad/s",
-                        actual_value=val,
-                        limit_value=float(lim.velocity_max[i]),
-                    ))
+                    violations.append(
+                        SafetyViolation(
+                            violation_type=ViolationType.VELOCITY_LIMIT,
+                            joint_index=i,
+                            message=f"Joint {i} velocity {val:.4f} rad/s exceeds limit ±{lim.velocity_max[i]:.4f} rad/s",
+                            actual_value=val,
+                            limit_value=float(lim.velocity_max[i]),
+                        )
+                    )
 
         # Torque limits
         if cmd.joint_torques is not None:
             for i in range(NUM_JOINTS):
                 val = float(cmd.joint_torques[i])
                 if abs(val) > lim.torque_max[i]:
-                    violations.append(SafetyViolation(
-                        violation_type=ViolationType.TORQUE_LIMIT,
-                        joint_index=i,
-                        message=f"Joint {i} torque {val:.4f} Nm exceeds limit ±{lim.torque_max[i]:.4f} Nm",
-                        actual_value=val,
-                        limit_value=float(lim.torque_max[i]),
-                    ))
+                    violations.append(
+                        SafetyViolation(
+                            violation_type=ViolationType.TORQUE_LIMIT,
+                            joint_index=i,
+                            message=f"Joint {i} torque {val:.4f} Nm exceeds limit ±{lim.torque_max[i]:.4f} Nm",
+                            actual_value=val,
+                            limit_value=float(lim.torque_max[i]),
+                        )
+                    )
 
         # Gripper bounds
         if cmd.gripper_position is not None:
             if cmd.gripper_position < 0.0 or cmd.gripper_position > 1.0:
-                violations.append(SafetyViolation(
-                    violation_type=ViolationType.GRIPPER_LIMIT,
-                    joint_index=6,
-                    message=f"Gripper position {cmd.gripper_position:.4f} outside [0.0, 1.0]",
-                    actual_value=cmd.gripper_position,
-                    limit_value=1.0 if cmd.gripper_position > 1.0 else 0.0,
-                ))
+                violations.append(
+                    SafetyViolation(
+                        violation_type=ViolationType.GRIPPER_LIMIT,
+                        joint_index=6,
+                        message=f"Gripper position {cmd.gripper_position:.4f} outside [0.0, 1.0]",
+                        actual_value=cmd.gripper_position,
+                        limit_value=1.0 if cmd.gripper_position > 1.0 else 0.0,
+                    )
+                )
 
         return SafetyResult(
             is_safe=len(violations) == 0,
@@ -273,56 +289,66 @@ class SafetyMonitor:
         for i in range(NUM_JOINTS):
             val = float(state.joint_positions[i])
             if val < lim.position_min[i]:
-                violations.append(SafetyViolation(
-                    violation_type=ViolationType.POSITION_LIMIT,
-                    joint_index=i,
-                    message=f"Joint {i} position {val:.4f} rad below minimum {lim.position_min[i]:.4f} rad",
-                    actual_value=val,
-                    limit_value=float(lim.position_min[i]),
-                ))
+                violations.append(
+                    SafetyViolation(
+                        violation_type=ViolationType.POSITION_LIMIT,
+                        joint_index=i,
+                        message=f"Joint {i} position {val:.4f} rad below minimum {lim.position_min[i]:.4f} rad",
+                        actual_value=val,
+                        limit_value=float(lim.position_min[i]),
+                    )
+                )
             elif val > lim.position_max[i]:
-                violations.append(SafetyViolation(
-                    violation_type=ViolationType.POSITION_LIMIT,
-                    joint_index=i,
-                    message=f"Joint {i} position {val:.4f} rad above maximum {lim.position_max[i]:.4f} rad",
-                    actual_value=val,
-                    limit_value=float(lim.position_max[i]),
-                ))
+                violations.append(
+                    SafetyViolation(
+                        violation_type=ViolationType.POSITION_LIMIT,
+                        joint_index=i,
+                        message=f"Joint {i} position {val:.4f} rad above maximum {lim.position_max[i]:.4f} rad",
+                        actual_value=val,
+                        limit_value=float(lim.position_max[i]),
+                    )
+                )
 
         # Velocity
         for i in range(NUM_JOINTS):
             val = float(state.joint_velocities[i])
             if abs(val) > lim.velocity_max[i]:
-                violations.append(SafetyViolation(
-                    violation_type=ViolationType.VELOCITY_LIMIT,
-                    joint_index=i,
-                    message=f"Joint {i} velocity {val:.4f} rad/s exceeds limit ±{lim.velocity_max[i]:.4f} rad/s",
-                    actual_value=val,
-                    limit_value=float(lim.velocity_max[i]),
-                ))
+                violations.append(
+                    SafetyViolation(
+                        violation_type=ViolationType.VELOCITY_LIMIT,
+                        joint_index=i,
+                        message=f"Joint {i} velocity {val:.4f} rad/s exceeds limit ±{lim.velocity_max[i]:.4f} rad/s",
+                        actual_value=val,
+                        limit_value=float(lim.velocity_max[i]),
+                    )
+                )
 
         # Torque
         for i in range(NUM_JOINTS):
             val = float(state.joint_torques[i])
             if abs(val) > lim.torque_max[i]:
-                violations.append(SafetyViolation(
-                    violation_type=ViolationType.TORQUE_LIMIT,
-                    joint_index=i,
-                    message=f"Joint {i} torque {val:.4f} Nm exceeds limit ±{lim.torque_max[i]:.4f} Nm",
-                    actual_value=val,
-                    limit_value=float(lim.torque_max[i]),
-                ))
+                violations.append(
+                    SafetyViolation(
+                        violation_type=ViolationType.TORQUE_LIMIT,
+                        joint_index=i,
+                        message=f"Joint {i} torque {val:.4f} Nm exceeds limit ±{lim.torque_max[i]:.4f} Nm",
+                        actual_value=val,
+                        limit_value=float(lim.torque_max[i]),
+                    )
+                )
 
         # Workspace bound (spherical)
         reach = _estimate_reach(state.joint_positions)
         if reach > MAX_WORKSPACE_RADIUS_M:
-            violations.append(SafetyViolation(
-                violation_type=ViolationType.WORKSPACE_BOUND,
-                joint_index=None,
-                message=f"Estimated reach {reach * 1000:.1f} mm exceeds workspace limit {MAX_WORKSPACE_RADIUS_MM:.1f} mm",
-                actual_value=reach,
-                limit_value=MAX_WORKSPACE_RADIUS_M,
-            ))
+            violations.append(
+                SafetyViolation(
+                    violation_type=ViolationType.WORKSPACE_BOUND,
+                    joint_index=None,
+                    message=f"Estimated reach {reach * 1000:.1f} mm exceeds workspace limit {MAX_WORKSPACE_RADIUS_MM:.1f} mm",
+                    actual_value=reach,
+                    limit_value=MAX_WORKSPACE_RADIUS_M,
+                )
+            )
 
         return violations
 

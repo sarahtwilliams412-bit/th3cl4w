@@ -14,10 +14,10 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # EventType enum (unchanged from original)
 # ---------------------------------------------------------------------------
+
 
 class EventType(enum.Enum):
     CMD_SENT = "cmd_sent"
@@ -35,6 +35,7 @@ class EventType(enum.Enum):
 # ---------------------------------------------------------------------------
 # Legacy TelemetryEvent dataclass (kept for backward compat)
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class TelemetryEvent:
@@ -210,9 +211,7 @@ class TelemetryCollector:
 
         # Legacy rate tracking (for get_stats compat)
         self._rate_lock = threading.Lock()
-        self._rate_timestamps: dict[EventType, list[float]] = {
-            et: [] for et in EventType
-        }
+        self._rate_timestamps: dict[EventType, list[float]] = {et: [] for et in EventType}
 
         # Subscribers for real-time streaming (list of callables)
         self._subscribers: list[Any] = []
@@ -282,6 +281,7 @@ class TelemetryCollector:
 
     def _writer_loop(self) -> None:
         import logging
+
         _log = logging.getLogger("th3cl4w.telemetry.writer")
         _log.info("Writer thread started (db=%s, pid=%d)", self._db_path, os.getpid())
         conn = self._make_conn()
@@ -326,6 +326,7 @@ class TelemetryCollector:
         if not batch:
             return
         import logging
+
         logging.getLogger("th3cl4w.telemetry.writer").debug("Flushing %d rows", len(batch))
         # Group by table
         by_table: dict[str, list[tuple]] = {}
@@ -361,16 +362,28 @@ class TelemetryCollector:
         ts = time.time()
         ts_mono = time.monotonic()
         data_json = json.dumps(data) if data is not None else None
-        self._enqueue(_TABLE_DDS_COMMANDS, (
-            ts, ts_mono, seq, funcode, joint_id, target_value, data_json, correlation_id, raw_len
-        ))
+        self._enqueue(
+            _TABLE_DDS_COMMANDS,
+            (ts, ts_mono, seq, funcode, joint_id, target_value, data_json, correlation_id, raw_len),
+        )
         if not _from_emit:
-            self._notify_subscribers(TelemetryEvent(
-                timestamp_ms=ts_mono * 1000, wall_time_ms=ts * 1000,
-                source="dds", event_type=EventType.DDS_PUBLISH,
-                payload={"seq": seq, "funcode": funcode, "joint_id": joint_id, "target_value": target_value, "data": data, "raw_len": raw_len},
-                correlation_id=correlation_id,
-            ))
+            self._notify_subscribers(
+                TelemetryEvent(
+                    timestamp_ms=ts_mono * 1000,
+                    wall_time_ms=ts * 1000,
+                    source="dds",
+                    event_type=EventType.DDS_PUBLISH,
+                    payload={
+                        "seq": seq,
+                        "funcode": funcode,
+                        "joint_id": joint_id,
+                        "target_value": target_value,
+                        "data": data,
+                        "raw_len": raw_len,
+                    },
+                    correlation_id=correlation_id,
+                )
+            )
 
     def log_dds_feedback(
         self,
@@ -384,33 +397,63 @@ class TelemetryCollector:
         ts_mono = time.monotonic()
         a = angles or {}
         s = status or {}
-        self._enqueue(_TABLE_DDS_FEEDBACK, (
-            ts, ts_mono, seq, funcode,
-            a.get("angle0"), a.get("angle1"), a.get("angle2"), a.get("angle3"),
-            a.get("angle4"), a.get("angle5"), a.get("angle6"),
-            s.get("power_status"), s.get("enable_status"), s.get("error_status"),
-            s.get("recv_status"), s.get("exec_status"),
-        ))
+        self._enqueue(
+            _TABLE_DDS_FEEDBACK,
+            (
+                ts,
+                ts_mono,
+                seq,
+                funcode,
+                a.get("angle0"),
+                a.get("angle1"),
+                a.get("angle2"),
+                a.get("angle3"),
+                a.get("angle4"),
+                a.get("angle5"),
+                a.get("angle6"),
+                s.get("power_status"),
+                s.get("enable_status"),
+                s.get("error_status"),
+                s.get("recv_status"),
+                s.get("exec_status"),
+            ),
+        )
         if not _from_emit:
-            self._notify_subscribers(TelemetryEvent(
-                timestamp_ms=ts_mono * 1000, wall_time_ms=ts * 1000,
-                source="dds", event_type=EventType.DDS_RECEIVE,
-                payload={"seq": seq, "funcode": funcode, "angles": angles, "status": status},
-            ))
+            self._notify_subscribers(
+                TelemetryEvent(
+                    timestamp_ms=ts_mono * 1000,
+                    wall_time_ms=ts * 1000,
+                    source="dds",
+                    event_type=EventType.DDS_RECEIVE,
+                    payload={"seq": seq, "funcode": funcode, "angles": angles, "status": status},
+                )
+            )
 
     def log_smoother_state(self, states: list[dict]) -> None:
         ts = time.time()
         ts_mono = time.monotonic()
         for s in states:
-            self._enqueue(_TABLE_SMOOTHER, (
-                ts, s["joint_id"], s["target"], s["current"], s["sent"],
-                s.get("step_size"), s.get("dirty", 1),
-            ))
-        self._notify_subscribers(TelemetryEvent(
-            timestamp_ms=ts_mono * 1000, wall_time_ms=ts * 1000,
-            source="smoother", event_type=EventType.STATE_UPDATE,
-            payload={"joints": states},
-        ))
+            self._enqueue(
+                _TABLE_SMOOTHER,
+                (
+                    ts,
+                    s["joint_id"],
+                    s["target"],
+                    s["current"],
+                    s["sent"],
+                    s.get("step_size"),
+                    s.get("dirty", 1),
+                ),
+            )
+        self._notify_subscribers(
+            TelemetryEvent(
+                timestamp_ms=ts_mono * 1000,
+                wall_time_ms=ts * 1000,
+                source="smoother",
+                event_type=EventType.STATE_UPDATE,
+                payload={"joints": states},
+            )
+        )
 
     def log_web_request(
         self,
@@ -426,16 +469,36 @@ class TelemetryCollector:
         ts = time.time()
         ts_mono = time.monotonic()
         params_json = json.dumps(params) if params is not None else None
-        self._enqueue(_TABLE_WEB, (
-            ts, endpoint, method, params_json, response_ms, status_code, correlation_id, 1 if ok else 0
-        ))
+        self._enqueue(
+            _TABLE_WEB,
+            (
+                ts,
+                endpoint,
+                method,
+                params_json,
+                response_ms,
+                status_code,
+                correlation_id,
+                1 if ok else 0,
+            ),
+        )
         if not _from_emit:
-            self._notify_subscribers(TelemetryEvent(
-                timestamp_ms=ts_mono * 1000, wall_time_ms=ts * 1000,
-                source="web", event_type=EventType.CMD_SENT,
-                payload={"endpoint": endpoint, "method": method, "response_ms": response_ms, "status_code": status_code, "ok": ok},
-                correlation_id=correlation_id,
-            ))
+            self._notify_subscribers(
+                TelemetryEvent(
+                    timestamp_ms=ts_mono * 1000,
+                    wall_time_ms=ts * 1000,
+                    source="web",
+                    event_type=EventType.CMD_SENT,
+                    payload={
+                        "endpoint": endpoint,
+                        "method": method,
+                        "response_ms": response_ms,
+                        "status_code": status_code,
+                        "ok": ok,
+                    },
+                    correlation_id=correlation_id,
+                )
+            )
 
     def log_camera_health(
         self,
@@ -445,17 +508,30 @@ class TelemetryCollector:
         ts = time.time()
         ts_mono = time.monotonic()
         s = stats or {}
-        self._enqueue(_TABLE_CAMERA, (
-            ts, camera_id,
-            s.get("actual_fps"), s.get("target_fps"), s.get("drop_count"),
-            s.get("motion_score"), s.get("connected"), s.get("resolution_w"),
-            s.get("resolution_h"), s.get("stalled"),
-        ))
-        self._notify_subscribers(TelemetryEvent(
-            timestamp_ms=ts_mono * 1000, wall_time_ms=ts * 1000,
-            source="camera", event_type=EventType.CAM_FRAME,
-            payload={"camera_id": camera_id, **s},
-        ))
+        self._enqueue(
+            _TABLE_CAMERA,
+            (
+                ts,
+                camera_id,
+                s.get("actual_fps"),
+                s.get("target_fps"),
+                s.get("drop_count"),
+                s.get("motion_score"),
+                s.get("connected"),
+                s.get("resolution_w"),
+                s.get("resolution_h"),
+                s.get("stalled"),
+            ),
+        )
+        self._notify_subscribers(
+            TelemetryEvent(
+                timestamp_ms=ts_mono * 1000,
+                wall_time_ms=ts * 1000,
+                source="camera",
+                event_type=EventType.CAM_FRAME,
+                payload={"camera_id": camera_id, **s},
+            )
+        )
 
     def log_system_event(
         self,
@@ -470,17 +546,26 @@ class TelemetryCollector:
         ts = time.time()
         ts_mono = time.monotonic()
         data_json = json.dumps(data) if data is not None else None
-        self._enqueue(_TABLE_SYSTEM, (
-            ts, event_type, source, detail, data_json, correlation_id, level
-        ))
+        self._enqueue(
+            _TABLE_SYSTEM, (ts, event_type, source, detail, data_json, correlation_id, level)
+        )
         if not _from_emit:
             evt_type = EventType.ERROR if level == "error" else EventType.STATE_UPDATE
-            self._notify_subscribers(TelemetryEvent(
-                timestamp_ms=ts_mono * 1000, wall_time_ms=ts * 1000,
-                source=source, event_type=evt_type,
-                payload={"system_event_type": event_type, "detail": detail, "data": data, "level": level},
-                correlation_id=correlation_id,
-            ))
+            self._notify_subscribers(
+                TelemetryEvent(
+                    timestamp_ms=ts_mono * 1000,
+                    wall_time_ms=ts * 1000,
+                    source=source,
+                    event_type=evt_type,
+                    payload={
+                        "system_event_type": event_type,
+                        "detail": detail,
+                        "data": data,
+                        "level": level,
+                    },
+                    correlation_id=correlation_id,
+                )
+            )
 
     # -- Subscribers for real-time streaming ------------------------------
 
@@ -629,14 +714,16 @@ class TelemetryCollector:
         matched.sort(key=lambda e: e.timestamp_ms)
         result = []
         for i, ev in enumerate(matched):
-            result.append({
-                "event": {
-                    "ts": ev.timestamp_ms,
-                    "type": ev.event_type.value,
-                    "source": ev.source,
-                },
-                "latency_ms": (ev.timestamp_ms - matched[i - 1].timestamp_ms) if i > 0 else 0.0,
-            })
+            result.append(
+                {
+                    "event": {
+                        "ts": ev.timestamp_ms,
+                        "type": ev.event_type.value,
+                        "source": ev.source,
+                    },
+                    "latency_ms": (ev.timestamp_ms - matched[i - 1].timestamp_ms) if i > 0 else 0.0,
+                }
+            )
         return result
 
     def get_stats(self) -> dict[str, Any]:

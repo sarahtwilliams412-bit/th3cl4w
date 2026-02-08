@@ -2,24 +2,27 @@
 Tests for the stereo vision module (Phase 1).
 
 Uses synthetic data and mocks — no real cameras required.
+Requires opencv-python (cv2) — skipped if not installed.
 """
 
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import cv2
 import numpy as np
 import pytest
+
+# Skip entire module if cv2 is not available (MagicMock doesn't count)
+cv2 = pytest.importorskip("cv2", reason="opencv-python (cv2) not installed")
 
 from src.vision.calibration import StereoCalibrator
 from src.vision.stereo_depth import StereoDepthEstimator
 from src.vision.object_detection import ObjectDetector, DetectedObject, ColorRange
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def make_checkerboard_image(
     board_size: tuple[int, int] = (9, 6),
@@ -48,11 +51,14 @@ def make_synthetic_calibration() -> StereoCalibrator:
     # Synthetic intrinsics (typical for 640x480)
     fx, fy = 500.0, 500.0
     cx, cy = 320.0, 240.0
-    cal.camera_matrix_left = np.array([
-        [fx, 0, cx],
-        [0, fy, cy],
-        [0, 0, 1],
-    ], dtype=np.float64)
+    cal.camera_matrix_left = np.array(
+        [
+            [fx, 0, cx],
+            [0, fy, cy],
+            [0, 0, 1],
+        ],
+        dtype=np.float64,
+    )
     cal.camera_matrix_right = cal.camera_matrix_left.copy()
     cal.dist_coeffs_left = np.zeros(5, dtype=np.float64)
     cal.dist_coeffs_right = np.zeros(5, dtype=np.float64)
@@ -64,9 +70,13 @@ def make_synthetic_calibration() -> StereoCalibrator:
     # Compute rectification
     w, h = cal.image_size
     R1, R2, P1, P2, cal.Q, _, _ = cv2.stereoRectify(
-        cal.camera_matrix_left, cal.dist_coeffs_left,
-        cal.camera_matrix_right, cal.dist_coeffs_right,
-        (w, h), cal.R, cal.T,
+        cal.camera_matrix_left,
+        cal.dist_coeffs_left,
+        cal.camera_matrix_right,
+        cal.dist_coeffs_right,
+        (w, h),
+        cal.R,
+        cal.T,
         alpha=0,
     )
     cal.map_left_x, cal.map_left_y = cv2.initUndistortRectifyMap(
@@ -82,6 +92,7 @@ def make_synthetic_calibration() -> StereoCalibrator:
 # ═══════════════════════════════════════════════════════════════════════════
 # Calibration Tests
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestStereoCalibrator:
     def test_init_defaults(self):
@@ -128,8 +139,16 @@ class TestStereoCalibrator:
         cal = StereoCalibrator(board_size=(9, 6), square_size=25.0)
         pairs = []
         offsets = [
-            (50, 50), (80, 30), (30, 80), (60, 60), (40, 40),
-            (70, 50), (50, 70), (90, 40), (45, 55), (65, 35),
+            (50, 50),
+            (80, 30),
+            (30, 80),
+            (60, 60),
+            (40, 40),
+            (70, 50),
+            (50, 70),
+            (90, 40),
+            (45, 55),
+            (65, 35),
         ]
         for ox, oy in offsets:
             left = make_checkerboard_image(board_size=(9, 6), offset=(ox, oy))
@@ -181,6 +200,7 @@ class TestStereoCalibrator:
 # ═══════════════════════════════════════════════════════════════════════════
 # Stereo Depth Tests
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestStereoDepthEstimator:
     def setup_method(self):
@@ -266,6 +286,7 @@ class TestStereoDepthEstimator:
 # ═══════════════════════════════════════════════════════════════════════════
 # Object Detection Tests
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def make_colored_object_image(
     color_bgr: tuple[int, int, int] = (0, 0, 255),
@@ -388,6 +409,7 @@ class TestObjectDetector:
 # ═══════════════════════════════════════════════════════════════════════════
 # Integration Test
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestIntegration:
     def test_full_pipeline_synthetic(self):

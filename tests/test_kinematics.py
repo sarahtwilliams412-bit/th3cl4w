@@ -49,6 +49,7 @@ class TestJacobian:
             J_fd[:3, i] = (T_plus[:3, 3] - T0[:3, 3]) / eps
             # Orientation part (approx via rotation difference)
             from scipy.spatial.transform import Rotation
+
             dR = T_plus[:3, :3] @ T0[:3, :3].T
             J_fd[3:, i] = Rotation.from_matrix(dR).as_rotvec() / eps
 

@@ -53,7 +53,7 @@ class StereoCalibrator:
     def _make_object_points(self) -> np.ndarray:
         """Generate 3D object points for the checkerboard."""
         objp = np.zeros((self.board_size[0] * self.board_size[1], 3), np.float32)
-        objp[:, :2] = np.mgrid[0:self.board_size[0], 0:self.board_size[1]].T.reshape(-1, 2)
+        objp[:, :2] = np.mgrid[0 : self.board_size[0], 0 : self.board_size[1]].T.reshape(-1, 2)
         objp *= self.square_size
         return objp
 
@@ -99,13 +99,15 @@ class StereoCalibrator:
                 img_points_right.append(corners_r)
                 logger.info("Pair %d: corners found", i)
             else:
-                logger.warning("Pair %d: corners not found (L=%s, R=%s)",
-                               i, corners_l is not None, corners_r is not None)
+                logger.warning(
+                    "Pair %d: corners not found (L=%s, R=%s)",
+                    i,
+                    corners_l is not None,
+                    corners_r is not None,
+                )
 
         if len(obj_points) < 3:
-            raise ValueError(
-                f"Need at least 3 valid image pairs, got {len(obj_points)}"
-            )
+            raise ValueError(f"Need at least 3 valid image pairs, got {len(obj_points)}")
 
         logger.info("Calibrating with %d valid pairs...", len(obj_points))
         h, w = self.image_size[1], self.image_size[0]
@@ -120,19 +122,31 @@ class StereoCalibrator:
         logger.info("Individual calibration RMS: left=%.4f, right=%.4f", ret_l, ret_r)
 
         # Stereo calibration
-        flags = (
-            cv2.CALIB_FIX_INTRINSIC
-        )
+        flags = cv2.CALIB_FIX_INTRINSIC
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-6)
 
-        rms, self.camera_matrix_left, self.dist_coeffs_left, \
-            self.camera_matrix_right, self.dist_coeffs_right, \
-            self.R, self.T, E, F = cv2.stereoCalibrate(
-                obj_points, img_points_left, img_points_right,
-                self.camera_matrix_left, self.dist_coeffs_left,
-                self.camera_matrix_right, self.dist_coeffs_right,
-                (w, h), criteria=criteria, flags=flags
-            )
+        (
+            rms,
+            self.camera_matrix_left,
+            self.dist_coeffs_left,
+            self.camera_matrix_right,
+            self.dist_coeffs_right,
+            self.R,
+            self.T,
+            E,
+            F,
+        ) = cv2.stereoCalibrate(
+            obj_points,
+            img_points_left,
+            img_points_right,
+            self.camera_matrix_left,
+            self.dist_coeffs_left,
+            self.camera_matrix_right,
+            self.dist_coeffs_right,
+            (w, h),
+            criteria=criteria,
+            flags=flags,
+        )
 
         logger.info("Stereo calibration RMS error: %.4f", rms)
 
@@ -146,25 +160,25 @@ class StereoCalibrator:
         h, w = self.image_size[1], self.image_size[0]
 
         R1, R2, P1, P2, self.Q, roi1, roi2 = cv2.stereoRectify(
-            self.camera_matrix_left, self.dist_coeffs_left,
-            self.camera_matrix_right, self.dist_coeffs_right,
-            (w, h), self.R, self.T,
+            self.camera_matrix_left,
+            self.dist_coeffs_left,
+            self.camera_matrix_right,
+            self.dist_coeffs_right,
+            (w, h),
+            self.R,
+            self.T,
             alpha=0,
             flags=cv2.CALIB_ZERO_DISPARITY,
         )
 
         self.map_left_x, self.map_left_y = cv2.initUndistortRectifyMap(
-            self.camera_matrix_left, self.dist_coeffs_left,
-            R1, P1, (w, h), cv2.CV_32FC1
+            self.camera_matrix_left, self.dist_coeffs_left, R1, P1, (w, h), cv2.CV_32FC1
         )
         self.map_right_x, self.map_right_y = cv2.initUndistortRectifyMap(
-            self.camera_matrix_right, self.dist_coeffs_right,
-            R2, P2, (w, h), cv2.CV_32FC1
+            self.camera_matrix_right, self.dist_coeffs_right, R2, P2, (w, h), cv2.CV_32FC1
         )
 
-    def rectify(
-        self, left: np.ndarray, right: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def rectify(self, left: np.ndarray, right: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Apply rectification maps to a stereo image pair.
 
         Raises RuntimeError if not calibrated.

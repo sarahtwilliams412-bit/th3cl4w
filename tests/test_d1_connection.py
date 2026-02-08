@@ -17,7 +17,6 @@ from src.interface.d1_connection import (
     COMMAND_PACKET_SIZE,
 )
 
-
 # --- D1State dataclass ---
 
 
