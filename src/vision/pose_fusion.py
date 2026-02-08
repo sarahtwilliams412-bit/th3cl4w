@@ -72,11 +72,54 @@ class PoseFusion:
         self,
         fk_base_confidence: float = 0.5,
         visual_weight_scale: float = 1.0,
+        extrinsics_path: Optional[str] = None,
     ):
         self.fk_base_confidence = fk_base_confidence
         self.visual_weight_scale = visual_weight_scale
         self._last_result: Optional[FusionResult] = None
         self._quality_history: list[dict] = []  # rolling window
+
+        # Try to load saved extrinsics
+        self._cam0_calib: Optional[CameraCalib] = None
+        self._cam1_calib: Optional[CameraCalib] = None
+        if extrinsics_path:
+            self._load_extrinsics(extrinsics_path)
+
+    def _load_extrinsics(self, path: str) -> bool:
+        """Load camera extrinsics from calibration file."""
+        try:
+            import json
+            with open(path) as f:
+                data = json.load(f)
+            cameras = data.get("cameras", {})
+            for cam_id, cam_data in cameras.items():
+                calib = CameraCalib(
+                    fx=cam_data["camera_matrix"][0][0],
+                    fy=cam_data["camera_matrix"][1][1],
+                    cx=cam_data["camera_matrix"][0][2],
+                    cy=cam_data["camera_matrix"][1][2],
+                    rvec=cam_data["rvec"],
+                    tvec=cam_data["tvec"],
+                )
+                if cam_id == "cam0":
+                    self._cam0_calib = calib
+                elif cam_id == "cam1":
+                    self._cam1_calib = calib
+                logger.info("Loaded extrinsics for %s from %s", cam_id, path)
+            return True
+        except Exception as e:
+            logger.warning("Failed to load extrinsics from %s: %s", path, e)
+            return False
+
+    @property
+    def cam0_calib(self) -> Optional[CameraCalib]:
+        """Get loaded cam0 calibration (for external use)."""
+        return self._cam0_calib
+
+    @property
+    def cam1_calib(self) -> Optional[CameraCalib]:
+        """Get loaded cam1 calibration (for external use)."""
+        return self._cam1_calib
 
     def fuse(
         self,
