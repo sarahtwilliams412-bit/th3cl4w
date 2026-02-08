@@ -129,6 +129,9 @@ class D1DDSConnection:
             return True
 
         try:
+            # CycloneDDS interface name matching is unreliable on some systems
+            # (udev renames like eno1 may not be recognised). Try explicit name
+            # first; fall back to autodetermine if it fails.
             os.environ["CYCLONEDDS_URI"] = (
                 "<CycloneDDS>"
                 "  <Domain>"
@@ -140,8 +143,25 @@ class D1DDSConnection:
                 "  </Domain>"
                 "</CycloneDDS>"
             )
-
-            self._dp = DomainParticipant(domain_id=domain_id)
+            try:
+                self._dp = DomainParticipant(domain_id=domain_id)
+            except Exception:
+                logger.warning(
+                    "CycloneDDS rejected interface name '%s', retrying with autodetermine",
+                    interface_name,
+                )
+                os.environ["CYCLONEDDS_URI"] = (
+                    "<CycloneDDS>"
+                    "  <Domain>"
+                    "    <General>"
+                    "      <Interfaces>"
+                    '        <NetworkInterface autodetermine="true" />'
+                    "      </Interfaces>"
+                    "    </General>"
+                    "  </Domain>"
+                    "</CycloneDDS>"
+                )
+                self._dp = DomainParticipant(domain_id=domain_id)
 
             topic_fb = Topic(self._dp, self.FEEDBACK_TOPIC, ArmString_)
             self._reader = DataReader(self._dp, topic_fb)
