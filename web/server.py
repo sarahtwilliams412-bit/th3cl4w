@@ -2428,6 +2428,171 @@ async def ws_ascii(ws: WebSocket):
 
 
 # ---------------------------------------------------------------------------
+# Real World 3D — Visual hull voxel reconstruction from dual cameras
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws/realworld3d")
+async def ws_realworld3d(ws: WebSocket):
+    """Stream voxel reconstruction data from dual camera visual hull carving.
+
+    Fetches frames from cam0 (front→X-Y) and cam1 (overhead→X-Z),
+    segments foreground via edge detection / frame differencing,
+    intersects silhouettes to carve a 3D voxel grid, and sends
+    non-empty voxels as JSON to the client.
+    """
+    await ws.accept()
+    import httpx
+
+    GRID_W, GRID_H, GRID_D = 64, 32, 64  # width, height, depth
+    bg_frame0 = None  # background reference for cam0
+    bg_frame1 = None  # background reference for cam1
+    frame_count = 0
+
+    try:
+        while True:
+            # Check for client messages (settings, bg capture commands)
+            try:
+                msg = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
+                data = json.loads(msg)
+                if data.get("type") == "capture_bg":
+                    bg_frame0 = None
+                    bg_frame1 = None
+                    frame_count = 0
+                    await ws.send_json({"type": "status", "message": "Background reset, will capture on next frame"})
+            except asyncio.TimeoutError:
+                pass
+            except Exception:
+                pass
+
+            # Fetch snapshots from both cameras
+            frame0_bytes = None
+            frame1_bytes = None
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    r0, r1 = await asyncio.gather(
+                        client.get("http://localhost:8081/snap/0"),
+                        client.get("http://localhost:8081/snap/1"),
+                        return_exceptions=True,
+                    )
+                    if not isinstance(r0, Exception) and r0.status_code == 200:
+                        frame0_bytes = r0.content
+                    if not isinstance(r1, Exception) and r1.status_code == 200:
+                        frame1_bytes = r1.content
+            except Exception:
+                pass
+
+            if frame0_bytes is None and frame1_bytes is None:
+                await ws.send_json({"type": "status", "message": "Waiting for cameras..."})
+                await asyncio.sleep(1.0)
+                continue
+
+            # Decode frames
+            import cv2
+            f0 = cv2.imdecode(np.frombuffer(frame0_bytes, np.uint8), cv2.IMREAD_COLOR) if frame0_bytes else None
+            f1 = cv2.imdecode(np.frombuffer(frame1_bytes, np.uint8), cv2.IMREAD_COLOR) if frame1_bytes else None
+
+            if f0 is None and f1 is None:
+                await ws.send_json({"type": "status", "message": "Failed to decode frames"})
+                await asyncio.sleep(0.5)
+                continue
+
+            # Capture background on first frames
+            if bg_frame0 is None and f0 is not None:
+                bg_frame0 = cv2.GaussianBlur(cv2.cvtColor(f0, cv2.COLOR_BGR2GRAY), (21, 21), 0)
+            if bg_frame1 is None and f1 is not None:
+                bg_frame1 = cv2.GaussianBlur(cv2.cvtColor(f1, cv2.COLOR_BGR2GRAY), (21, 21), 0)
+
+            frame_count += 1
+
+            # --- Segmentation via frame differencing + edge detection ---
+            def segment_foreground(frame, bg_gray, threshold=30):
+                """Returns binary mask of foreground pixels."""
+                gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (21, 21), 0)
+                if bg_gray is not None:
+                    diff = cv2.absdiff(gray, bg_gray)
+                    _, mask = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)
+                else:
+                    # Fallback: use edges
+                    edges = cv2.Canny(gray, 50, 150)
+                    mask = cv2.dilate(edges, None, iterations=3)
+                # Clean up
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+                return mask
+
+            # Build silhouette masks
+            mask0 = segment_foreground(f0, bg_frame0) if f0 is not None else None  # front: X-Y
+            mask1 = segment_foreground(f1, bg_frame1) if f1 is not None else None  # top: X-Z
+
+            # Resize masks to grid dimensions
+            if mask0 is not None:
+                sil_front = cv2.resize(mask0, (GRID_W, GRID_H), interpolation=cv2.INTER_AREA)
+            else:
+                sil_front = np.ones((GRID_H, GRID_W), dtype=np.uint8) * 255
+            if mask1 is not None:
+                sil_top = cv2.resize(mask1, (GRID_W, GRID_D), interpolation=cv2.INTER_AREA)
+            else:
+                sil_top = np.ones((GRID_D, GRID_W), dtype=np.uint8) * 255
+
+            # Threshold to binary
+            sil_front = (sil_front > 127).astype(np.uint8)
+            sil_top = (sil_top > 127).astype(np.uint8)
+
+            # --- Visual hull intersection ---
+            # front view (cam0): column x → voxel X, row y → voxel Y (flipped)
+            # top view (cam1): column x → voxel X, row z → voxel Z
+            # A voxel (x, y, z) is occupied if sil_front[GRID_H-1-y, x] AND sil_top[z, x]
+
+            voxels = []
+            # Also sample color from camera frames
+            f0_small = cv2.resize(f0, (GRID_W, GRID_H), interpolation=cv2.INTER_AREA) if f0 is not None else None
+            f1_small = cv2.resize(f1, (GRID_W, GRID_D), interpolation=cv2.INTER_AREA) if f1 is not None else None
+
+            for x in range(GRID_W):
+                for y in range(GRID_H):
+                    if not sil_front[GRID_H - 1 - y, x]:
+                        continue
+                    for z in range(GRID_D):
+                        if sil_top[z, x]:
+                            # Get color: blend front and top camera colors
+                            r, g, b = 128, 128, 128
+                            if f0_small is not None:
+                                bgr = f0_small[GRID_H - 1 - y, x]
+                                r, g, b = int(bgr[2]), int(bgr[1]), int(bgr[0])
+                            if f1_small is not None:
+                                bgr1 = f1_small[z, x]
+                                r = (r + int(bgr1[2])) >> 1
+                                g = (g + int(bgr1[1])) >> 1
+                                b = (b + int(bgr1[0])) >> 1
+                            voxels.append([x, y, z, r, g, b])
+
+            # Cap voxel count for performance
+            if len(voxels) > 8000:
+                # Subsample — keep every Nth
+                step = len(voxels) // 8000 + 1
+                voxels = voxels[::step]
+
+            await ws.send_json({
+                "type": "voxels",
+                "voxels": voxels,  # [[x,y,z,r,g,b], ...]
+                "gridW": GRID_W,
+                "gridH": GRID_H,
+                "gridD": GRID_D,
+                "frame": frame_count,
+                "cam0": f0 is not None,
+                "cam1": f1 is not None,
+            })
+
+            await asyncio.sleep(0.75)  # ~1.3 fps reconstruction rate
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.warning("RealWorld3D WS error: %s", e)
+
+
+# ---------------------------------------------------------------------------
 # Static files — versioned UIs all pointing to the same server
 # /v1/ → V1 stable base, /v2/ → V2 Cartesian controls, / → V1 (default)
 # ---------------------------------------------------------------------------
