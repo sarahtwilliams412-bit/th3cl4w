@@ -11,7 +11,7 @@ route HSV through CPU when the kernel is broken, avoiding repeated stderr spam.
 
 import logging
 import os
-import tempfile
+import select
 
 import cv2
 import numpy as np
@@ -28,21 +28,33 @@ if _has_opencl:
 def _probe_hsv_kernel() -> bool:
     """Test whether the OpenCL HSV kernel compiles on this GPU.
 
-    OpenCV's OpenCL errors go to fd 2 (C-level stderr), so we redirect
-    the actual file descriptor to capture the build log.
+    On AMD GPUs with Mesa rusticl, the HSV kernel fails to build.  OpenCV
+    falls back to CPU silently but the driver dumps build errors to
+    stdout/stderr.  We capture output via a pipe during the first (cached)
+    build attempt so subsequent calls are clean.
+
+    Returns True if the GPU kernel compiled successfully.
     """
     try:
         probe = cv2.UMat(np.zeros((2, 2, 3), dtype=np.uint8))
-        old_fd = os.dup(2)
-        with tempfile.TemporaryFile(mode="w+") as tmp:
-            os.dup2(tmp.fileno(), 2)
-            try:
-                cv2.cvtColor(probe, cv2.COLOR_BGR2HSV)
-            finally:
-                os.dup2(old_fd, 2)
-                os.close(old_fd)
-            tmp.seek(0)
-            captured = tmp.read()
+        r_fd, w_fd = os.pipe()
+        saved_fds = (os.dup(1), os.dup(2))
+        os.dup2(w_fd, 1)
+        os.dup2(w_fd, 2)
+        os.close(w_fd)
+        try:
+            cv2.cvtColor(probe, cv2.COLOR_BGR2HSV)
+        finally:
+            os.dup2(saved_fds[0], 1)
+            os.dup2(saved_fds[1], 2)
+            os.close(saved_fds[0])
+            os.close(saved_fds[1])
+
+        # Read captured output (non-blocking)
+        ready, _, _ = select.select([r_fd], [], [], 0.1)
+        captured = os.read(r_fd, 16384).decode(errors="replace") if ready else ""
+        os.close(r_fd)
+
         if "BUILD_PROGRAM_FAILURE" in captured:
             logger.warning(
                 "OpenCL HSV kernel build failed (rusticl bug) — HSV will use CPU. "
@@ -81,12 +93,12 @@ def to_grayscale_gpu(frame):
 def to_hsv(frame):
     """BGR → HSV, using GPU when the kernel is available.
 
-    Falls back to CPU automatically on devices where the OpenCL HSV
-    kernel fails to build (e.g. AMD RX 580 with Mesa rusticl).
+    Falls back to CPU on devices where the OpenCL HSV kernel fails to
+    build (e.g. AMD RX 580 with Mesa rusticl).
     """
     if _hsv_gpu_ok:
         return cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    # Force CPU path to avoid build-error spam
+    # CPU path — avoids triggering the broken kernel again
     np_frame = frame.get() if isinstance(frame, cv2.UMat) else frame
     hsv_np = cv2.cvtColor(np_frame, cv2.COLOR_BGR2HSV)
     # Re-upload if caller expects UMat

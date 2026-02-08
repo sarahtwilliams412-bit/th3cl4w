@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import cv2
+from .gpu_preprocess import to_hsv
 import numpy as np
 
 logger = logging.getLogger("th3cl4w.vision.claw_position")
@@ -182,7 +183,7 @@ class ClawPositionPredictor:
             roi_offset = (rx, ry)
 
         # Convert to HSV and threshold
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        hsv = to_hsv(frame)
         mask = cv2.inRange(hsv, self._hsv_lower, self._hsv_upper)
 
         # Edge-based detection enhancement

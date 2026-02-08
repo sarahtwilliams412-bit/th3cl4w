@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
+from .gpu_preprocess import to_hsv
 import httpx
 import numpy as np
 from scipy.optimize import minimize
@@ -158,7 +159,7 @@ def detect_end_effector(frame: np.ndarray) -> Optional[Tuple[int, int]]:
     if frame is None:
         return None
 
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    hsv = to_hsv(frame)
     h, w = frame.shape[:2]
 
     # Strategy 1: Look for the metallic/dark gripper

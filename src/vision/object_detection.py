@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import cv2
+from .gpu_preprocess import to_hsv
 import numpy as np
 
 logger = logging.getLogger("th3cl4w.vision.object_detection")
@@ -99,7 +100,7 @@ class ObjectDetector:
             List of DetectedObject sorted by area (largest first).
         """
         blurred = cv2.GaussianBlur(image, (self.blur_kernel, self.blur_kernel), 0)
-        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+        hsv = to_hsv(blurred)
 
         detections: list[DetectedObject] = []
 
