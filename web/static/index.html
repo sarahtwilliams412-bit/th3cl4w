@@ -300,9 +300,11 @@ let animFrameId = null;
 let localLog = []; // client-side log entries
 let armSynced = false; // SAFETY: don't send commands until first state received
 let updatingFromState = false; // Guard against state→slider→command feedback loop
-let vizDirty = true; // V4: only redraw when state changes
+let vizDirty = true; // Only redraw canvas when joint/gripper values change
+let uiDirty = true; // Update DOM elements (log, badges) when any WS data arrives
 let prevJoints = [0,0,0,0,0,0]; // Track previous joint values to detect actual changes
 let prevGripper = 0;
+let lastGoodJoints = [0,0,0,0,0,0]; // Cache last known non-zero joints to prevent zero-snap
 let vizLogCounter = 0; // Throttle telemetry logging
 
 function logLocal(action, details, level) {
@@ -477,22 +479,35 @@ function connectWS() {
         logLocal('ACK', `${data.action}: ${data.ok ? 'OK' : 'FAIL'}`, data.ok ? 'info' : 'error');
         return;
       }
-      // Detect whether joint/gripper values actually changed before triggering redraw
+      // Zero-snap protection: if server sends all-zero joints but we previously
+      // had real values, substitute cached joints to prevent the viz jumping.
       const newJoints = data.joints || [0,0,0,0,0,0];
+      const allZero = newJoints.every(v => Math.abs(v) < 0.01);
+      const hadReal = lastGoodJoints.some(v => Math.abs(v) > 0.1);
+      if (allZero && hadReal && armSynced) {
+        data.joints = lastGoodJoints.slice();
+        console.warn('[VIZ] Blocked zero-snap, using cached joints:', lastGoodJoints);
+      } else if (!allZero) {
+        lastGoodJoints = newJoints.slice();
+      }
+
+      // Detect whether joint/gripper values actually changed before triggering canvas redraw
+      const safeJoints = data.joints;
       const newGripper = data.gripper || 0;
       let jointsChanged = false;
       for (let i = 0; i < 6; i++) {
-        if (Math.abs((newJoints[i] || 0) - prevJoints[i]) > 0.01) { jointsChanged = true; break; }
+        if (Math.abs((safeJoints[i] || 0) - prevJoints[i]) > 0.01) { jointsChanged = true; break; }
       }
       const gripperChanged = Math.abs(newGripper - prevGripper) > 0.01;
       const statusChanged = data.power !== armState.power || data.enabled !== armState.enabled || data.error !== armState.error;
 
       armState = data;
       lastStateTs = Date.now();
+      uiDirty = true; // Always update DOM (log, badges, connection quality)
 
       if (jointsChanged || gripperChanged || statusChanged || !armSynced) {
         vizDirty = true;
-        prevJoints = newJoints.slice();
+        prevJoints = safeJoints.slice();
         prevGripper = newGripper;
       }
       if (!armSynced) {
@@ -544,26 +559,26 @@ function updateUI() {
   // E-stop flash when enabled
   document.getElementById('btnEstop').className = armState.enabled ? 'estop flash' : 'estop';
 
-  // Joint sliders — guard against triggering input events, skip if unchanged
+  // Joint sliders — dead-band to prevent jitter from minor feedback noise
   updatingFromState = true;
   const joints = armState.joints || [0,0,0,0,0,0];
   for (let i = 0; i < 6; i++) {
     if (userDragging !== i) {
       const val = joints[i] || 0;
       const slider = document.getElementById(`js${i}`);
-      const valStr = String(val);
-      if (slider.value !== valStr) slider.value = val;
+      const current = parseFloat(slider.value);
+      if (Math.abs(current - val) > 0.25) slider.value = val;
       const label = document.getElementById(`jv${i}`);
       const txt = val.toFixed(1) + '°';
       if (label.textContent !== txt) label.textContent = txt;
     }
   }
 
-  // Gripper
+  // Gripper — same dead-band
   if (userDragging !== 6) {
     const gv = armState.gripper || 0;
-    const gvStr = String(gv);
-    if (gripSlider.value !== gvStr) gripSlider.value = gv;
+    const current = parseFloat(gripSlider.value);
+    if (Math.abs(current - gv) > 0.25) gripSlider.value = gv;
     const gLabel = document.getElementById('gripperValue');
     const gTxt = gv.toFixed(1) + ' mm';
     if (gLabel.textContent !== gTxt) gLabel.textContent = gTxt;
@@ -598,7 +613,7 @@ function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.
 
 // ---- Arm Visualization ----
 const canvas = document.getElementById('armCanvas');
-const ctx = canvas.getContext('2d');
+const visCtx = canvas.getContext('2d'); // Visible canvas context (cached for blit)
 // Double-buffer: draw to offscreen canvas, then blit to visible canvas in one
 // operation. This eliminates the flash from clearRect → redraw.
 let offCanvas = document.createElement('canvas');
@@ -918,15 +933,17 @@ function drawArm() {
   }
 
   // Blit offscreen canvas to visible canvas in one operation (eliminates flicker)
-  const visCtx = canvas.getContext('2d');
   visCtx.clearRect(0, 0, W, H);
   visCtx.drawImage(offCanvas, 0, 0);
 }
 
-// Animation loop — always update UI (cheap DOM ops), only redraw canvas when
-// joint/gripper values actually change
+// Animation loop — update DOM when new WS data arrives, redraw canvas only
+// when joint/gripper values actually change
 function animLoop() {
-  updateUI();
+  if (uiDirty) {
+    uiDirty = false;
+    updateUI();
+  }
   if (vizDirty) {
     vizDirty = false;
     drawArm();
