@@ -9,9 +9,17 @@
   let ascFrameCount = 0;
   let ascLastFpsTime = performance.now();
 
-  const ascOutputs = [document.getElementById('asciiOutput0'), document.getElementById('asciiOutput1')];
-  const ascDots = [document.getElementById('ascDot0'), document.getElementById('ascDot1')];
-  const ascFpsEl = document.getElementById('ascFps');
+  // Lazy-resolve DOM elements (may not exist at script load if tab HTML changed)
+  let ascOutputs = [null, null];
+  let ascDots = [null, null];
+  let ascFpsEl = null;
+  function resolveElements() {
+    ascOutputs = [document.getElementById('asciiOutput0'), document.getElementById('asciiOutput1')];
+    ascDots = [document.getElementById('ascDot0'), document.getElementById('ascDot1')];
+    ascFpsEl = document.getElementById('ascFps');
+  }
+  // Resolve immediately and also on connect
+  resolveElements();
 
   function ascSettings(camId) {
     return {
@@ -67,7 +75,8 @@
     ascDots[camId].className = 'ascii-status-dot';
 
     mgr.onOpen(() => {
-      ascDots[camId].className = 'ascii-status-dot on';
+      console.log(`ASCII cam${camId} WS connected`);
+      if (ascDots[camId]) ascDots[camId].className = 'ascii-status-dot on';
       mgr.send(ascSettings(camId));
     });
     mgr.onClose(() => {
@@ -78,16 +87,22 @@
     });
     mgr.onMessage((evt) => {
       if (ascPaused) return;
-      const data = JSON.parse(evt.data);
-      if (data.type === 'frame') {
-        renderFrame(camId, data);
-        ascFrameCount++;
-        const now = performance.now();
-        if (now - ascLastFpsTime >= 1000) {
-          ascFpsEl.textContent = (ascFrameCount / ((now - ascLastFpsTime) / 1000)).toFixed(1) + ' fps';
-          ascFrameCount = 0;
-          ascLastFpsTime = now;
+      try {
+        const data = JSON.parse(evt.data);
+        if (data.type === 'frame') {
+          renderFrame(camId, data);
+          ascFrameCount++;
+          const now = performance.now();
+          if (now - ascLastFpsTime >= 1000) {
+            if (ascFpsEl) ascFpsEl.textContent = (ascFrameCount / ((now - ascLastFpsTime) / 1000)).toFixed(1) + ' fps';
+            ascFrameCount = 0;
+            ascLastFpsTime = now;
+          }
         }
+      } catch(e) {
+        const out = ascOutputs[camId];
+        if (out) out.textContent = 'JS Error: ' + e.message;
+        console.error('ASCII render error:', e);
       }
     });
     mgr.connect();
@@ -99,6 +114,7 @@
   }
 
   window.asciiConnect = function() {
+    resolveElements();
     connectCam(0);
     connectCam(1);
     ascFitFont();
