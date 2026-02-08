@@ -24,6 +24,12 @@ from cyclonedds.topic import Topic
 
 from .d1_connection import D1State, NUM_JOINTS
 
+try:
+    from src.telemetry import get_collector, EventType
+    _HAS_TELEMETRY = True
+except ImportError:
+    _HAS_TELEMETRY = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,6 +92,8 @@ class D1DDSConnection:
         self._cache = _FeedbackCache()
         self._reader_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self._prev_angles: Optional[Dict[str, float]] = None
+        self._last_stale_warn: float = 0.0
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -176,8 +184,14 @@ class D1DDSConnection:
 
         The ``seq`` field is auto-populated if not present.
         """
+        correlation_id = cmd.pop("_correlation_id", None)
+
         if not self._connected or self._writer is None:
             logger.error("Cannot send command — not connected")
+            if _HAS_TELEMETRY:
+                tc = get_collector()
+                if tc.enabled:
+                    tc.emit("dds", EventType.ERROR, {"error": "not_connected", "cmd": str(cmd)}, correlation_id)
             return False
 
         if "seq" not in cmd:
@@ -187,55 +201,64 @@ class D1DDSConnection:
             payload = json.dumps(cmd, separators=(",", ":"))
             self._writer.write(ArmString_(data_=payload))
             logger.debug("Published command: %s", payload)
+            if _HAS_TELEMETRY:
+                tc = get_collector()
+                if tc.enabled:
+                    tc.emit("dds", EventType.DDS_PUBLISH, {
+                        "seq": cmd.get("seq"),
+                        "funcode": cmd.get("funcode"),
+                        "data": cmd.get("data"),
+                        "raw_len": len(payload),
+                    }, correlation_id)
             return True
         except Exception:
             logger.exception("Failed to publish command")
+            if _HAS_TELEMETRY:
+                tc = get_collector()
+                if tc.enabled:
+                    tc.emit("dds", EventType.ERROR, {"error": "publish_failed", "seq": cmd.get("seq")}, correlation_id)
             return False
 
     # ------------------------------------------------------------------
     # High-level commands
     # ------------------------------------------------------------------
 
-    def enable_motors(self) -> bool:
+    def enable_motors(self, _correlation_id: Optional[str] = None) -> bool:
         """Enable all motors."""
-        return self.send_command({
-            "address": 1,
-            "funcode": 5,
-            "data": {"mode": 1},
-        })
+        cmd: Dict[str, Any] = {"address": 1, "funcode": 5, "data": {"mode": 1}}
+        if _correlation_id:
+            cmd["_correlation_id"] = _correlation_id
+        return self.send_command(cmd)
 
-    def disable_motors(self) -> bool:
+    def disable_motors(self, _correlation_id: Optional[str] = None) -> bool:
         """Disable all motors."""
-        return self.send_command({
-            "address": 1,
-            "funcode": 5,
-            "data": {"mode": 0},
-        })
+        cmd: Dict[str, Any] = {"address": 1, "funcode": 5, "data": {"mode": 0}}
+        if _correlation_id:
+            cmd["_correlation_id"] = _correlation_id
+        return self.send_command(cmd)
 
-    def power_on(self) -> bool:
+    def power_on(self, _correlation_id: Optional[str] = None) -> bool:
         """Power on the arm."""
-        return self.send_command({
-            "address": 1,
-            "funcode": 6,
-            "data": {"power": 1},
-        })
+        cmd: Dict[str, Any] = {"address": 1, "funcode": 6, "data": {"power": 1}}
+        if _correlation_id:
+            cmd["_correlation_id"] = _correlation_id
+        return self.send_command(cmd)
 
-    def power_off(self) -> bool:
+    def power_off(self, _correlation_id: Optional[str] = None) -> bool:
         """Power off the arm."""
-        return self.send_command({
-            "address": 1,
-            "funcode": 6,
-            "data": {"power": 0},
-        })
+        cmd: Dict[str, Any] = {"address": 1, "funcode": 6, "data": {"power": 0}}
+        if _correlation_id:
+            cmd["_correlation_id"] = _correlation_id
+        return self.send_command(cmd)
 
-    def reset_to_zero(self) -> bool:
+    def reset_to_zero(self, _correlation_id: Optional[str] = None) -> bool:
         """Reset all joints to the zero position."""
-        return self.send_command({
-            "address": 1,
-            "funcode": 7,
-        })
+        cmd: Dict[str, Any] = {"address": 1, "funcode": 7}
+        if _correlation_id:
+            cmd["_correlation_id"] = _correlation_id
+        return self.send_command(cmd)
 
-    def set_joint(self, joint_id: int, angle_deg: float, delay_ms: int = 0) -> bool:
+    def set_joint(self, joint_id: int, angle_deg: float, delay_ms: int = 0, _correlation_id: Optional[str] = None) -> bool:
         """Move a single joint to the given angle (degrees).
 
         Args:
@@ -245,13 +268,12 @@ class D1DDSConnection:
         """
         if not 0 <= joint_id <= 6:
             raise ValueError(f"joint_id must be 0–6, got {joint_id}")
-        return self.send_command({
-            "address": 1,
-            "funcode": 1,
-            "data": {"id": joint_id, "angle": angle_deg, "delay_ms": delay_ms},
-        })
+        cmd: Dict[str, Any] = {"address": 1, "funcode": 1, "data": {"id": joint_id, "angle": angle_deg, "delay_ms": delay_ms}}
+        if _correlation_id:
+            cmd["_correlation_id"] = _correlation_id
+        return self.send_command(cmd)
 
-    def set_all_joints(self, angles_deg: List[float], mode: int = 0) -> bool:
+    def set_all_joints(self, angles_deg: List[float], mode: int = 0, _correlation_id: Optional[str] = None) -> bool:
         """Move all joints to the given angles (degrees).
 
         Args:
@@ -263,11 +285,10 @@ class D1DDSConnection:
         data: Dict[str, Any] = {"mode": mode}
         for i, a in enumerate(angles_deg):
             data[f"angle{i}"] = a
-        return self.send_command({
-            "address": 1,
-            "funcode": 2,
-            "data": data,
-        })
+        cmd: Dict[str, Any] = {"address": 1, "funcode": 2, "data": data}
+        if _correlation_id:
+            cmd["_correlation_id"] = _correlation_id
+        return self.send_command(cmd)
 
     # ------------------------------------------------------------------
     # State reading
@@ -330,6 +351,22 @@ class D1DDSConnection:
                 # CycloneDDS may raise on empty take depending on version;
                 # just keep polling.
                 pass
+
+            # Stale connection detection
+            if _HAS_TELEMETRY:
+                tc = get_collector()
+                if tc.enabled:
+                    now = time.monotonic()
+                    with self._cache.lock:
+                        last = self._cache.last_update
+                    if last > 0 and (now - last) > 2.0:
+                        if (now - self._last_stale_warn) > 5.0:
+                            tc.emit("dds", EventType.ERROR, {
+                                "error": "stale_connection",
+                                "seconds_since_last": round(now - last, 2),
+                            })
+                            self._last_stale_warn = now
+
             self._stop_event.wait(self._POLL_INTERVAL)
         logger.debug("Feedback reader thread stopped")
 
@@ -343,19 +380,45 @@ class D1DDSConnection:
 
         funcode = msg.get("funcode")
         data = msg.get("data")
+        seq = msg.get("seq", 0)
+
+        if _HAS_TELEMETRY:
+            tc = get_collector()
+            if tc.enabled:
+                tc.emit("dds", EventType.DDS_RECEIVE, {
+                    "seq": seq,
+                    "funcode": funcode,
+                    "data_keys": list(data.keys()) if isinstance(data, dict) else None,
+                })
+
         if data is None and funcode != 7:
             return
 
         now = time.monotonic()
         with self._cache.lock:
-            self._cache.last_seq = msg.get("seq", 0)
+            self._cache.last_seq = seq
             self._cache.last_update = now
             if funcode == 1:
                 # Joint angle feedback
                 self._cache.joint_angles = data
+                # Detect changes for telemetry
+                if _HAS_TELEMETRY and isinstance(data, dict):
+                    tc = get_collector()
+                    if tc.enabled and self._prev_angles is not None:
+                        changed = {k: v for k, v in data.items() if self._prev_angles.get(k) != v}
+                        if changed:
+                            tc.emit("dds", EventType.STATE_UPDATE, {"changed": changed})
+                    self._prev_angles = dict(data) if data else None
             elif funcode == 3:
                 # Status feedback
                 self._cache.status = data
+                if _HAS_TELEMETRY and isinstance(data, dict):
+                    tc = get_collector()
+                    if tc.enabled:
+                        if "recv_status" in data:
+                            tc.emit("dds", EventType.CMD_ACK, {"seq": seq, "recv_status": data["recv_status"]})
+                        if "exec_status" in data:
+                            tc.emit("dds", EventType.CMD_EXEC, {"seq": seq, "exec_status": data["exec_status"]})
 
 
 # ---------------------------------------------------------------------------
