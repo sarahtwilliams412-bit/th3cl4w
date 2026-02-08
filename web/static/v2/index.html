@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>th3cl4w V2 — D1 Arm Control</title>
+<style>
+:root {
+  --bg: #0f0f17;
+  --surface: #161625;
+  --surface-raised: #1c1c32;
+  --border: #2a2a44;
+  --border-focus: #4a90d9;
+  --danger: #e94560;
+  --danger-bg: #2d0f15;
+  --success: #53d769;
+  --success-bg: #0f2d15;
+  --warning: #f0ad4e;
+  --info: #4a90d9;
+  --text: #e8e8f0;
+  --text-dim: #6b6b88;
+  --text-muted: #3d3d55;
+  --joint-pitch: #4a90d9;
+  --joint-roll: #e8a838;
+  --gripper: #53d769;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh;display:flex;flex-direction:column;overflow:hidden;user-select:none}
+
+/* === TOPBAR === */
+.topbar{display:flex;align-items:center;gap:10px;padding:0 16px;height:48px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;z-index:100}
+.logo{font-family:var(--mono);font-size:18px;font-weight:700;letter-spacing:2px;color:var(--danger)}
+.conn-indicator{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:#555;flex-shrink:0;transition:background .3s,box-shadow .3s}
+.conn-dot.on{background:var(--success);box-shadow:0 0 6px var(--success)}
+.conn-dot.off{background:var(--danger);box-shadow:0 0 6px var(--danger)}
+.conn-label{color:var(--text-dim)}
+.latency-pill{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:10px;background:var(--surface-raised);border:1px solid var(--border);color:var(--text-dim)}
+.latency-pill.good{color:var(--success);border-color:rgba(83,215,105,.3)}
+.latency-pill.warn{color:var(--warning);border-color:rgba(240,173,78,.3)}
+.latency-pill.bad{color:var(--danger);border-color:rgba(233,69,96,.3)}
+
+/* Mode strip */
+.mode-strip{display:flex;align-items:center;gap:0;font-family:var(--mono);font-size:10px;letter-spacing:1px}
+.mode-step{padding:3px 8px;color:var(--text-muted);position:relative;text-transform:uppercase}
+.mode-step.active{color:var(--text);background:var(--surface-raised);border-radius:3px}
+.mode-step.active.state-connected{color:var(--info)}
+.mode-step.active.state-powered{color:var(--warning)}
+.mode-step.active.state-enabled{color:var(--success)}
+.mode-arrow{color:var(--text-muted);font-size:8px;margin:0 2px}
+
+.topbar-spacer{flex:1}
+
+/* Status badges */
+.badge{font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:3px;background:var(--surface-raised);color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;transition:all .15s}
+.badge.active{background:var(--success-bg);color:var(--success)}
+.badge.error{background:var(--danger-bg);color:var(--danger);animation:badge-pulse 1s infinite}
+@keyframes badge-pulse{0%,100%{opacity:1}50%{opacity:.7}}
+
+/* E-stop topbar button */
+.estop-topbar{width:120px;height:36px;border:none;border-radius:4px;background:linear-gradient(180deg,#cc2244 0%,#991133 100%);color:#fff;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:2px;cursor:pointer;text-transform:uppercase;transition:all .15s;flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:6px}
+.estop-topbar:hover{background:linear-gradient(180deg,#ff2244 0%,#cc1133 100%);box-shadow:0 0 20px rgba(233,69,96,.5)}
+.estop-topbar.armed{animation:estop-breathe 2s ease-in-out infinite}
+.estop-topbar.moving{animation:estop-breathe 1s ease-in-out infinite}
+@keyframes estop-breathe{0%,100%{box-shadow:0 0 5px rgba(233,69,96,.3)}50%{box-shadow:0 0 25px rgba(233,69,96,.7)}}
+.estop-topbar.fired{background:#fff!important;color:var(--danger)!important;box-shadow:0 0 30px rgba(233,69,96,.8)}
+
+/* === MAIN AREA === */
+.main-area{display:flex;flex:1;overflow:hidden;min-height:0}
+
+/* Viewport */
+.viewport{flex:1;display:flex;align-items:center;justify-content:center;position:relative;background:var(--bg);min-width:0}
+.viewport canvas{display:block;width:100%;height:100%}
+.viewport-overlay{position:absolute;bottom:8px;left:8px;display:flex;gap:6px}
+.viewport-btn{font-family:var(--mono);font-size:9px;padding:3px 8px;background:rgba(22,22,37,.8);border:1px solid var(--border);border-radius:3px;color:var(--text-dim);cursor:pointer;backdrop-filter:blur(4px)}
+.viewport-btn:hover{border-color:var(--info);color:var(--text)}
+.stale-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(233,69,96,.08);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:24px;color:var(--danger);letter-spacing:4px;pointer-events:none;z-index:10;display:none}
+
+/* Control Rail */
+.control-rail{width:340px;flex-shrink:0;display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;overflow-x:hidden}
+.rail-section{padding:12px 14px;border-bottom:1px solid var(--border)}
+.rail-section:last-child{border-bottom:none}
+.section-header{font-family:var(--mono);font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+
+/* Safety zone */
+.safety-zone{background:var(--danger-bg);border-left:3px solid var(--danger)}
+.safety-zone .section-header{color:var(--danger)}
+.safety-btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.state-summary{font-family:var(--mono);font-size:11px;padding:6px 8px;background:rgba(0,0,0,.2);border-radius:3px;color:var(--text-dim)}
+.state-summary.ready{color:var(--success)}
+.state-summary.error{color:var(--danger)}
+
+/* Joint control zone */
+.joint-zone{border-left:3px solid var(--info)}
+.joint-zone .section-header{color:var(--info)}
+.joint-group-label{font-family:var(--mono);font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;margin:8px 0 4px;padding-top:6px;border-top:1px solid rgba(42,42,68,.5)}
+.joint-group-label:first-child{margin-top:0;padding-top:0;border-top:none}
+
+/* Joint row */
+.joint-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;position:relative}
+.joint-label{font-family:var(--mono);font-size:11px;width:22px;color:var(--text-dim);text-align:right;flex-shrink:0}
+.joint-label.selected{color:var(--info);font-weight:700}
+.joint-slider{flex:1;-webkit-appearance:none;appearance:none;height:6px;background:var(--border);border-radius:3px;outline:none;cursor:pointer;transition:opacity .2s}
+.joint-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--surface-raised);cursor:pointer;border:2px solid var(--info);transition:all .15s}
+.joint-slider::-webkit-slider-thumb:hover{background:var(--info);transform:scale(1.2)}
+.joint-slider.roll-joint::-webkit-slider-thumb{border-color:var(--joint-roll)}
+.joint-slider.roll-joint::-webkit-slider-thumb:hover{background:var(--joint-roll)}
+.joint-value{font-family:var(--mono);font-size:11px;width:52px;text-align:right;color:var(--text);flex-shrink:0}
+.joint-lock{font-size:10px;cursor:pointer;opacity:.3;flex-shrink:0;width:16px;text-align:center}
+.joint-lock.locked{opacity:1}
+
+/* Gripper */
+.gripper-row{display:flex;align-items:center;gap:6px}
+.gripper-row .joint-slider::-webkit-slider-thumb{border-color:var(--gripper)}
+.gripper-row .joint-slider::-webkit-slider-thumb:hover{background:var(--gripper)}
+
+/* Buttons */
+.btn{font-family:var(--mono);font-size:11px;padding:6px 12px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface-raised);color:var(--text);transition:all .15s;text-transform:uppercase;letter-spacing:1px}
+.btn:hover:not(:disabled){background:var(--border);border-color:var(--info)}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn:disabled{opacity:.25;cursor:not-allowed;pointer-events:none}
+.btn.on{background:var(--success-bg);border-color:var(--success);color:var(--success)}
+.btn.danger{border-color:var(--danger);color:var(--danger)}
+.btn.danger:hover:not(:disabled){background:var(--danger-bg)}
+.btn-sm{font-size:10px;padding:4px 8px}
+
+/* Task zone */
+.task-card{background:var(--surface-raised);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:6px}
+.task-card:last-child{margin-bottom:0}
+.task-name{font-family:var(--mono);font-size:12px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.task-desc{font-size:10px;color:var(--text-dim);margin-bottom:6px}
+.task-exec{width:100%}
+.task-progress{margin-top:8px;display:none}
+.task-progress.active{display:block}
+.task-progress-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:4px}
+.task-progress-fill{height:100%;background:var(--info);border-radius:2px;transition:width .3s}
+.task-progress-text{font-family:var(--mono);font-size:9px;color:var(--text-dim)}
+
+/* === STATE GATING via body data attrs === */
+body:not([data-connected="true"]) .needs-connected{opacity:.25;pointer-events:none}
+body:not([data-power="true"]) .needs-power{opacity:.25;pointer-events:none}
+body:not([data-enabled="true"]) .needs-enabled{opacity:.25;pointer-events:none}
+
+/* Lockout overlay */
+.lockout-msg{display:none;font-family:var(--mono);font-size:10px;color:var(--text-muted);text-align:center;padding:8px;background:rgba(0,0,0,.3);border-radius:3px;margin-top:4px}
+body:not([data-enabled="true"]) .joint-zone .lockout-msg{display:block}
+body:not([data-connected="true"]) .safety-zone .lockout-msg.conn-msg{display:block}
+body:not([data-power="true"]) .safety-zone .lockout-msg.pwr-msg{display:block}
+
+/* === DRAWER === */
+.drawer-bar{display:flex;align-items:center;gap:0;padding:0 8px;height:32px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0;z-index:50}
+.drawer-tab{font-family:var(--mono);font-size:10px;padding:6px 14px;cursor:pointer;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;border:none;background:none;position:relative;transition:color .15s}
+.drawer-tab:hover{color:var(--text)}
+.drawer-tab.active{color:var(--info);border-bottom:2px solid var(--info)}
+.drawer-badge{position:absolute;top:2px;right:4px;font-size:8px;background:var(--danger);color:#fff;border-radius:6px;padding:0 4px;min-width:14px;text-align:center;display:none}
+.drawer-badge.visible{display:inline}
+.drawer-spacer{flex:1}
+.drawer-close{font-size:12px;cursor:pointer;color:var(--text-muted);padding:4px 8px}
+.drawer-close:hover{color:var(--text)}
+
+.drawer-content{flex-shrink:0;max-height:0;overflow:hidden;transition:max-height .25s ease-out;background:var(--surface-raised);border-top:1px solid var(--border)}
+.drawer-content.open{max-height:350px;overflow-y:auto}
+
+/* Drawer panels */
+.drawer-panel{display:none;padding:10px 14px}
+.drawer-panel.active{display:block}
+
+/* Camera drawer */
+.cam-feeds{display:flex;gap:10px}
+.cam-feed{flex:1;min-width:0}
+.cam-label{font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.cam-live{color:var(--danger);font-size:9px;animation:cam-blink 2s infinite}
+@keyframes cam-blink{0%,100%{opacity:1}50%{opacity:.3}}
+.cam-img{width:100%;aspect-ratio:4/3;object-fit:contain;background:#0a0a14;border:1px solid var(--border);border-radius:4px}
+
+/* Log drawer */
+.log-controls{display:flex;gap:4px;margin-bottom:6px;align-items:center}
+.log-filter-btn{font-family:var(--mono);font-size:9px;padding:2px 6px;cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--text-dim)}
+.log-filter-btn.active{border-color:var(--info);color:var(--info)}
+.log-search{font-family:var(--mono);font-size:10px;padding:3px 8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);outline:none;width:140px;margin-left:auto}
+.log-search:focus{border-color:var(--info)}
+.log-scroll{max-height:260px;overflow-y:auto;font-family:var(--mono);font-size:10px;line-height:1.6}
+.log-entry{white-space:nowrap}
+.log-entry .ts{color:var(--text-muted);margin-right:6px}
+.log-entry .act{margin-right:6px;font-weight:600}
+.log-entry.info .act{color:var(--info)}
+.log-entry.error .act{color:var(--danger)}
+.log-entry.warning .act{color:var(--warning)}
+.log-entry .detail{color:var(--text-dim)}
+.log-entry.error .detail{color:#d9534f}
+
+/* Telemetry drawer */
+.telem-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px}
+.telem-joint{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:6px;text-align:center;font-family:var(--mono)}
+.telem-joint-id{font-size:9px;color:var(--text-dim);margin-bottom:2px}
+.telem-joint-val{font-size:13px;font-weight:600}
+.telem-joint-vel{font-size:9px;color:var(--text-muted);margin-top:2px}
+.telem-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.telem-stat{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:6px 8px}
+.telem-stat-header{font-family:var(--mono);font-size:9px;color:var(--info);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.telem-stat-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;padding:1px 0}
+.telem-stat-row span:first-child{color:var(--text-dim);font-size:9px}
+
+/* Debug drawer */
+.debug-pipeline{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:10px}
+.pipe-stage{display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;min-width:50px;background:var(--surface)}
+.pipe-stage.active{border-color:var(--success)}
+.pipe-stage.active .pipe-dot{background:var(--success);box-shadow:0 0 6px var(--success)}
+.pipe-dot{width:6px;height:6px;border-radius:50%;background:#444}
+.pipe-label{font-family:var(--mono);font-size:9px;color:var(--text-dim)}
+.pipe-arrow{color:var(--text-muted);font-size:12px}
+.debug-events{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:4px 8px;max-height:200px;overflow-y:auto;font-family:var(--mono);font-size:10px;line-height:1.6}
+
+/* Toast */
+.toast{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:11px;padding:6px 16px;background:rgba(22,22,37,.95);border:1px solid var(--border);border-radius:4px;color:var(--text);z-index:200;opacity:0;transition:opacity .2s;pointer-events:none;backdrop-filter:blur(4px)}
+.toast.visible{opacity:1}
+.toast.danger{border-color:var(--danger);color:var(--danger)}
+
+/* Keyboard shortcut overlay */
+.shortcuts-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:300;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.shortcuts-overlay.visible{display:flex}
+.shortcuts-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 30px;max-width:500px;font-family:var(--mono);font-size:12px}
+.shortcuts-card h3{font-size:14px;margin-bottom:12px;color:var(--info);letter-spacing:2px}
+.shortcut-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(42,42,68,.3)}
+.shortcut-key{color:var(--warning);min-width:80px}
+.shortcut-action{color:var(--text-dim)}
+
+/* Connection lost banner */
+.conn-lost-banner{display:none;position:fixed;top:48px;left:0;right:0;background:var(--danger);color:#fff;font-family:var(--mono);font-size:12px;text-align:center;padding:8px;z-index:150;letter-spacing:2px;animation:conn-flash .5s infinite}
+@keyframes conn-flash{0%,100%{opacity:1}50%{opacity:.8}}
+body:not([data-connected="true"]) .conn-lost-banner{display:block}
+
+/* E-stop flash overlay */
+.estop-flash{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(233,69,96,.3);z-index:250;pointer-events:none;opacity:0;transition:opacity .1s}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+@media(max-width:1024px){
+  .control-rail{width:280px}
+}
+@media(max-width:768px){
+  .main-area{flex-direction:column}
+  .control-rail{width:100%;flex:none;max-height:45vh;border-left:none;border-top:1px solid var(--border)}
+  .viewport{min-height:200px}
+}
+</style>
+</head>
+<body data-connected="false" data-power="false" data-enabled="false">
+
+<!-- Connection lost banner -->
+<div class="conn-lost-banner">⚠ CONNECTION LOST — CONTROLS LOCKED ⚠</div>
+
+<!-- E-stop flash overlay -->
+<div class="estop-flash" id="estopFlash"></div>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo">th3cl4w</div>
+  <div class="conn-indicator">
+    <div class="conn-dot" id="connDot"></div>
+    <span class="conn-label" id="connLabel">DISCONNECTED</span>
+  </div>
+  <div class="latency-pill" id="latencyPill">— ms</div>
+  <div class="mode-strip" id="modeStrip">
+    <span class="mode-step active" id="modeDisconn">DISCONN</span>
+    <span class="mode-arrow">→</span>
+    <span class="mode-step" id="modeConn">CONNECTED</span>
+    <span class="mode-arrow">→</span>
+    <span class="mode-step" id="modePower">POWERED</span>
+    <span class="mode-arrow">→</span>
+    <span class="mode-step" id="modeEnabled">ENABLED</span>
+  </div>
+  <div class="topbar-spacer"></div>
+  <div class="badge" id="badgeError">NO ERR</div>
+  <button class="estop-topbar" id="btnEstop" title="Emergency Stop (Space)">⚠ E-STOP</button>
+</div>
+
+<!-- MAIN -->
+<div class="main-area">
+  <!-- Viewport -->
+  <div class="viewport">
+    <canvas id="armCanvas"></canvas>
+    <div class="stale-overlay" id="staleOverlay">⚠ STALE DATA</div>
+  </div>
+
+  <!-- Control Rail -->
+  <div class="control-rail">
+    <!-- Safety Zone -->
+    <div class="rail-section safety-zone">
+      <div class="section-header">🛡 Safety</div>
+      <div class="safety-btns">
+        <button class="btn needs-connected" id="btnPowerOn">Power On</button>
+        <button class="btn needs-connected" id="btnPowerOff">Power Off</button>
+        <button class="btn needs-power" id="btnEnable">Enable</button>
+        <button class="btn needs-connected" id="btnDisable">Disable</button>
+      </div>
+      <div class="state-summary" id="stateSummary">DISCONNECTED</div>
+    </div>
+
+    <!-- Joint Control Zone -->
+    <div class="rail-section joint-zone">
+      <div class="section-header">🎛 Joint Control</div>
+      <div class="lockout-msg">Enable arm to control joints</div>
+      <div id="jointSliders" class="needs-enabled"></div>
+      <div class="joint-group-label" style="margin-top:10px">EFFECTOR</div>
+      <div class="gripper-row needs-enabled" id="gripperRow">
+        <span class="joint-label">G</span>
+        <input type="range" class="joint-slider" id="gripperSlider" min="0" max="65" step="0.5" value="0">
+        <span class="joint-value" id="gripperValue">0.0 mm</span>
+      </div>
+    </div>
+
+    <!-- Task Zone -->
+    <div class="rail-section">
+      <div class="section-header">🎯 Tasks</div>
+      <div class="needs-enabled" id="taskCards">
+        <div class="task-card">
+          <div class="task-name">🏠 Home</div>
+          <div class="task-desc">Return to zero pose</div>
+          <button class="btn btn-sm task-exec" onclick="runTask('home')">Execute</button>
+        </div>
+        <div class="task-card">
+          <div class="task-name">✋ Ready</div>
+          <div class="task-desc">Neutral ready position</div>
+          <button class="btn btn-sm task-exec" onclick="runTask('ready')">Execute</button>
+        </div>
+        <div class="task-card">
+          <div class="task-name">👋 Wave</div>
+          <div class="task-desc">Friendly wave gesture</div>
+          <button class="btn btn-sm task-exec" onclick="runTask('wave')">Execute</button>
+        </div>
+      </div>
+      <div class="task-progress" id="taskProgress">
+        <div class="task-progress-bar"><div class="task-progress-fill" id="taskProgressFill"></div></div>
+        <div class="task-progress-text" id="taskProgressText"></div>
+        <button class="btn btn-sm danger" style="margin-top:4px;width:100%" onclick="runTask('stop')">■ Stop Task</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DRAWER BAR -->
+<div class="drawer-bar">
+  <button class="drawer-tab" data-drawer="cameras" id="tabCameras">📷 Cameras</button>
+  <button class="drawer-tab" data-drawer="telemetry" id="tabTelemetry">📊 Telemetry</button>
+  <button class="drawer-tab" data-drawer="log" id="tabLog">📋 Log <span class="drawer-badge" id="logBadge">0</span></button>
+  <button class="drawer-tab" data-drawer="debug" id="tabDebug">🔧 Debug</button>
+  <div class="drawer-spacer"></div>
+  <span style="font-family:var(--mono);font-size:9px;color:var(--text-muted);margin-right:8px" id="shortcutHint">? = shortcuts</span>
+</div>
+
+<!-- DRAWER CONTENT -->
+<div class="drawer-content" id="drawerContent">
+  <!-- Cameras -->
+  <div class="drawer-panel" data-drawer="cameras" id="panelCameras">
+    <div class="cam-feeds">
+      <div class="cam-feed">
+        <div class="cam-label"><span class="cam-live">● LIVE</span> Camera 1 (Left)</div>
+        <img class="cam-img" id="camImg0" alt="Camera 1">
+      </div>
+      <div class="cam-feed">
+        <div class="cam-label"><span class="cam-live">● LIVE</span> Camera 2 (Right)</div>
+        <img class="cam-img" id="camImg1" alt="Camera 2">
+      </div>
+    </div>
+  </div>
+
+  <!-- Telemetry -->
+  <div class="drawer-panel" data-drawer="telemetry" id="panelTelemetry">
+    <div class="telem-grid" id="telemGrid"></div>
+    <div class="telem-stats" id="telemStats">
+      <div class="telem-stat">
+        <div class="telem-stat-header">Connection</div>
+        <div class="telem-stat-row"><span>Status</span><span id="tsConn">—</span></div>
+        <div class="telem-stat-row"><span>Latency</span><span id="tsLat">—</span></div>
+        <div class="telem-stat-row"><span>RX rate</span><span id="tsRxRate">—</span></div>
+      </div>
+      <div class="telem-stat">
+        <div class="telem-stat-header">Arm</div>
+        <div class="telem-stat-row"><span>Power</span><span id="tsPower">—</span></div>
+        <div class="telem-stat-row"><span>Motors</span><span id="tsMotors">—</span></div>
+        <div class="telem-stat-row"><span>Error</span><span id="tsError">—</span></div>
+      </div>
+      <div class="telem-stat">
+        <div class="telem-stat-header">Motion</div>
+        <div class="telem-stat-row"><span>Moving</span><span id="tsMoving">—</span></div>
+        <div class="telem-stat-row"><span>Max vel</span><span id="tsMaxVel">—</span></div>
+        <div class="telem-stat-row"><span>Task</span><span id="tsTask">—</span></div>
+      </div>
+      <div class="telem-stat">
+        <div class="telem-stat-header">Session</div>
+        <div class="telem-stat-row"><span>WS msgs</span><span id="tsWsMsgs">0</span></div>
+        <div class="telem-stat-row"><span>Cmds sent</span><span id="tsCmds">0</span></div>
+        <div class="telem-stat-row"><span>Uptime</span><span id="tsUptime">0s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="drawer-panel" data-drawer="log" id="panelLog">
+    <div class="log-controls">
+      <button class="log-filter-btn active" data-filter="all">ALL</button>
+      <button class="log-filter-btn" data-filter="info">INFO</button>
+      <button class="log-filter-btn" data-filter="warning">WARN</button>
+      <button class="log-filter-btn" data-filter="error">ERROR</button>
+      <input class="log-search" id="logSearch" placeholder="Search..." type="text">
+      <button class="btn btn-sm" id="logClear" style="font-size:9px;padding:2px 6px">Clear</button>
+    </div>
+    <div class="log-scroll" id="logScroll"></div>
+  </div>
+
+  <!-- Debug -->
+  <div class="drawer-panel" data-drawer="debug" id="panelDebug">
+    <div class="debug-pipeline" id="debugPipeline">
+      <div class="pipe-stage" data-stage="CMD"><div class="pipe-dot"></div><div class="pipe-label">CMD</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="DDS_TX"><div class="pipe-dot"></div><div class="pipe-label">DDS TX</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="ARM_RX"><div class="pipe-dot"></div><div class="pipe-label">ARM RX</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="EXEC"><div class="pipe-dot"></div><div class="pipe-label">EXEC</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="STATE"><div class="pipe-dot"></div><div class="pipe-label">STATE</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="WS"><div class="pipe-dot"></div><div class="pipe-label">WS</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage active" data-stage="UI"><div class="pipe-dot"></div><div class="pipe-label">UI</div></div>
+    </div>
+    <div class="debug-events" id="debugEvents"><span style="color:var(--text-muted)">Open debug to stream events...</span></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Shortcuts overlay -->
+<div class="shortcuts-overlay" id="shortcutsOverlay">
+  <div class="shortcuts-card">
+    <h3>KEYBOARD SHORTCUTS</h3>
+    <div class="shortcut-row"><span class="shortcut-key">Space</span><span class="shortcut-action">E-Stop (always active)</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">1-6</span><span class="shortcut-action">Select joint J0-J5</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">G</span><span class="shortcut-action">Select gripper</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">←/→</span><span class="shortcut-action">Adjust selected joint ±1°</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">Shift+←/→</span><span class="shortcut-action">Adjust ±5°</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">H</span><span class="shortcut-action">Home task</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">Escape</span><span class="shortcut-action">Stop current task</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">C</span><span class="shortcut-action">Toggle cameras</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">L</span><span class="shortcut-action">Toggle log</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">D</span><span class="shortcut-action">Toggle debug</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">?</span><span class="shortcut-action">Show this overlay</span></div>
+    <p style="margin-top:12px;font-size:10px;color:var(--text-muted)">Press any key to close</p>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// D1 SPECS
+// ============================================================
+const JOINT_SPECS = [
+  { name:'J0', min:-135, max:135, label:'Base Yaw',    type:'roll',  group:'BASE' },
+  { name:'J1', min:-90,  max:90,  label:'Shoulder',    type:'pitch', group:'ARM' },
+  { name:'J2', min:-90,  max:90,  label:'Elbow',       type:'pitch', group:'ARM' },
+  { name:'J3', min:-135, max:135, label:'Wrist Roll',  type:'roll',  group:'WRIST' },
+  { name:'J4', min:-90,  max:90,  label:'Wrist Pitch', type:'pitch', group:'WRIST' },
+  { name:'J5', min:-135, max:135, label:'Wrist Roll',  type:'roll',  group:'WRIST' },
+];
+const LINKS_MM = { base:80, shoulder:170, elbow:170, wrist1:60, wrist2:60, end:50 };
+const JOINT_VIZ_OFFSETS = [0, 90, 90, 0, 0, 0];
+
+// ============================================================
+// STATE
+// ============================================================
+let ws = null;
+let armState = { connected:false, joints:[0,0,0,0,0,0], gripper:0, power:false, enabled:false, error:0, log:[] };
+let lastStateTs = 0;
+let userDragging = -1;
+let armSynced = false;
+let updatingFromState = false;
+let vizDirty = true;
+let vizJoints = [0,0,0,0,0,0];
+let lastGoodJoints = [0,0,0,0,0,0];
+let prevJoints = [0,0,0,0,0,0]; // for velocity calc
+let jointVelocities = [0,0,0,0,0,0];
+let selectedJoint = -1; // -1=none, 0-5=joint, 6=gripper
+let lockedJoints = new Set();
+let wsUpdateCount = 0;
+let cmdsSent = 0;
+let startTime = Date.now();
+let logFilter = 'all';
+let logSearchText = '';
+let localLog = [];
+let activeDrawer = null;
+let debugEnabled = false;
+let debugPollTimer = null;
+let errorCountSinceOpen = 0;
+let wsRxTimes = []; // for latency calc
+let taskRunning = false;
+let taskStartTime = 0;
+let taskDuration = 0;
+let taskName = '';
+let estopFired = false;
+
+// ============================================================
+// HELPERS
+// ============================================================
+function esc(s) { if(!s) return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function showToast(text, danger=false, ms=1500) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.className = 'toast visible' + (danger?' danger':'');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = 'toast', ms);
+}
+
+function logLocal(action, details, level='info') {
+  const now = new Date();
+  const ts_str = now.toTimeString().slice(0,8) + '.' + String(now.getMilliseconds()).padStart(3,'0');
+  localLog.push({ ts_str, action, details, level });
+  if (localLog.length > 200) localLog.shift();
+  if (level === 'error') {
+    errorCountSinceOpen++;
+    updateLogBadge();
+  }
+}
+
+function makeThrottle(fn, ms=50) {
+  let last=0, timer=null;
+  return function(...args) {
+    const now = Date.now();
+    if (now - last >= ms) { last = now; fn(...args); }
+    else { clearTimeout(timer); timer = setTimeout(() => { last = Date.now(); fn(...args); }, ms-(now-last)); }
+  };
+}
+
+// ============================================================
+// BUILD JOINT SLIDERS
+// ============================================================
+const slidersDiv = document.getElementById('jointSliders');
+let lastGroup = '';
+for (let i = 0; i < 6; i++) {
+  const spec = JOINT_SPECS[i];
+  if (spec.group !== lastGroup) {
+    lastGroup = spec.group;
+    const gl = document.createElement('div');
+    gl.className = 'joint-group-label';
+    gl.textContent = spec.group;
+    slidersDiv.appendChild(gl);
+  }
+  const row = document.createElement('div');
+  row.className = 'joint-row';
+  row.dataset.joint = i;
+  const rollClass = spec.type === 'roll' ? ' roll-joint' : '';
+  row.innerHTML = `
+    <span class="joint-label" id="jl${i}">${spec.name}</span>
+    <input type="range" class="joint-slider${rollClass}" id="js${i}" min="${spec.min}" max="${spec.max}" step="0.5" value="0" title="${spec.label} [${spec.min}°, ${spec.max}°]">
+    <span class="joint-value" id="jv${i}">0.0°</span>
+    <span class="joint-lock" id="jk${i}" title="Lock joint" onclick="toggleLock(${i})">🔓</span>
+  `;
+  slidersDiv.appendChild(row);
+
+  const slider = row.querySelector('input');
+  slider.addEventListener('pointerdown', () => { userDragging = i; selectJoint(i); });
+  slider.addEventListener('input', () => {
+    document.getElementById(`jv${i}`).textContent = parseFloat(slider.value).toFixed(1) + '°';
+    if (!armSynced || updatingFromState || lockedJoints.has(i)) return;
+    throttledSendJoint(i, parseFloat(slider.value));
+  });
+  const release = () => { if(userDragging===i) { if(!lockedJoints.has(i)) sendJoint(i, parseFloat(slider.value)); userDragging=-1; } };
+  slider.addEventListener('pointerup', release);
+  slider.addEventListener('change', release);
+}
+
+// Gripper
+const gripSlider = document.getElementById('gripperSlider');
+gripSlider.addEventListener('pointerdown', () => { userDragging=6; selectJoint(6); });
+gripSlider.addEventListener('input', () => {
+  document.getElementById('gripperValue').textContent = parseFloat(gripSlider.value).toFixed(1)+' mm';
+  if (!armSynced || updatingFromState) return;
+  throttledSendGripper(parseFloat(gripSlider.value));
+});
+const gripRelease = () => { if(userDragging===6) { sendGripper(parseFloat(gripSlider.value)); userDragging=-1; } };
+gripSlider.addEventListener('pointerup', gripRelease);
+gripSlider.addEventListener('change', gripRelease);
+
+function selectJoint(idx) {
+  selectedJoint = idx;
+  for (let i=0;i<6;i++) {
+    document.getElementById(`jl${i}`).classList.toggle('selected', i===idx);
+  }
+}
+
+function toggleLock(idx) {
+  const el = document.getElementById(`jk${idx}`);
+  if (lockedJoints.has(idx)) { lockedJoints.delete(idx); el.textContent='🔓'; el.classList.remove('locked'); }
+  else { lockedJoints.add(idx); el.textContent='🔒'; el.classList.add('locked'); }
+}
+
+// ============================================================
+// TELEMETRY GRID (build once)
+// ============================================================
+const telemGrid = document.getElementById('telemGrid');
+for (let i=0; i<6; i++) {
+  const d = document.createElement('div');
+  d.className = 'telem-joint';
+  d.innerHTML = `<div class="telem-joint-id">${JOINT_SPECS[i].name}</div><div class="telem-joint-val" id="tv${i}">0.0°</div><div class="telem-joint-vel" id="tvel${i}">0.0°/s</div>`;
+  telemGrid.appendChild(d);
+}
+// Gripper
+const gd = document.createElement('div');
+gd.className = 'telem-joint';
+gd.innerHTML = `<div class="telem-joint-id">GRIP</div><div class="telem-joint-val" id="tvG">0.0</div><div class="telem-joint-vel" style="color:var(--gripper)">mm</div>`;
+telemGrid.appendChild(gd);
+
+// ============================================================
+// COMMANDS
+// ============================================================
+const throttledSendJoint = makeThrottle((id,angle) => sendJoint(id,angle), 50);
+const throttledSendGripper = makeThrottle((pos) => sendGripper(pos), 50);
+
+async function apiPost(url, body=null) {
+  cmdsSent++;
+  try {
+    const opts = { method:'POST' };
+    if (body) { opts.headers = {'Content-Type':'application/json'}; opts.body = JSON.stringify(body); }
+    const resp = await fetch(url, opts);
+    return await resp.json();
+  } catch(e) {
+    logLocal('ERROR', `Network: ${e.message}`, 'error');
+    return { ok:false, error:e.message };
+  }
+}
+
+async function cmd(action) {
+  logLocal(action.toUpperCase(), `POST /api/command/${action}`, 'info');
+  const data = await apiPost(`/api/command/${action}`);
+  if (data.ok) logLocal(action.toUpperCase(), '✓ OK', 'info');
+  else logLocal(action.toUpperCase(), `✗ ${data.error||'failed'}`, 'error');
+  if (data.state) { armState = {...armState, ...data.state}; vizDirty=true; }
+  updateUI();
+}
+
+async function sendJoint(id, angle) {
+  if (!armSynced || lockedJoints.has(id)) return;
+  await apiPost('/api/command/set-joint', {id, angle});
+}
+
+async function sendGripper(pos) {
+  if (!armSynced) return;
+  await apiPost('/api/command/set-gripper', {position: pos});
+}
+
+async function runTask(name) {
+  if (name === 'stop') {
+    const data = await apiPost('/api/task/stop');
+    taskRunning = false;
+    document.getElementById('taskProgress').classList.remove('active');
+    showToast('Task stopped', true);
+    return;
+  }
+  logLocal('TASK', `Starting: ${name}`, 'info');
+  const data = await apiPost(`/api/task/${name}`);
+  if (data.ok) {
+    taskRunning = true;
+    taskStartTime = Date.now();
+    taskDuration = (data.duration_s || 3) * 1000;
+    taskName = name;
+    document.getElementById('taskProgress').classList.add('active');
+    showToast(`Task: ${name}`);
+    logLocal('TASK', `${name}: ${data.points} pts, ${data.duration_s}s`, 'info');
+  } else {
+    logLocal('TASK', `${name}: ${data.error||'failed'}`, 'error');
+    showToast(`Task failed: ${data.error||'unknown'}`, true);
+  }
+}
+
+async function triggerEstop() {
+  estopFired = true;
+  const btn = document.getElementById('btnEstop');
+  btn.classList.add('fired');
+  btn.textContent = '■ STOPPED';
+  // Flash
+  const flash = document.getElementById('estopFlash');
+  flash.style.opacity = '1';
+  setTimeout(() => flash.style.opacity = '0', 150);
+  // Vibrate
+  if (navigator.vibrate) navigator.vibrate(200);
+  showToast('⚠ EMERGENCY STOP', true, 3000);
+  logLocal('E-STOP', '⚠ TRIGGERED', 'error');
+  
+  await cmd('stop');
+  
+  taskRunning = false;
+  document.getElementById('taskProgress').classList.remove('active');
+  
+  setTimeout(() => {
+    estopFired = false;
+    btn.classList.remove('fired');
+    btn.textContent = '⚠ E-STOP';
+  }, 3000);
+}
+
+// Button wiring
+document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
+document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
+document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
+document.getElementById('btnDisable').addEventListener('click', () => cmd('disable'));
+document.getElementById('btnEstop').addEventListener('click', triggerEstop);
+
+// ============================================================
+// WEBSOCKET
+// ============================================================
+function connectWS() {
+  const proto = location.protocol==='https:'?'wss:':'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/state`);
+  ws.onopen = () => { updateConn(true); logLocal('WS','Connected','info'); };
+  ws.onclose = () => { updateConn(false); setTimeout(connectWS, 2000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    const now = Date.now();
+    wsRxTimes.push(now);
+    if (wsRxTimes.length > 20) wsRxTimes.shift();
+    
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'ack') { logLocal('ACK',`${data.action}: ${data.ok?'OK':'FAIL'}`, data.ok?'info':'error'); return; }
+      
+      // Zero-snap protection
+      const newJoints = data.joints || [0,0,0,0,0,0];
+      const allZero = newJoints.every(v=>Math.abs(v)<0.01);
+      const hadReal = lastGoodJoints.some(v=>Math.abs(v)>0.1);
+      if (allZero && hadReal && armSynced) { data.joints = lastGoodJoints.slice(); }
+      else { lastGoodJoints = newJoints.slice(); }
+
+      // Velocity calc
+      const dt = (now - lastStateTs) / 1000 || 0.1;
+      for (let i=0;i<6;i++) {
+        jointVelocities[i] = Math.abs(((data.joints||[0,0,0,0,0,0])[i] - prevJoints[i]) / dt);
+      }
+      prevJoints = (data.joints||[0,0,0,0,0,0]).slice();
+
+      const jointsDiff = (data.joints||[]).some((v,i)=>Math.abs(v-vizJoints[i])>0.05);
+      const otherChanged = data.power!==armState.power || data.enabled!==armState.enabled || data.error!==armState.error;
+      
+      armState = data;
+      lastStateTs = now;
+      wsUpdateCount++;
+      if(jointsDiff||otherChanged||!armSynced) vizDirty=true;
+      if(!armSynced) { armSynced=true; logLocal('SYNC','First state received','info'); }
+    } catch(err) {}
+  };
+}
+
+function updateConn(on) {
+  document.getElementById('connDot').className = 'conn-dot '+(on?'on':'off');
+  document.getElementById('connLabel').textContent = on?'CONNECTED':'DISCONNECTED';
+  document.body.dataset.connected = on?'true':'false';
+}
+
+// ============================================================
+// UI UPDATE
+// ============================================================
+function updateUI() {
+  // Body data attrs for state gating
+  document.body.dataset.power = armState.power?'true':'false';
+  document.body.dataset.enabled = armState.enabled?'true':'false';
+
+  // Mode strip
+  const steps = ['modeDisconn','modeConn','modePower','modeEnabled'];
+  let activeStep = 0;
+  if (armState.connected || document.body.dataset.connected==='true') activeStep=1;
+  if (armState.power) activeStep=2;
+  if (armState.enabled) activeStep=3;
+  steps.forEach((id,i) => {
+    const el = document.getElementById(id);
+    el.classList.toggle('active', i===activeStep);
+    el.classList.toggle('state-connected', i===1&&activeStep===1);
+    el.classList.toggle('state-powered', i===2&&activeStep===2);
+    el.classList.toggle('state-enabled', i===3&&activeStep===3);
+  });
+
+  // Error badge
+  const berr = document.getElementById('badgeError');
+  if (armState.error) { berr.textContent='ERR '+armState.error; berr.className='badge error'; }
+  else { berr.textContent='NO ERR'; berr.className='badge'; }
+
+  // State summary
+  const ss = document.getElementById('stateSummary');
+  if (armState.error) { ss.textContent=`ERROR: Code ${armState.error}`; ss.className='state-summary error'; }
+  else if (armState.enabled) { ss.textContent='ARM READY — ENABLED'; ss.className='state-summary ready'; }
+  else if (armState.power) { ss.textContent='POWERED — NOT ENABLED'; ss.className='state-summary'; }
+  else if (document.body.dataset.connected==='true') { ss.textContent='CONNECTED — POWER OFF'; ss.className='state-summary'; }
+  else { ss.textContent='DISCONNECTED'; ss.className='state-summary'; }
+
+  // Button states
+  document.getElementById('btnPowerOn').disabled = armState.power;
+  document.getElementById('btnPowerOn').className = 'btn needs-connected'+(armState.power?' on':'');
+  document.getElementById('btnPowerOff').disabled = !armState.power;
+  document.getElementById('btnEnable').disabled = !armState.power||armState.enabled;
+  document.getElementById('btnEnable').className = 'btn needs-power'+(armState.enabled?' on':'');
+  document.getElementById('btnDisable').disabled = !armState.enabled;
+
+  // E-stop visual state
+  if (!estopFired) {
+    const btn = document.getElementById('btnEstop');
+    const isMoving = jointVelocities.some(v=>v>0.5);
+    btn.classList.toggle('armed', armState.enabled && !isMoving);
+    btn.classList.toggle('moving', armState.enabled && isMoving);
+  }
+
+  // Latency
+  if (lastStateTs > 0) {
+    const age = Date.now() - lastStateTs;
+    const pill = document.getElementById('latencyPill');
+    if (age < 500) { pill.textContent=`${age}ms`; pill.className='latency-pill good'; }
+    else if (age < 2000) { pill.textContent=`${(age/1000).toFixed(1)}s`; pill.className='latency-pill warn'; }
+    else { pill.textContent=`${(age/1000).toFixed(0)}s stale`; pill.className='latency-pill bad'; }
+  }
+
+  // Stale overlay
+  const stale = Date.now() - lastStateTs > 3000 && lastStateTs > 0;
+  document.getElementById('staleOverlay').style.display = stale?'flex':'none';
+
+  // Joint sliders
+  updatingFromState = true;
+  const joints = armState.joints || [0,0,0,0,0,0];
+  for (let i=0;i<6;i++) {
+    if (userDragging !== i) {
+      const val = joints[i]||0;
+      const slider = document.getElementById(`js${i}`);
+      const cur = parseFloat(slider.value);
+      if (Math.abs(cur-val)>0.25) slider.value=val;
+      const label = document.getElementById(`jv${i}`);
+      const txt = val.toFixed(1)+'°';
+      if (label.textContent!==txt) label.textContent=txt;
+    }
+  }
+  if (userDragging !== 6) {
+    const gv = armState.gripper||0;
+    const cur = parseFloat(gripSlider.value);
+    if (Math.abs(cur-gv)>0.25) gripSlider.value=gv;
+    const gLabel = document.getElementById('gripperValue');
+    const gTxt = gv.toFixed(1)+' mm';
+    if (gLabel.textContent!==gTxt) gLabel.textContent=gTxt;
+  }
+  updatingFromState = false;
+
+  // Task progress
+  if (taskRunning) {
+    const elapsed = Date.now()-taskStartTime;
+    const pct = Math.min(100, (elapsed/taskDuration)*100);
+    document.getElementById('taskProgressFill').style.width = pct+'%';
+    document.getElementById('taskProgressText').textContent = `${taskName} — ${(elapsed/1000).toFixed(1)}s / ${(taskDuration/1000).toFixed(1)}s`;
+    if (pct >= 100) {
+      taskRunning = false;
+      setTimeout(() => document.getElementById('taskProgress').classList.remove('active'), 1000);
+    }
+  }
+
+  // Telemetry panel (if visible)
+  if (activeDrawer === 'telemetry') updateTelemetry();
+
+  renderLog();
+}
+
+function updateTelemetry() {
+  const joints = armState.joints||[0,0,0,0,0,0];
+  for (let i=0;i<6;i++) {
+    document.getElementById(`tv${i}`).textContent = (joints[i]||0).toFixed(1)+'°';
+    document.getElementById(`tvel${i}`).textContent = jointVelocities[i].toFixed(1)+'°/s';
+  }
+  document.getElementById('tvG').textContent = (armState.gripper||0).toFixed(1);
+  
+  document.getElementById('tsConn').textContent = document.body.dataset.connected==='true'?'OK':'DOWN';
+  const age = lastStateTs>0?Date.now()-lastStateTs:0;
+  document.getElementById('tsLat').textContent = age<2000?age+'ms':'STALE';
+  // RX rate
+  if (wsRxTimes.length>1) {
+    const span = (wsRxTimes[wsRxTimes.length-1]-wsRxTimes[0])/1000;
+    document.getElementById('tsRxRate').textContent = span>0?(((wsRxTimes.length-1)/span).toFixed(1)+'/s'):'—';
+  }
+  document.getElementById('tsPower').textContent = armState.power?'ON':'OFF';
+  document.getElementById('tsMotors').textContent = armState.enabled?'ENABLED':'OFF';
+  document.getElementById('tsError').textContent = armState.error||'None';
+  const isMoving = jointVelocities.some(v=>v>0.5);
+  document.getElementById('tsMoving').textContent = isMoving?'YES':'No';
+  document.getElementById('tsMaxVel').textContent = Math.max(...jointVelocities).toFixed(1)+'°/s';
+  document.getElementById('tsTask').textContent = taskRunning?taskName:'Idle';
+  document.getElementById('tsWsMsgs').textContent = wsUpdateCount;
+  document.getElementById('tsCmds').textContent = cmdsSent;
+  document.getElementById('tsUptime').textContent = ((Date.now()-startTime)/1000|0)+'s';
+}
+
+// ============================================================
+// LOG
+// ============================================================
+let lastLogHash = '';
+function renderLog() {
+  const serverEntries = (armState.log||[]).map(e=>({...e, src:'s'}));
+  let all = [...serverEntries, ...localLog.map(e=>({...e, src:'c'}))];
+  all.sort((a,b)=>a.ts_str.localeCompare(b.ts_str));
+  
+  // Filter
+  if (logFilter !== 'all') all = all.filter(e=>e.level===logFilter);
+  if (logSearchText) { const q=logSearchText.toLowerCase(); all = all.filter(e=>(e.action+e.details).toLowerCase().includes(q)); }
+  
+  const last50 = all.slice(-50);
+  const hash = last50.map(e=>e.ts_str+e.action).join('|');
+  if (hash===lastLogHash) return;
+  lastLogHash = hash;
+  
+  const el = document.getElementById('logScroll');
+  el.innerHTML = last50.map(e=>
+    `<div class="log-entry ${e.level}"><span class="ts">${esc(e.ts_str)}</span><span class="act">${esc(e.action)}</span><span class="detail">${esc(e.details)}</span></div>`
+  ).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateLogBadge() {
+  const badge = document.getElementById('logBadge');
+  if (activeDrawer==='log') { errorCountSinceOpen=0; badge.classList.remove('visible'); return; }
+  if (errorCountSinceOpen>0) { badge.textContent=errorCountSinceOpen; badge.classList.add('visible'); }
+  else badge.classList.remove('visible');
+}
+
+// Log filter buttons
+document.querySelectorAll('.log-filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.log-filter-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    logFilter = btn.dataset.filter;
+    lastLogHash = '';
+    renderLog();
+  });
+});
+document.getElementById('logSearch').addEventListener('input', (e) => {
+  logSearchText = e.target.value;
+  lastLogHash = '';
+  renderLog();
+});
+document.getElementById('logClear').addEventListener('click', () => {
+  localLog = [];
+  lastLogHash = '';
+  renderLog();
+});
+
+// ============================================================
+// DRAWER SYSTEM
+// ============================================================
+document.querySelectorAll('.drawer-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const name = tab.dataset.drawer;
+    if (activeDrawer === name) {
+      // Close
+      activeDrawer = null;
+      document.getElementById('drawerContent').classList.remove('open');
+      document.querySelectorAll('.drawer-tab').forEach(t=>t.classList.remove('active'));
+      document.querySelectorAll('.drawer-panel').forEach(p=>p.classList.remove('active'));
+      onDrawerChanged();
+    } else {
+      activeDrawer = name;
+      document.getElementById('drawerContent').classList.add('open');
+      document.querySelectorAll('.drawer-tab').forEach(t=>t.classList.toggle('active', t.dataset.drawer===name));
+      document.querySelectorAll('.drawer-panel').forEach(p=>p.classList.toggle('active', p.dataset.drawer===name));
+      onDrawerChanged();
+    }
+  });
+});
+
+function onDrawerChanged() {
+  // Cameras: start/stop streams
+  const camPanel = activeDrawer === 'cameras';
+  document.getElementById('camImg0').src = camPanel ? '/cam/0' : '';
+  document.getElementById('camImg1').src = camPanel ? '/cam/1' : '';
+  
+  // Log: reset error count
+  if (activeDrawer === 'log') { errorCountSinceOpen = 0; updateLogBadge(); }
+  
+  // Debug: toggle polling
+  if (activeDrawer === 'debug' && !debugEnabled) {
+    debugEnabled = true;
+    fetch('/api/debug/enable', {method:'POST'}).catch(()=>{});
+    debugPollTimer = setInterval(pollDebug, 1000);
+    pollDebug();
+  } else if (activeDrawer !== 'debug' && debugEnabled) {
+    debugEnabled = false;
+    fetch('/api/debug/disable', {method:'POST'}).catch(()=>{});
+    if (debugPollTimer) { clearInterval(debugPollTimer); debugPollTimer=null; }
+  }
+  
+  // Resize canvas
+  setTimeout(resizeCanvas, 50);
+}
+
+async function pollDebug() {
+  try {
+    const resp = await fetch('/api/debug/telemetry?limit=20');
+    if (resp.ok) {
+      const data = await resp.json();
+      const events = data.events || data;
+      renderDebugEvents(events);
+      updateDebugPipeline(events);
+    }
+  } catch(e) {}
+}
+
+function renderDebugEvents(events) {
+  const container = document.getElementById('debugEvents');
+  if (!Array.isArray(events)||!events.length) { container.innerHTML='<span style="color:var(--text-muted)">No events</span>'; return; }
+  container.innerHTML = events.map(ev => {
+    const ts = ev.timestamp ? new Date(ev.timestamp).toTimeString().slice(0,8) : (ev.wall_time_ms ? new Date(ev.wall_time_ms).toTimeString().slice(0,8) : '??');
+    const payload = ev.payload ? JSON.stringify(ev.payload).slice(0,80) : '';
+    return `<div style="white-space:nowrap"><span style="color:var(--text-muted)">${esc(ts)}</span> <span style="color:var(--info);font-weight:600">${esc(ev.event_type||'?')}</span> <span style="color:var(--text-dim)">${esc(payload)}</span></div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function updateDebugPipeline(events) {
+  const now = Date.now();
+  const recent = new Set();
+  if (Array.isArray(events)) {
+    events.forEach(ev => {
+      const ts = ev.wall_time_ms || (ev.timestamp ? new Date(ev.timestamp).getTime() : 0);
+      if (now - ts < 3000) recent.add(ev.event_type);
+    });
+  }
+  const mapping = {'CMD_SENT':'CMD','DDS_PUBLISH':'DDS_TX','DDS_RECEIVE':'ARM_RX','CMD_EXEC':'EXEC','STATE_UPDATE':'STATE','WS_SEND':'WS'};
+  document.querySelectorAll('#debugPipeline .pipe-stage').forEach(el => {
+    const stage = el.dataset.stage;
+    if (stage==='UI') return;
+    const active = Object.entries(mapping).some(([evType,s]) => s===stage && recent.has(evType));
+    el.classList.toggle('active', active);
+  });
+}
+
+// ============================================================
+// ARM VISUALIZATION (2D Canvas, improved from V1)
+// ============================================================
+const canvas = document.getElementById('armCanvas');
+const ctx = canvas.getContext('2d');
+
+function drawArm() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+  
+  const rawJoints = armState.joints || [0,0,0,0,0,0];
+  for (let i=0;i<6;i++) {
+    const diff = rawJoints[i]-vizJoints[i];
+    vizJoints[i] += Math.abs(diff)>0.05 ? diff*0.4 : 0;
+    if (Math.abs(diff)<=0.05) vizJoints[i]=rawJoints[i];
+  }
+  const joints = vizJoints;
+  const deg2rad = Math.PI/180;
+  const scale = Math.min(W,H)/900;
+
+  // Grid
+  ctx.strokeStyle = 'rgba(42,42,68,0.15)';
+  ctx.lineWidth = 1;
+  for (let y=0;y<H;y+=50) { ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
+  for (let x=0;x<W;x+=50) { ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke(); }
+
+  // Ground line
+  const baseX = W*0.4, baseY = H*0.85;
+  ctx.strokeStyle = 'rgba(42,42,68,0.4)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0,baseY+12*scale); ctx.lineTo(W,baseY+12*scale); ctx.stroke();
+
+  // Base
+  ctx.fillStyle = '#1c1c32';
+  ctx.strokeStyle = '#2a4a7c';
+  ctx.lineWidth = 1;
+  const bw=60*scale, bh=12*scale;
+  ctx.fillRect(baseX-bw,baseY,bw*2,bh);
+  ctx.strokeRect(baseX-bw,baseY,bw*2,bh);
+
+  // FK chain
+  const linkLengths = [LINKS_MM.base, LINKS_MM.shoulder, LINKS_MM.elbow, LINKS_MM.wrist1, LINKS_MM.wrist2, LINKS_MM.end];
+  let cumAngle = -Math.PI/2;
+  let pts = [{x:baseX,y:baseY}];
+  // Base straight up
+  pts.push({x:baseX, y:baseY-linkLengths[0]*scale});
+  // Shoulder J1
+  cumAngle += (joints[1]+JOINT_VIZ_OFFSETS[1])*deg2rad;
+  let px=pts[1].x+Math.cos(cumAngle)*linkLengths[1]*scale;
+  let py=pts[1].y+Math.sin(cumAngle)*linkLengths[1]*scale;
+  pts.push({x:px,y:py});
+  // Elbow J2
+  cumAngle += (joints[2]+JOINT_VIZ_OFFSETS[2])*deg2rad;
+  px=pts[2].x+Math.cos(cumAngle)*linkLengths[2]*scale; py=pts[2].y+Math.sin(cumAngle)*linkLengths[2]*scale;
+  pts.push({x:px,y:py});
+  // Wrist1 (J3 roll, no pitch)
+  px=pts[3].x+Math.cos(cumAngle)*linkLengths[3]*scale; py=pts[3].y+Math.sin(cumAngle)*linkLengths[3]*scale;
+  pts.push({x:px,y:py});
+  // Wrist2 J4
+  cumAngle += (joints[4]+JOINT_VIZ_OFFSETS[4])*deg2rad;
+  px=pts[4].x+Math.cos(cumAngle)*linkLengths[4]*scale; py=pts[4].y+Math.sin(cumAngle)*linkLengths[4]*scale;
+  pts.push({x:px,y:py});
+  // End (J5 roll)
+  px=pts[5].x+Math.cos(cumAngle)*linkLengths[5]*scale; py=pts[5].y+Math.sin(cumAngle)*linkLengths[5]*scale;
+  pts.push({x:px,y:py});
+
+  // Draw links with glow
+  const linkColors = ['#2a4a7c','#4a90d9','#4a90d9','#3a7abd','#3a7abd','#2a6aad'];
+  const linkWidths = [10,8,8,5,5,4];
+  ctx.lineCap = 'round';
+  for (let i=0;i<pts.length-1;i++) {
+    // Glow
+    ctx.strokeStyle = linkColors[i]+'33';
+    ctx.lineWidth = (linkWidths[i]+6)*scale*1.2;
+    ctx.beginPath(); ctx.moveTo(pts[i].x,pts[i].y); ctx.lineTo(pts[i+1].x,pts[i+1].y); ctx.stroke();
+    // Link
+    ctx.strokeStyle = linkColors[i];
+    ctx.lineWidth = linkWidths[i]*scale*1.2;
+    ctx.beginPath(); ctx.moveTo(pts[i].x,pts[i].y); ctx.lineTo(pts[i+1].x,pts[i+1].y); ctx.stroke();
+  }
+
+  // Draw joints
+  const pitchColor = '#4a90d9', rollColor = '#e8a838';
+  const jointTypes = ['roll','pitch','pitch','roll','pitch','roll'];
+  for (let i=0;i<pts.length;i++) {
+    const r = (i===0?10:i===pts.length-1?5:7)*scale;
+    const isSelected = (i>0 && i-1===selectedJoint) || (i===0 && selectedJoint===-1);
+    // Glow for selected
+    if (i>0 && i<=6 && selectedJoint===i-1) {
+      ctx.beginPath(); ctx.arc(pts[i].x,pts[i].y,r+6*scale,0,Math.PI*2);
+      ctx.fillStyle = 'rgba(74,144,217,0.2)';
+      ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(pts[i].x,pts[i].y,r+3*scale,0,Math.PI*2);
+    ctx.fillStyle = 'rgba(15,15,23,0.4)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(pts[i].x,pts[i].y,r,0,Math.PI*2);
+    ctx.fillStyle = '#161625';
+    ctx.fill();
+    const jc = (i>0&&i<=6) ? (jointTypes[i-1]==='roll'?rollColor:pitchColor) : '#4a90d9';
+    ctx.strokeStyle = jc;
+    ctx.lineWidth = 2*scale;
+    ctx.stroke();
+  }
+
+  // Roll indicators
+  function drawRollIndicator(cx,cy,radius,angleDeg,label) {
+    const a = angleDeg*deg2rad, r = radius*scale;
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+    ctx.strokeStyle = 'rgba(232,168,56,0.15)'; ctx.lineWidth=3*scale; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+a,a<0); ctx.closePath();
+    ctx.fillStyle = Math.abs(angleDeg)>100?'rgba(233,69,96,0.2)':'rgba(232,168,56,0.15)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+a,a<0);
+    ctx.strokeStyle = Math.abs(angleDeg)>100?'#e94560':rollColor; ctx.lineWidth=3*scale; ctx.stroke();
+    const ex=cx+Math.cos(-Math.PI/2+a)*r, ey=cy+Math.sin(-Math.PI/2+a)*r;
+    ctx.beginPath(); ctx.arc(ex,ey,3*scale,0,Math.PI*2);
+    ctx.fillStyle = Math.abs(angleDeg)>100?'#e94560':rollColor; ctx.fill();
+    ctx.font = `bold ${9*scale}px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+    ctx.fillStyle = rollColor;
+    ctx.fillText(`${label} ${angleDeg.toFixed(1)}°`, cx+r+6*scale, cy+4*scale);
+  }
+
+  // J0 compass (top right)
+  const j0a = (joints[0]||0)*deg2rad;
+  const j0cx=W-50*scale, j0cy=50*scale, j0r=28*scale;
+  ctx.beginPath(); ctx.arc(j0cx,j0cy,j0r+2*scale,0,Math.PI*2);
+  ctx.fillStyle='rgba(28,28,50,0.7)'; ctx.fill();
+  ctx.strokeStyle='rgba(232,168,56,0.2)'; ctx.lineWidth=1; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(j0cx,j0cy);
+  ctx.arc(j0cx,j0cy,j0r,-Math.PI/2,-Math.PI/2+j0a,j0a<0); ctx.closePath();
+  ctx.fillStyle='rgba(232,168,56,0.12)'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(j0cx,j0cy);
+  ctx.lineTo(j0cx+Math.sin(j0a)*j0r*.85, j0cy-Math.cos(j0a)*j0r*.85);
+  ctx.strokeStyle=rollColor; ctx.lineWidth=2.5*scale; ctx.stroke();
+  ctx.beginPath(); ctx.arc(j0cx,j0cy,3*scale,0,Math.PI*2); ctx.fillStyle=rollColor; ctx.fill();
+  ctx.font=`bold ${9*scale}px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+  ctx.fillStyle=rollColor; ctx.textAlign='center';
+  ctx.fillText(`J0 ${(joints[0]||0).toFixed(1)}°`,j0cx,j0cy+j0r+12*scale);
+  ctx.font=`${7*scale}px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+  ctx.fillStyle='rgba(232,168,56,0.4)';
+  ctx.fillText('base yaw',j0cx,j0cy+j0r+22*scale);
+  ctx.textAlign='left';
+
+  // J3, J5 roll indicators
+  drawRollIndicator(pts[3].x,pts[3].y,20,joints[3]||0,'J3');
+  drawRollIndicator(pts[5].x,pts[5].y,16,joints[5]||0,'J5');
+
+  // Pitch labels
+  ctx.font=`bold ${9*scale}px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+  ctx.fillStyle=pitchColor;
+  ctx.fillText(`J1 ${(joints[1]||0).toFixed(1)}°`,pts[1].x-52*scale,pts[1].y-10*scale);
+  ctx.fillText(`J2 ${(joints[2]||0).toFixed(1)}°`,pts[2].x+10*scale,pts[2].y-10*scale);
+  ctx.fillText(`J4 ${(joints[4]||0).toFixed(1)}°`,pts[4].x+10*scale,pts[4].y-10*scale);
+
+  // Gripper
+  const tip = pts[pts.length-1];
+  const gAngle = cumAngle;
+  const gripMM = armState.gripper!=null?armState.gripper:0;
+  const gripRatio = Math.min(gripMM/65,1);
+  const gOpen = gripRatio*12*scale;
+  const fingerLen = 18*scale;
+  const gR=Math.round(233-gripRatio*150), gG=Math.round(120+gripRatio*95), gB=Math.round(56+gripRatio*50);
+  const gripCol = `rgb(${gR},${gG},${gB})`;
+  for (const side of [-1,1]) {
+    const perpX=Math.cos(gAngle+Math.PI/2)*side*gOpen;
+    const perpY=Math.sin(gAngle+Math.PI/2)*side*gOpen;
+    const fx1=tip.x+perpX,fy1=tip.y+perpY;
+    const fx2=fx1+Math.cos(gAngle)*fingerLen,fy2=fy1+Math.sin(gAngle)*fingerLen;
+    ctx.beginPath(); ctx.moveTo(fx1,fy1); ctx.lineTo(fx2,fy2);
+    ctx.strokeStyle=gripCol; ctx.lineWidth=4*scale; ctx.lineCap='round'; ctx.stroke();
+    const nx=fx2+Math.cos(gAngle+Math.PI/2)*(-side)*3*scale;
+    const ny=fy2+Math.sin(gAngle+Math.PI/2)*(-side)*3*scale;
+    ctx.beginPath(); ctx.moveTo(fx2,fy2); ctx.lineTo(nx,ny);
+    ctx.strokeStyle=gripCol; ctx.lineWidth=3*scale; ctx.stroke();
+  }
+  ctx.font=`bold ${9*scale}px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+  ctx.fillStyle=gripCol;
+  ctx.fillText(`G ${gripMM.toFixed(1)}mm`,tip.x+18*scale,tip.y+16*scale);
+
+  // Title
+  ctx.font=`${9*scale}px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+  ctx.fillStyle='rgba(107,107,136,0.4)';
+  ctx.fillText('D1 Arm — Side View (blue=pitch, gold=roll)',8,14*scale);
+}
+
+// ============================================================
+// ANIMATION LOOP
+// ============================================================
+function animLoop() {
+  if (vizDirty) { vizDirty=false; updateUI(); drawArm(); }
+  requestAnimationFrame(animLoop);
+}
+
+// Periodic force update (latency pill, task progress etc.)
+setInterval(() => { vizDirty=true; }, 250);
+
+function resizeCanvas() {
+  const cont = canvas.parentElement;
+  canvas.width = cont.clientWidth;
+  canvas.height = cont.clientHeight;
+  vizDirty=true;
+}
+window.addEventListener('resize', resizeCanvas);
+
+// ============================================================
+// KEYBOARD SHORTCUTS
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  // E-stop on Space — ALWAYS
+  if (e.code === 'Space') { e.preventDefault(); triggerEstop(); return; }
+  
+  // Shortcuts overlay
+  if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+    document.getElementById('shortcutsOverlay').classList.toggle('visible');
+    return;
+  }
+  // Close overlay on any key
+  if (document.getElementById('shortcutsOverlay').classList.contains('visible')) {
+    document.getElementById('shortcutsOverlay').classList.remove('visible');
+    return;
+  }
+  
+  // Skip if typing
+  if (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+
+  // Joint selection
+  if (e.key>='1'&&e.key<='6') { selectJoint(parseInt(e.key)-1); showToast(`${JOINT_SPECS[parseInt(e.key)-1].name} selected`); return; }
+  if (e.key.toLowerCase()==='g') { selectJoint(6); showToast('Gripper selected'); return; }
+
+  // Arrow adjust
+  if ((e.key==='ArrowLeft'||e.key==='ArrowRight') && selectedJoint>=0 && selectedJoint<=5 && armState.enabled) {
+    e.preventDefault();
+    const step = e.shiftKey?5:1;
+    const dir = e.key==='ArrowRight'?1:-1;
+    const slider = document.getElementById(`js${selectedJoint}`);
+    const cur = parseFloat(slider.value);
+    const spec = JOINT_SPECS[selectedJoint];
+    const newVal = Math.max(spec.min, Math.min(spec.max, cur+step*dir));
+    slider.value = newVal;
+    document.getElementById(`jv${selectedJoint}`).textContent = newVal.toFixed(1)+'°';
+    if (!lockedJoints.has(selectedJoint)) throttledSendJoint(selectedJoint, newVal);
+    return;
+  }
+  // Gripper arrows
+  if ((e.key==='ArrowLeft'||e.key==='ArrowRight') && selectedJoint===6 && armState.enabled) {
+    e.preventDefault();
+    const step = e.shiftKey?5:1;
+    const dir = e.key==='ArrowRight'?1:-1;
+    const cur = parseFloat(gripSlider.value);
+    const newVal = Math.max(0,Math.min(65, cur+step*dir));
+    gripSlider.value = newVal;
+    document.getElementById('gripperValue').textContent = newVal.toFixed(1)+' mm';
+    throttledSendGripper(newVal);
+    return;
+  }
+
+  // Tasks
+  if (e.key.toLowerCase()==='h'&&armState.enabled) { runTask('home'); return; }
+  if (e.key==='Escape') { runTask('stop'); return; }
+  
+  // Drawers
+  if (e.key.toLowerCase()==='c') { document.querySelector('[data-drawer="cameras"]').click(); return; }
+  if (e.key.toLowerCase()==='l') { document.querySelector('.drawer-tab[data-drawer="log"]').click(); return; }
+  if (e.key.toLowerCase()==='d') { document.querySelector('[data-drawer="debug"]').click(); return; }
+});
+
+// ============================================================
+// INIT
+// ============================================================
+connectWS();
+setTimeout(() => { resizeCanvas(); animLoop(); }, 50);
+</script>
+</body>
+</html>
