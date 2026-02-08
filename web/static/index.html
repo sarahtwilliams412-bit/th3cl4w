@@ -793,62 +793,40 @@ function drawArm() {
 
   let pts;
 
+  // Always use proper DH-based FK for accurate joint positions
+  const fkPosAll = fk3dPositions(joints);  // 8 positions [x,y,z] in meters
+  // DH frames: [0]=base, [1]=J1, [2]=J2, [3]=J3, [4]=J4, [5]=J5, [6]=J6, [7]=EE
+  // Pairs [1]≡[2], [3]≡[4], [5]≡[6] overlap (d=0 joints). Keep distinct points only:
+  // [0]=base, [1]=shoulder, [3]=elbow, [5]=wrist, [7]=end-effector
+  const fkPos = [fkPosAll[0], fkPosAll[1], fkPosAll[3], fkPosAll[5], fkPosAll[7]];
+
   if (USE_3D_PROJECTION && CAM_PARAMS) {
     // --- 3D FK + Camera Projection (v2) ---
-    const fkPos = fk3dPositions(joints);
-    // Project all 8 DH frame positions to 2D
     const projected = fkPos.map(p => projectPoint3D(p, CAM_PARAMS));
-    // Map to canvas coords: camera pixels → canvas pixels (scale to canvas size)
-    // Assume camera image is 1920x1080, map proportionally
     const camW = 1920, camH = 1080;
     pts = projected.map(p => {
-      if (!p) return { x: baseX, y: baseY }; // fallback
+      if (!p) return { x: baseX, y: baseY };
       return { x: p[0] * (W / camW), y: p[1] * (H / camH) };
     });
-    // Use key joint positions: [0]=base, [1]=J1, [3]=J3(shoulder-elbow), [5]=J5(elbow-wrist), [7]=EE
-    // Simplify to 7 drawable points matching the link structure
-    pts = [pts[0], pts[1], pts[3], pts[5], pts[6], pts[7], pts[7]];
   } else {
-    // --- Legacy 2D side-view FK ---
-    const linkLengths = [LINKS_MM.base, LINKS_MM.shoulder, LINKS_MM.elbow, LINKS_MM.wrist1, LINKS_MM.wrist2, LINKS_MM.end];
-    let cumAngle = -Math.PI / 2;
-    pts = [{ x: baseX, y: baseY }];
-
-    // Segment 0: base (straight up)
-    pts.push({ x: baseX, y: baseY - linkLengths[0] * scale });
-
-    // Segment 1: shoulder — J1 pitch (with DH offset)
-    cumAngle += (joints[1] + JOINT_VIZ_OFFSETS[1]) * deg2rad;
-    let px = pts[1].x + Math.cos(cumAngle) * linkLengths[1] * scale;
-    let py = pts[1].y + Math.sin(cumAngle) * linkLengths[1] * scale;
-    pts.push({ x: px, y: py });
-
-    // Segment 2: elbow — J2 pitch
-    cumAngle += (joints[2] + JOINT_VIZ_OFFSETS[2]) * deg2rad;
-    px = pts[2].x + Math.cos(cumAngle) * linkLengths[2] * scale;
-    py = pts[2].y + Math.sin(cumAngle) * linkLengths[2] * scale;
-    pts.push({ x: px, y: py });
-
-    // Segment 3: wrist1 — J3 is roll, no pitch change
-    px = pts[3].x + Math.cos(cumAngle) * linkLengths[3] * scale;
-    py = pts[3].y + Math.sin(cumAngle) * linkLengths[3] * scale;
-    pts.push({ x: px, y: py });
-
-    // Segment 4: wrist2 — J4 pitch
-    cumAngle += (joints[4] + JOINT_VIZ_OFFSETS[4]) * deg2rad;
-    px = pts[4].x + Math.cos(cumAngle) * linkLengths[4] * scale;
-    py = pts[4].y + Math.sin(cumAngle) * linkLengths[4] * scale;
-    pts.push({ x: px, y: py });
-
-    // Segment 5: end — J5 is roll, no pitch change
-    px = pts[5].x + Math.cos(cumAngle) * linkLengths[5] * scale;
-    py = pts[5].y + Math.sin(cumAngle) * linkLengths[5] * scale;
-    pts.push({ x: px, y: py });
+    // --- Orthographic side-view of 3D FK ---
+    // Project onto the arm's plane (rotate by J0 so we always see the arm from the side)
+    const j0rad = (joints[0] || 0) * deg2rad;
+    const cosJ0 = Math.cos(j0rad), sinJ0 = Math.sin(j0rad);
+    const mToPixel = 700 * scale; // meters to pixels
+    pts = fkPos.map(p => {
+      const radial = p[0] * cosJ0 + p[1] * sinJ0;
+      const height = p[2];
+      return {
+        x: baseX + radial * mToPixel,
+        y: baseY - height * mToPixel
+      };
+    });
   }
 
-  // Draw links
-  const linkColors = ['#2a4a7c', '#4a90d9', '#4a90d9', '#3a7abd', '#3a7abd', '#2a6aad'];
-  const linkWidths = [10, 8, 8, 5, 5, 4];
+  // Draw links (5 pts = 4 segments: base→shoulder→elbow→wrist→EE)
+  const linkColors = ['#2a4a7c', '#4a90d9', '#3a7abd', '#2a6aad'];
+  const linkWidths = [10, 8, 6, 4];
   ctx.lineCap = 'round';
   for (let i = 0; i < pts.length - 1; i++) {
     ctx.strokeStyle = linkColors[i] || '#4a90d9';
@@ -974,11 +952,12 @@ function drawArm() {
   ctx.fillText('base rotation (top view)', j0cx, j0cy + j0r + 24 * scale);
   ctx.textAlign = 'left';
 
-  // J3 & J5 roll indicators
-  drawRotationIndicator(pts[3].x, pts[3].y, 22, joints[3] || 0, 'J3');
-  drawRotationIndicator(pts[5].x, pts[5].y, 18, joints[5] || 0, 'J5');
+  // Points: [0]=base, [1]=shoulder, [2]=elbow, [3]=wrist, [4]=EE
+  // Roll indicators at elbow (J3) and wrist (J5)
+  drawRotationIndicator(pts[2].x, pts[2].y, 22, joints[3] || 0, 'J3');
+  drawRotationIndicator(pts[3].x, pts[3].y, 18, joints[5] || 0, 'J5');
 
-  // Pitch joint labels (J1, J2, J4)
+  // Pitch joint labels: J1 at shoulder, J2 at elbow, J4 at wrist
   ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = pitchColor;
   ctx.fillText(`J1 ${(joints[1]||0).toFixed(1)}°`, pts[1].x - 55 * scale, pts[1].y - 12 * scale);
@@ -995,14 +974,16 @@ function drawArm() {
 
   ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = pitchColor;
-  ctx.fillText(`J4 ${(joints[4]||0).toFixed(1)}°`, pts[4].x + 12 * scale, pts[4].y - 12 * scale);
+  ctx.fillText(`J4 ${(joints[4]||0).toFixed(1)}°`, pts[3].x + 12 * scale, pts[3].y - 12 * scale);
   ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(74,144,217,0.5)';
-  ctx.fillText('pitch', pts[4].x + 12 * scale, pts[4].y - 2 * scale);
+  ctx.fillText('pitch', pts[3].x + 12 * scale, pts[3].y - 2 * scale);
 
   // Gripper visualization
   const tip = pts[pts.length - 1];
-  const gAngle = cumAngle;
+  // Compute gripper angle from the last two FK points (end-effector direction)
+  const prevPt = pts[pts.length - 2];
+  const gAngle = Math.atan2(tip.y - prevPt.y, tip.x - prevPt.x);
   const gripMM = armState.gripper != null ? armState.gripper : 0;
   const gripRatio = Math.min(gripMM / 65, 1);
   const gOpen = gripRatio * 12 * scale;
@@ -1047,7 +1028,7 @@ function drawArm() {
   // Title
   ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(136,146,164,0.5)';
-  ctx.fillText('D1 Arm (blue=pitch, gold=roll)', 8, 16 * scale);
+  ctx.fillText('D1 Arm — DH FK (blue=pitch, gold=roll)', 8, 16 * scale);
 
   // Telemetry overlay
   ctx.font = `${8 * scale}px JetBrains Mono, monospace`;
