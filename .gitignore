@@ -43,6 +43,11 @@ htmlcov/
 *.log
 logs/
 
+# SQLite runtime files
+*.db-shm
+*.db-wal
+data/telemetry.db
+
 # OS
 .DS_Store
 Thumbs.db
