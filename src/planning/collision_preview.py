@@ -10,6 +10,7 @@ then queries the workspace mapper for obstacles.
 """
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -76,8 +77,6 @@ class CollisionPreview:
         Returns:
             PreviewResult with collision details.
         """
-        import time
-
         t0 = time.monotonic()
 
         hits: list[CollisionHit] = []
@@ -172,8 +171,6 @@ class CollisionPreview:
         workspace_mapper,
     ) -> PreviewResult:
         """Quick check of a single arm pose against the workspace map."""
-        import time
-
         t0 = time.monotonic()
 
         angles_rad = np.deg2rad(np.asarray(joint_angles_deg[:NUM_ARM_JOINTS]))

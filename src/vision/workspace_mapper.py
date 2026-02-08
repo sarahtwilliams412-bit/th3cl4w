@@ -13,7 +13,6 @@ import time
 import threading
 from typing import Optional
 
-import cv2
 import numpy as np
 
 from .calibration import StereoCalibrator
