@@ -199,7 +199,7 @@ class CommandSmoother:
 
     def set_all_joints_target(self, angles_deg: list) -> None:
         """Set targets for all joints at once."""
-        for i, a in enumerate(angles_deg[:self._num_joints]):
+        for i, a in enumerate(angles_deg[: self._num_joints]):
             self._target[i] = a
             self._dirty_joints.add(i)
 
@@ -215,8 +215,12 @@ class CommandSmoother:
         self.sync_current_positions()
         self._running = True
         self._task = asyncio.create_task(self._loop())
-        logger.info("Command smoother started at %.0fHz, alpha=%.2f, synced=%s",
-                     self._rate_hz, self._alpha, self._synced)
+        logger.info(
+            "Command smoother started at %.0fHz, alpha=%.2f, synced=%s",
+            self._rate_hz,
+            self._alpha,
+            self._synced,
+        )
 
     async def stop(self) -> None:
         """Stop the smoothing loop."""
@@ -303,7 +307,9 @@ class CommandSmoother:
                 v = self._current[i]
                 if v is None:
                     # This shouldn't happen if _synced is True, but be safe
-                    logger.error("Joint %d position is None despite being synced — aborting send", i)
+                    logger.error(
+                        "Joint %d position is None despite being synced — aborting send", i
+                    )
                     return
                 send_angles.append(v)
 
@@ -327,13 +333,19 @@ class CommandSmoother:
             try:
                 states = []
                 for jid in range(self._num_joints):
-                    states.append({
-                        "joint_id": jid,
-                        "target": self._target[jid] if self._target[jid] is not None else self._current[jid],
-                        "current": self._current[jid],
-                        "sent": self._current[jid],
-                        "dirty": jid in self._dirty_joints,
-                    })
+                    states.append(
+                        {
+                            "joint_id": jid,
+                            "target": (
+                                self._target[jid]
+                                if self._target[jid] is not None
+                                else self._current[jid]
+                            ),
+                            "current": self._current[jid],
+                            "sent": self._current[jid],
+                            "dirty": jid in self._dirty_joints,
+                        }
+                    )
                 if self._collector.enabled:
                     self._collector.log_smoother_state(states)
             except Exception:

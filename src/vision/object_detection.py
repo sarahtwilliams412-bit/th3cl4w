@@ -18,6 +18,7 @@ logger = logging.getLogger("th3cl4w.vision.object_detection")
 @dataclass
 class DetectedObject:
     """A detected object with 2D and optional 3D information."""
+
     label: str
     bbox: tuple[int, int, int, int]  # (x, y, w, h)
     centroid_2d: tuple[int, int]  # (cx, cy) in pixels
@@ -31,6 +32,7 @@ class DetectedObject:
 @dataclass
 class ColorRange:
     """HSV color range for segmentation."""
+
     name: str
     lower: np.ndarray  # [H, S, V] lower bound
     upper: np.ndarray  # [H, S, V] upper bound
@@ -201,8 +203,9 @@ class ObjectDetector:
             label = f"{det.label}"
             if det.depth_mm > 0:
                 label += f" {det.depth_mm:.0f}mm"
-            cv2.putText(vis, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5, color, 1, cv2.LINE_AA)
+            cv2.putText(
+                vis, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA
+            )
 
             if draw_contours:
                 cv2.drawContours(vis, [det.contour], -1, color, 1)

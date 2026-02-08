@@ -24,12 +24,14 @@ from pydantic import BaseModel, Field
 
 try:
     from src.telemetry import get_collector, EventType
+
     _HAS_TELEMETRY = True
 except ImportError:
     _HAS_TELEMETRY = False
 
 try:
     from src.telemetry.query import TelemetryQuery
+
     _HAS_QUERY = True
 except ImportError:
     _HAS_QUERY = False
@@ -39,6 +41,7 @@ import numpy as np
 try:
     from src.planning.task_planner import TaskPlanner, TaskStatus
     from src.planning.motion_planner import Waypoint
+
     _HAS_PLANNING = True
 except ImportError:
     _HAS_PLANNING = False
@@ -73,12 +76,12 @@ logger = logging.getLogger("th3cl4w.web")
 # ---------------------------------------------------------------------------
 
 JOINT_LIMITS_DEG = {
-    0: (-135.0, 135.0),   # J0 base yaw
-    1: (-90.0, 90.0),     # J1 shoulder pitch
-    2: (-90.0, 90.0),     # J2 elbow pitch
-    3: (-135.0, 135.0),   # J3 wrist roll
-    4: (-90.0, 90.0),     # J4 wrist pitch
-    5: (-135.0, 135.0),   # J5 wrist roll
+    0: (-135.0, 135.0),  # J0 base yaw
+    1: (-90.0, 90.0),  # J1 shoulder pitch
+    2: (-90.0, 90.0),  # J2 elbow pitch
+    3: (-135.0, 135.0),  # J3 wrist roll
+    4: (-90.0, 90.0),  # J4 wrist pitch
+    5: (-135.0, 135.0),  # J5 wrist roll
 }
 
 GRIPPER_RANGE = (0.0, 65.0)  # mm
@@ -86,6 +89,7 @@ GRIPPER_RANGE = (0.0, 65.0)  # mm
 # ---------------------------------------------------------------------------
 # Structured action log
 # ---------------------------------------------------------------------------
+
 
 class ActionLog:
     """Thread-safe circular log of action entries."""
@@ -101,19 +105,26 @@ class ActionLog:
         entry = {"ts": ts, "ts_str": ts_str, "action": action, "details": details, "level": level}
         self._entries.append(entry)
         logger.log(
-            {"info": logging.INFO, "error": logging.ERROR, "warning": logging.WARNING}.get(level, logging.INFO),
-            "%s | %s | %s", ts_str, action, details,
+            {"info": logging.INFO, "error": logging.ERROR, "warning": logging.WARNING}.get(
+                level, logging.INFO
+            ),
+            "%s | %s | %s",
+            ts_str,
+            action,
+            details,
         )
 
     def last(self, n: int = 50) -> List[Dict]:
         items = list(self._entries)
         return items[-n:]
 
+
 action_log = ActionLog()
 
 # ---------------------------------------------------------------------------
 # Simulated arm for --simulate mode
 # ---------------------------------------------------------------------------
+
 
 class SimulatedArm:
     """Fake arm that holds state in memory with proper power→enable ordering."""
@@ -134,6 +145,7 @@ class SimulatedArm:
 
     def get_joint_angles(self):
         import numpy as np
+
         for i in range(6):
             diff = self._target_angles[i] - self._angles[i]
             self._angles[i] += diff * 0.15
@@ -209,6 +221,7 @@ task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
 # Lifespan
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global arm, smoother
@@ -229,15 +242,20 @@ async def lifespan(app: FastAPI):
             if project_root not in sys.path:
                 sys.path.insert(0, project_root)
             from src.interface.d1_dds_connection import D1DDSConnection
+
             arm = D1DDSConnection(collector=tc if _HAS_TELEMETRY else None)
             if arm.connect(interface_name=args.interface):
                 action_log.add("SYSTEM", f"DDS connected on {args.interface}", "info")
                 if _HAS_TELEMETRY:
-                    get_collector().log_system_event("connect", "dds", f"Connected on {args.interface}")
+                    get_collector().log_system_event(
+                        "connect", "dds", f"Connected on {args.interface}"
+                    )
             else:
                 action_log.add("SYSTEM", f"DDS connection FAILED on {args.interface}", "error")
                 if _HAS_TELEMETRY:
-                    get_collector().log_system_event("connect_failed", "dds", f"Failed on {args.interface}", level="error")
+                    get_collector().log_system_event(
+                        "connect_failed", "dds", f"Failed on {args.interface}", level="error"
+                    )
         except Exception as e:
             action_log.add("SYSTEM", f"DDS init error: {e}", "error")
             logger.exception("Failed to initialize DDS connection")
@@ -246,9 +264,13 @@ async def lifespan(app: FastAPI):
     # Start the command smoother for smooth motion
     if arm is not None:
         tc_ref = get_collector() if _HAS_TELEMETRY else None
-        smoother = CommandSmoother(arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=15.0, collector=tc_ref)
+        smoother = CommandSmoother(
+            arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=15.0, collector=tc_ref
+        )
         await smoother.start()
-        action_log.add("SYSTEM", f"Command smoother started (10Hz, α=0.35, synced={smoother.synced})", "info")
+        action_log.add(
+            "SYSTEM", f"Command smoother started (10Hz, α=0.35, synced={smoother.synced})", "info"
+        )
 
     # Initialize task planner for pre-built motion sequences
     if _HAS_PLANNING:
@@ -268,6 +290,7 @@ async def lifespan(app: FastAPI):
     if _HAS_TELEMETRY:
         get_collector().log_system_event("shutdown", "system", "th3cl4w shutting down")
         get_collector().stop()
+
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -293,8 +316,10 @@ async def telemetry_middleware(request, call_next):
         tc = get_collector()
         if tc.enabled:
             tc.log_web_request(
-                endpoint=request.url.path, method=request.method,
-                params=None, response_ms=elapsed_ms,
+                endpoint=request.url.path,
+                method=request.method,
+                params=None,
+                response_ms=elapsed_ms,
                 status_code=response.status_code,
                 ok=response.status_code < 400,
             )
@@ -311,18 +336,23 @@ ws_clients: list[WebSocket] = []
 # Request models
 # ---------------------------------------------------------------------------
 
+
 class SetJointRequest(BaseModel):
     id: int = Field(ge=0, le=5)
     angle: float
 
+
 class SetAllJointsRequest(BaseModel):
     angles: List[float] = Field(min_length=6, max_length=6)
+
 
 class SetGripperRequest(BaseModel):
     position: float = Field(ge=0.0, le=65.0)
 
+
 class RawCommandRequest(BaseModel):
     payload: dict
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -330,13 +360,22 @@ class RawCommandRequest(BaseModel):
 
 _prev_state: Dict[str, Any] = {}
 
+
 def get_arm_state() -> Dict[str, Any]:
     global _prev_state
     if arm is None:
-        return {"connected": False, "joints": [0.0]*6, "gripper": 0.0, "power": False, "enabled": False, "error": 0, "timestamp": time.time()}
+        return {
+            "connected": False,
+            "joints": [0.0] * 6,
+            "gripper": 0.0,
+            "power": False,
+            "enabled": False,
+            "error": 0,
+            "timestamp": time.time(),
+        }
 
     angles_raw = arm.get_joint_angles()
-    angles = [round(float(a), 2) for a in angles_raw] if angles_raw is not None else [0.0]*6
+    angles = [round(float(a), 2) for a in angles_raw] if angles_raw is not None else [0.0] * 6
     # Ensure exactly 6 joints
     angles = angles[:6] if len(angles) >= 6 else angles + [0.0] * (6 - len(angles))
 
@@ -369,7 +408,9 @@ def get_arm_state() -> Dict[str, Any]:
         if _prev_state.get("power") != state["power"]:
             action_log.add("STATE", f"Power: {'ON' if state['power'] else 'OFF'}", "warning")
         if _prev_state.get("enabled") != state["enabled"]:
-            action_log.add("STATE", f"Motors: {'ENABLED' if state['enabled'] else 'DISABLED'}", "warning")
+            action_log.add(
+                "STATE", f"Motors: {'ENABLED' if state['enabled'] else 'DISABLED'}", "warning"
+            )
         if _prev_state.get("error") != state["error"] and state["error"]:
             action_log.add("STATE", f"Error changed: {state['error']}", "error")
     _prev_state = state.copy()
@@ -377,7 +418,9 @@ def get_arm_state() -> Dict[str, Any]:
     return state
 
 
-def cmd_response(success: bool, action: str, extra: str = "", correlation_id: str | None = None) -> JSONResponse:
+def cmd_response(
+    success: bool, action: str, extra: str = "", correlation_id: str | None = None
+) -> JSONResponse:
     state = get_arm_state()
     level = "info" if success else "error"
     detail = f"{'OK' if success else 'FAILED'}"
@@ -395,7 +438,9 @@ def _telem_cmd_sent(endpoint: str, params: Dict[str, Any], correlation_id: str) 
     if _HAS_TELEMETRY:
         tc = get_collector()
         if tc.enabled:
-            tc.emit("web", EventType.CMD_SENT, {"endpoint": endpoint, "params": params}, correlation_id)
+            tc.emit(
+                "web", EventType.CMD_SENT, {"endpoint": endpoint, "params": params}, correlation_id
+            )
 
 
 def _new_cid() -> str | None:
@@ -417,28 +462,38 @@ async def broadcast_ack(action: str, success: bool):
     for ws in dead:
         ws_clients.remove(ws)
 
+
 # ---------------------------------------------------------------------------
 # REST endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get("/api/cameras")
 async def api_cameras():
     """Proxy camera status from the camera server."""
     import httpx
+
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             resp = await client.get("http://localhost:8081/status")
             return resp.json()
     except Exception:
-        return {"error": "Camera server unavailable", "0": {"connected": False}, "1": {"connected": False}}
+        return {
+            "error": "Camera server unavailable",
+            "0": {"connected": False},
+            "1": {"connected": False},
+        }
+
 
 @app.get("/api/state")
 async def api_state():
     return get_arm_state()
 
+
 @app.get("/api/log")
 async def api_log():
     return {"entries": action_log.last(50)}
+
 
 @app.post("/api/command/enable")
 async def cmd_enable():
@@ -449,18 +504,30 @@ async def cmd_enable():
     state = arm.get_status() or {}
     if not state.get("power_status"):
         action_log.add("ENABLE", "REJECTED — power is off, power on first", "error")
-        resp_data: Dict[str, Any] = {"ok": False, "action": "ENABLE", "error": "Power must be on before enabling", "state": get_arm_state()}
+        resp_data: Dict[str, Any] = {
+            "ok": False,
+            "action": "ENABLE",
+            "error": "Power must be on before enabling",
+            "state": get_arm_state(),
+        }
         if cid:
             resp_data["correlation_id"] = cid
         return JSONResponse(resp_data)
     ok = arm.enable_motors(_correlation_id=cid)
     if _HAS_TELEMETRY:
-        get_collector().log_system_event("enable", "web", f"Motors enable: {'OK' if ok else 'FAILED'}", correlation_id=cid, level="info" if ok else "error")
+        get_collector().log_system_event(
+            "enable",
+            "web",
+            f"Motors enable: {'OK' if ok else 'FAILED'}",
+            correlation_id=cid,
+            level="info" if ok else "error",
+        )
     if ok and smoother:
         smoother.set_arm_enabled(True)
     resp = cmd_response(ok, "ENABLE", correlation_id=cid)
     await broadcast_ack("ENABLE", ok)
     return resp
+
 
 @app.post("/api/command/disable")
 async def cmd_disable():
@@ -468,12 +535,15 @@ async def cmd_disable():
     _telem_cmd_sent("disable", {}, cid)
     ok = arm.disable_motors(_correlation_id=cid) if arm else False
     if _HAS_TELEMETRY:
-        get_collector().log_system_event("disable", "web", f"Motors disable: {'OK' if ok else 'FAILED'}", correlation_id=cid)
+        get_collector().log_system_event(
+            "disable", "web", f"Motors disable: {'OK' if ok else 'FAILED'}", correlation_id=cid
+        )
     if smoother:
         smoother.set_arm_enabled(False)
     resp = cmd_response(ok, "DISABLE", correlation_id=cid)
     await broadcast_ack("DISABLE", ok)
     return resp
+
 
 @app.post("/api/command/power-on")
 async def cmd_power_on():
@@ -481,10 +551,13 @@ async def cmd_power_on():
     _telem_cmd_sent("power-on", {}, cid)
     ok = arm.power_on(_correlation_id=cid) if arm else False
     if _HAS_TELEMETRY:
-        get_collector().log_system_event("power_on", "web", f"Power on: {'OK' if ok else 'FAILED'}", correlation_id=cid)
+        get_collector().log_system_event(
+            "power_on", "web", f"Power on: {'OK' if ok else 'FAILED'}", correlation_id=cid
+        )
     resp = cmd_response(ok, "POWER_ON", correlation_id=cid)
     await broadcast_ack("POWER_ON", ok)
     return resp
+
 
 @app.post("/api/command/power-off")
 async def cmd_power_off():
@@ -492,12 +565,15 @@ async def cmd_power_off():
     _telem_cmd_sent("power-off", {}, cid)
     ok = arm.power_off(_correlation_id=cid) if arm else False
     if _HAS_TELEMETRY:
-        get_collector().log_system_event("power_off", "web", f"Power off: {'OK' if ok else 'FAILED'}", correlation_id=cid)
+        get_collector().log_system_event(
+            "power_off", "web", f"Power off: {'OK' if ok else 'FAILED'}", correlation_id=cid
+        )
     if smoother:
         smoother.set_arm_enabled(False)
     resp = cmd_response(ok, "POWER_OFF", correlation_id=cid)
     await broadcast_ack("POWER_OFF", ok)
     return resp
+
 
 @app.post("/api/command/reset")
 async def cmd_reset():
@@ -510,6 +586,7 @@ async def cmd_reset():
     await broadcast_ack("RESET", ok)
     return resp
 
+
 @app.post("/api/command/set-joint")
 async def cmd_set_joint(req: SetJointRequest):
     cid = _new_cid()
@@ -519,8 +596,15 @@ async def cmd_set_joint(req: SetJointRequest):
     action_log.add("SET_JOINT", f"Request: J{req.id} -> {req.angle}°", "info")
     lo, hi = JOINT_LIMITS_DEG.get(req.id, (-135, 135))
     if not (lo <= req.angle <= hi):
-        action_log.add("SET_JOINT", f"REJECTED — J{req.id} angle {req.angle}° outside [{lo}, {hi}]", "error")
-        resp_data: Dict[str, Any] = {"ok": False, "action": "SET_JOINT", "error": f"Angle {req.angle} out of range [{lo}, {hi}]", "state": get_arm_state()}
+        action_log.add(
+            "SET_JOINT", f"REJECTED — J{req.id} angle {req.angle}° outside [{lo}, {hi}]", "error"
+        )
+        resp_data: Dict[str, Any] = {
+            "ok": False,
+            "action": "SET_JOINT",
+            "error": f"Angle {req.angle} out of range [{lo}, {hi}]",
+            "state": get_arm_state(),
+        }
         if cid:
             resp_data["correlation_id"] = cid
         return JSONResponse(resp_data, status_code=400)
@@ -533,6 +617,7 @@ async def cmd_set_joint(req: SetJointRequest):
     await broadcast_ack("SET_JOINT", ok)
     return resp
 
+
 @app.post("/api/command/set-all-joints")
 async def cmd_set_all_joints(req: SetAllJointsRequest):
     cid = _new_cid()
@@ -543,8 +628,15 @@ async def cmd_set_all_joints(req: SetAllJointsRequest):
     for i, a in enumerate(req.angles):
         lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
         if not (lo <= a <= hi):
-            action_log.add("SET_ALL_JOINTS", f"REJECTED — J{i} angle {a}° outside [{lo}, {hi}]", "error")
-            resp_data2: Dict[str, Any] = {"ok": False, "action": "SET_ALL_JOINTS", "error": f"J{i} angle {a} out of range [{lo}, {hi}]", "state": get_arm_state()}
+            action_log.add(
+                "SET_ALL_JOINTS", f"REJECTED — J{i} angle {a}° outside [{lo}, {hi}]", "error"
+            )
+            resp_data2: Dict[str, Any] = {
+                "ok": False,
+                "action": "SET_ALL_JOINTS",
+                "error": f"J{i} angle {a} out of range [{lo}, {hi}]",
+                "state": get_arm_state(),
+            }
             if cid:
                 resp_data2["correlation_id"] = cid
             return JSONResponse(resp_data2, status_code=400)
@@ -556,6 +648,7 @@ async def cmd_set_all_joints(req: SetAllJointsRequest):
     resp = cmd_response(ok, "SET_ALL_JOINTS", correlation_id=cid)
     await broadcast_ack("SET_ALL_JOINTS", ok)
     return resp
+
 
 @app.post("/api/command/set-gripper")
 async def cmd_set_gripper(req: SetGripperRequest):
@@ -575,6 +668,7 @@ async def cmd_set_gripper(req: SetGripperRequest):
     await broadcast_ack("SET_GRIPPER", ok)
     return resp
 
+
 @app.post("/api/command/stop")
 async def cmd_stop():
     """Emergency stop: disable motors AND power off."""
@@ -584,17 +678,26 @@ async def cmd_stop():
     if smoother:
         smoother.emergency_stop()
     if _HAS_TELEMETRY:
-        get_collector().log_system_event("estop", "web", "Emergency stop triggered", correlation_id=cid, level="error")
+        get_collector().log_system_event(
+            "estop", "web", "Emergency stop triggered", correlation_id=cid, level="error"
+        )
     ok1 = arm.disable_motors(_correlation_id=cid) if arm else False
     ok2 = arm.power_off(_correlation_id=cid) if arm else False
     ok = ok1 and ok2
-    resp = cmd_response(ok, "EMERGENCY_STOP", f"disable={'OK' if ok1 else 'FAIL'} power_off={'OK' if ok2 else 'FAIL'}", cid)
+    resp = cmd_response(
+        ok,
+        "EMERGENCY_STOP",
+        f"disable={'OK' if ok1 else 'FAIL'} power_off={'OK' if ok2 else 'FAIL'}",
+        cid,
+    )
     await broadcast_ack("EMERGENCY_STOP", ok)
     return resp
+
 
 # ---------------------------------------------------------------------------
 # WebSocket — stream state at 10Hz
 # ---------------------------------------------------------------------------
+
 
 @app.websocket("/ws/state")
 async def ws_state(ws: WebSocket):
@@ -609,10 +712,14 @@ async def ws_state(ws: WebSocket):
             if _HAS_TELEMETRY:
                 tc = get_collector()
                 if tc.enabled:
-                    tc.emit("web", EventType.WS_SEND, {
-                        "client_count": len(ws_clients),
-                        "state_timestamp": state.get("timestamp"),
-                    })
+                    tc.emit(
+                        "web",
+                        EventType.WS_SEND,
+                        {
+                            "client_count": len(ws_clients),
+                            "state_timestamp": state.get("timestamp"),
+                        },
+                    )
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
         action_log.add("WS", "Client disconnected", "info")
@@ -622,12 +729,16 @@ async def ws_state(ws: WebSocket):
         if ws in ws_clients:
             ws_clients.remove(ws)
 
+
 # ---------------------------------------------------------------------------
 # Debug / telemetry endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/debug/telemetry")
-async def debug_telemetry(limit: int = 100, event_type: str | None = None, source: str | None = None):
+async def debug_telemetry(
+    limit: int = 100, event_type: str | None = None, source: str | None = None
+):
     if not _HAS_TELEMETRY:
         return JSONResponse({"error": "telemetry not available"}, status_code=501)
     tc = get_collector()
@@ -638,20 +749,25 @@ async def debug_telemetry(limit: int = 100, event_type: str | None = None, sourc
         except ValueError:
             return JSONResponse({"error": f"unknown event_type: {event_type}"}, status_code=400)
     events = tc.get_events(limit=limit, event_type=et, source=source)
-    return [{
-        "timestamp_ms": e.timestamp_ms,
-        "wall_time_ms": e.wall_time_ms,
-        "source": e.source,
-        "event_type": e.event_type.value,
-        "payload": e.payload,
-        "correlation_id": e.correlation_id,
-    } for e in events]
+    return [
+        {
+            "timestamp_ms": e.timestamp_ms,
+            "wall_time_ms": e.wall_time_ms,
+            "source": e.source,
+            "event_type": e.event_type.value,
+            "payload": e.payload,
+            "correlation_id": e.correlation_id,
+        }
+        for e in events
+    ]
+
 
 @app.get("/api/debug/stats")
 async def debug_stats():
     if not _HAS_TELEMETRY:
         return JSONResponse({"error": "telemetry not available"}, status_code=501)
     return get_collector().get_stats()
+
 
 @app.post("/api/debug/enable")
 async def debug_enable():
@@ -660,12 +776,14 @@ async def debug_enable():
     get_collector().enable()
     return {"enabled": True}
 
+
 @app.post("/api/debug/disable")
 async def debug_disable():
     if not _HAS_TELEMETRY:
         return JSONResponse({"error": "telemetry not available"}, status_code=501)
     get_collector().disable()
     return {"enabled": False}
+
 
 @app.get("/api/debug/pipeline/{correlation_id}")
 async def debug_pipeline(correlation_id: str):
@@ -674,9 +792,11 @@ async def debug_pipeline(correlation_id: str):
     pipeline = get_collector().get_pipeline(correlation_id)
     return pipeline
 
+
 # ---------------------------------------------------------------------------
 # WebSocket — stream telemetry events in real-time
 # ---------------------------------------------------------------------------
+
 
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(ws: WebSocket):
@@ -710,6 +830,7 @@ async def ws_telemetry(ws: WebSocket):
 # ---------------------------------------------------------------------------
 # Telemetry query endpoints — expose TelemetryQuery (SQLite read-only) data
 # ---------------------------------------------------------------------------
+
 
 def _get_query() -> "TelemetryQuery | None":
     """Open a read-only TelemetryQuery against the active database."""
@@ -840,7 +961,11 @@ async def _execute_trajectory(trajectory, label: str) -> None:
         action_log.add("TASK", f"{label} — arm not enabled, aborting", "error")
         return
 
-    action_log.add("TASK", f"Executing {label} ({len(trajectory.points)} points, {trajectory.duration:.1f}s)", "info")
+    action_log.add(
+        "TASK",
+        f"Executing {label} ({len(trajectory.points)} points, {trajectory.duration:.1f}s)",
+        "info",
+    )
     t0 = time.monotonic()
 
     for pt in trajectory.points:
@@ -871,7 +996,9 @@ async def task_home(req: TaskRequest = TaskRequest()):
     """Plan and execute a smooth return to home position."""
     global _active_task
     if not _HAS_PLANNING:
-        return JSONResponse({"ok": False, "error": "planning module not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "planning module not available"}, status_code=501
+        )
     if not (smoother and smoother.arm_enabled):
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
 
@@ -884,8 +1011,17 @@ async def task_home(req: TaskRequest = TaskRequest()):
     if _active_task and not _active_task.done():
         _active_task.cancel()
     _active_task = asyncio.create_task(_execute_trajectory(result.trajectory, "Go Home"))
-    action_log.add("TASK", f"Home planned: {len(result.trajectory.points)} pts, {result.trajectory.duration:.1f}s", "info")
-    return {"ok": True, "action": "TASK_HOME", "points": len(result.trajectory.points), "duration_s": round(result.trajectory.duration, 1)}
+    action_log.add(
+        "TASK",
+        f"Home planned: {len(result.trajectory.points)} pts, {result.trajectory.duration:.1f}s",
+        "info",
+    )
+    return {
+        "ok": True,
+        "action": "TASK_HOME",
+        "points": len(result.trajectory.points),
+        "duration_s": round(result.trajectory.duration, 1),
+    }
 
 
 @app.post("/api/task/ready")
@@ -893,7 +1029,9 @@ async def task_ready(req: TaskRequest = TaskRequest()):
     """Plan and execute move to ready/neutral position."""
     global _active_task
     if not _HAS_PLANNING:
-        return JSONResponse({"ok": False, "error": "planning module not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "planning module not available"}, status_code=501
+        )
     if not (smoother and smoother.arm_enabled):
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
 
@@ -906,8 +1044,17 @@ async def task_ready(req: TaskRequest = TaskRequest()):
     if _active_task and not _active_task.done():
         _active_task.cancel()
     _active_task = asyncio.create_task(_execute_trajectory(result.trajectory, "Go Ready"))
-    action_log.add("TASK", f"Ready planned: {len(result.trajectory.points)} pts, {result.trajectory.duration:.1f}s", "info")
-    return {"ok": True, "action": "TASK_READY", "points": len(result.trajectory.points), "duration_s": round(result.trajectory.duration, 1)}
+    action_log.add(
+        "TASK",
+        f"Ready planned: {len(result.trajectory.points)} pts, {result.trajectory.duration:.1f}s",
+        "info",
+    )
+    return {
+        "ok": True,
+        "action": "TASK_READY",
+        "points": len(result.trajectory.points),
+        "duration_s": round(result.trajectory.duration, 1),
+    }
 
 
 class WaveRequest(BaseModel):
@@ -920,7 +1067,9 @@ async def task_wave(req: WaveRequest = WaveRequest()):
     """Plan and execute a wave gesture."""
     global _active_task
     if not _HAS_PLANNING:
-        return JSONResponse({"ok": False, "error": "planning module not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "planning module not available"}, status_code=501
+        )
     if not (smoother and smoother.arm_enabled):
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
 
@@ -931,9 +1080,20 @@ async def task_wave(req: WaveRequest = WaveRequest()):
 
     if _active_task and not _active_task.done():
         _active_task.cancel()
-    _active_task = asyncio.create_task(_execute_trajectory(result.trajectory, f"Wave ({req.waves}x)"))
-    action_log.add("TASK", f"Wave planned: {len(result.trajectory.points)} pts, {result.trajectory.duration:.1f}s", "info")
-    return {"ok": True, "action": "TASK_WAVE", "points": len(result.trajectory.points), "duration_s": round(result.trajectory.duration, 1)}
+    _active_task = asyncio.create_task(
+        _execute_trajectory(result.trajectory, f"Wave ({req.waves}x)")
+    )
+    action_log.add(
+        "TASK",
+        f"Wave planned: {len(result.trajectory.points)} pts, {result.trajectory.duration:.1f}s",
+        "info",
+    )
+    return {
+        "ok": True,
+        "action": "TASK_WAVE",
+        "points": len(result.trajectory.points),
+        "duration_s": round(result.trajectory.duration, 1),
+    }
 
 
 @app.post("/api/task/stop")
@@ -970,9 +1130,11 @@ def armState_gripper() -> float:
 # Telemetry viewer page route
 # ---------------------------------------------------------------------------
 
+
 @app.get("/telemetry")
 async def telemetry_page():
     from fastapi.responses import FileResponse
+
     return FileResponse(Path(__file__).parent / "static" / "telemetry.html")
 
 
@@ -989,5 +1151,7 @@ app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    logger.info("Starting th3cl4w web panel on %s:%d (simulate=%s)", args.host, args.port, args.simulate)
+    logger.info(
+        "Starting th3cl4w web panel on %s:%d (simulate=%s)", args.host, args.port, args.simulate
+    )
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

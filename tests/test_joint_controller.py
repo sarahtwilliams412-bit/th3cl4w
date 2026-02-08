@@ -31,6 +31,7 @@ def controller(mock_connection):
 
 # --- PIDGains ---
 
+
 class TestPIDGains:
     def test_defaults(self):
         g = PIDGains()
@@ -52,6 +53,7 @@ class TestPIDGains:
 
 
 # --- cubic_interpolation ---
+
 
 class TestCubicInterpolation:
     def test_boundary_start(self):
@@ -89,6 +91,7 @@ class TestCubicInterpolation:
 
 
 # --- JointController ---
+
 
 class TestJointController:
     def test_get_state(self, controller, mock_connection):
@@ -147,6 +150,7 @@ class TestJointController:
     def test_move_to_position(self, mock_time, mock_connection):
         # Simulate time progressing past duration immediately
         call_count = [0]
+
         def monotonic_side_effect():
             call_count[0] += 1
             if call_count[0] <= 1:
@@ -177,6 +181,7 @@ class TestJointController:
     @patch("src.control.joint_controller.time")
     def test_go_home(self, mock_time, mock_connection):
         call_count = [0]
+
         def monotonic_side_effect():
             call_count[0] += 1
             if call_count[0] <= 1:

@@ -17,8 +17,13 @@ from typing import Optional
 import numpy as np
 
 from src.planning.motion_planner import (
-    MotionPlanner, Waypoint, Trajectory, TrajectoryPoint, NUM_ARM_JOINTS,
-    GRIPPER_MIN_MM, GRIPPER_MAX_MM,
+    MotionPlanner,
+    Waypoint,
+    Trajectory,
+    TrajectoryPoint,
+    NUM_ARM_JOINTS,
+    GRIPPER_MIN_MM,
+    GRIPPER_MAX_MM,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +38,7 @@ class TaskStatus(Enum):
 @dataclass
 class TaskResult:
     """Result of a task plan."""
+
     status: TaskStatus
     trajectory: Trajectory
     message: str = ""
@@ -63,13 +69,15 @@ class TaskPlanner:
             for j, pt in enumerate(traj.points):
                 if idx > 0 and j == 0:
                     continue  # skip duplicate junction point
-                combined.points.append(TrajectoryPoint(
-                    time=pt.time + time_offset,
-                    positions=pt.positions.copy(),
-                    velocities=pt.velocities.copy(),
-                    accelerations=pt.accelerations.copy(),
-                    gripper_mm=pt.gripper_mm,
-                ))
+                combined.points.append(
+                    TrajectoryPoint(
+                        time=pt.time + time_offset,
+                        positions=pt.positions.copy(),
+                        velocities=pt.velocities.copy(),
+                        accelerations=pt.accelerations.copy(),
+                        gripper_mm=pt.gripper_mm,
+                    )
+                )
             time_offset += traj.duration
 
         return combined
@@ -83,7 +91,11 @@ class TaskPlanner:
         gripper_end: float = 0.0,
     ) -> Trajectory:
         return self.planner.linear_joint_trajectory(
-            start, end, speed, gripper_start, gripper_end,
+            start,
+            end,
+            speed,
+            gripper_start,
+            gripper_end,
         )
 
     def _gripper_segment(
@@ -95,8 +107,11 @@ class TaskPlanner:
     ) -> Trajectory:
         """Hold position while changing gripper."""
         return self.planner.linear_joint_trajectory(
-            pose, pose, duration_factor,
-            gripper_start, gripper_end,
+            pose,
+            pose,
+            duration_factor,
+            gripper_start,
+            gripper_end,
         )
 
     # ------------------------------------------------------------------
@@ -136,27 +151,37 @@ class TaskPlanner:
         try:
             segments = [
                 # 1. Open gripper & go to pick approach
-                self._move_segment(current_pose, pick_approach, speed_factor,
-                                   gripper_close_mm, gripper_open_mm),
+                self._move_segment(
+                    current_pose, pick_approach, speed_factor, gripper_close_mm, gripper_open_mm
+                ),
                 # 2. Descend to pick
-                self._move_segment(pick_approach, pick_pose, speed_factor * 0.5,
-                                   gripper_open_mm, gripper_open_mm),
+                self._move_segment(
+                    pick_approach, pick_pose, speed_factor * 0.5, gripper_open_mm, gripper_open_mm
+                ),
                 # 3. Close gripper (grasp)
                 self._gripper_segment(pick_pose, gripper_open_mm, gripper_close_mm),
                 # 4. Retreat up
-                self._move_segment(pick_pose, pick_approach, speed_factor * 0.5,
-                                   gripper_close_mm, gripper_close_mm),
+                self._move_segment(
+                    pick_pose, pick_approach, speed_factor * 0.5, gripper_close_mm, gripper_close_mm
+                ),
                 # 5. Move to place approach
-                self._move_segment(pick_approach, place_approach, speed_factor,
-                                   gripper_close_mm, gripper_close_mm),
+                self._move_segment(
+                    pick_approach, place_approach, speed_factor, gripper_close_mm, gripper_close_mm
+                ),
                 # 6. Descend to place
-                self._move_segment(place_approach, place_pose, speed_factor * 0.5,
-                                   gripper_close_mm, gripper_close_mm),
+                self._move_segment(
+                    place_approach,
+                    place_pose,
+                    speed_factor * 0.5,
+                    gripper_close_mm,
+                    gripper_close_mm,
+                ),
                 # 7. Open gripper (release)
                 self._gripper_segment(place_pose, gripper_close_mm, gripper_open_mm),
                 # 8. Retreat
-                self._move_segment(place_pose, final, speed_factor,
-                                   gripper_open_mm, gripper_open_mm),
+                self._move_segment(
+                    place_pose, final, speed_factor, gripper_open_mm, gripper_open_mm
+                ),
             ]
 
             combined = self._concat_trajectories(segments, label="pick_and_place")
@@ -203,14 +228,18 @@ class TaskPlanner:
             tilted = self.planner.clamp_joint_angles(tilted)
 
             segments = [
-                self._move_segment(current_pose, pour_position, speed_factor,
-                                   gripper_mm, gripper_mm),
-                self._move_segment(pour_position, tilted, speed_factor * 0.3,
-                                   gripper_mm, gripper_mm),
-                self._move_segment(tilted, pour_position, speed_factor * 0.3,
-                                   gripper_mm, gripper_mm),
-                self._move_segment(pour_position, current_pose, speed_factor,
-                                   gripper_mm, gripper_mm),
+                self._move_segment(
+                    current_pose, pour_position, speed_factor, gripper_mm, gripper_mm
+                ),
+                self._move_segment(
+                    pour_position, tilted, speed_factor * 0.3, gripper_mm, gripper_mm
+                ),
+                self._move_segment(
+                    tilted, pour_position, speed_factor * 0.3, gripper_mm, gripper_mm
+                ),
+                self._move_segment(
+                    pour_position, current_pose, speed_factor, gripper_mm, gripper_mm
+                ),
             ]
 
             combined = self._concat_trajectories(segments, label="pour")
@@ -294,8 +323,11 @@ class TaskPlanner:
         """Plan a safe return to home position."""
         try:
             traj = self.planner.linear_joint_trajectory(
-                current_pose, HOME_POSE, speed_factor,
-                gripper_mm, 0.0,
+                current_pose,
+                HOME_POSE,
+                speed_factor,
+                gripper_mm,
+                0.0,
             )
             return TaskResult(
                 status=TaskStatus.SUCCESS,
@@ -322,8 +354,11 @@ class TaskPlanner:
         """Plan move to ready/neutral position."""
         try:
             traj = self.planner.linear_joint_trajectory(
-                current_pose, READY_POSE, speed_factor,
-                gripper_mm, gripper_mm,
+                current_pose,
+                READY_POSE,
+                speed_factor,
+                gripper_mm,
+                gripper_mm,
             )
             return TaskResult(
                 status=TaskStatus.SUCCESS,

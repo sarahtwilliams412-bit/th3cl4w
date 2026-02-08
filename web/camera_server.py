@@ -22,12 +22,14 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 try:
     from src.telemetry.camera_monitor import CameraHealthMonitor
+
     _HAS_MONITOR = True
 except ImportError:
     _HAS_MONITOR = False
 
 try:
     from src.telemetry import get_collector
+
     _HAS_TELEMETRY = True
 except ImportError:
     _HAS_TELEMETRY = False
@@ -38,6 +40,7 @@ logger = logging.getLogger("th3cl4w.camera")
 # ---------------------------------------------------------------------------
 # Camera capture thread
 # ---------------------------------------------------------------------------
+
 
 class CameraThread:
     """Captures frames from a camera in a background thread."""
@@ -54,7 +57,7 @@ class CameraThread:
         self._thread: Optional[threading.Thread] = None
         self._no_signal_frame = self._make_no_signal_frame()
         self._frame_count = 0
-        self._health: Optional['CameraHealthMonitor'] = None
+        self._health: Optional["CameraHealthMonitor"] = None
         if _HAS_MONITOR:
             self._health = CameraHealthMonitor(camera_id=str(device_id), target_fps=float(fps))
 
@@ -73,7 +76,7 @@ class CameraThread:
         # Device info
         info = f"dev {self.device_id}"
         cv2.putText(img, info, (cx + 20, cy + 35), font, 0.5, (60, 60, 100), 1, cv2.LINE_AA)
-        _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
         return buf.tobytes()
 
     def start(self):
@@ -102,10 +105,19 @@ class CameraThread:
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     self._connected = True
                     reconnect_delay = 1.0
-                    logger.info("Camera /dev/video%d opened (%dx%d @ %dfps)",
-                                self.device_id, self.width, self.height, self.fps)
+                    logger.info(
+                        "Camera /dev/video%d opened (%dx%d @ %dfps)",
+                        self.device_id,
+                        self.width,
+                        self.height,
+                        self.fps,
+                    )
                 else:
-                    logger.warning("Failed to open /dev/video%d, retrying in %.0fs", self.device_id, reconnect_delay)
+                    logger.warning(
+                        "Failed to open /dev/video%d, retrying in %.0fs",
+                        self.device_id,
+                        reconnect_delay,
+                    )
                     with self._lock:
                         self._frame = self._no_signal_frame
                     time.sleep(reconnect_delay)
@@ -124,7 +136,7 @@ class CameraThread:
                     self._frame = self._no_signal_frame
                 continue
 
-            _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             with self._lock:
                 self._frame = buf.tobytes()
 
@@ -164,6 +176,7 @@ class CameraThread:
 
 cameras: dict[int, CameraThread] = {}
 
+
 class CameraHandler(BaseHTTPRequestHandler):
     """Serves MJPEG streams and JPEG snapshots."""
 
@@ -172,17 +185,17 @@ class CameraHandler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path.startswith('/cam/'):
+        if self.path.startswith("/cam/"):
             self._handle_mjpeg()
-        elif self.path.startswith('/snap/'):
+        elif self.path.startswith("/snap/"):
             self._handle_snapshot()
-        elif self.path == '/status':
+        elif self.path == "/status":
             self._handle_status()
         else:
             self.send_error(404)
 
     def _get_cam_index(self) -> Optional[int]:
-        parts = self.path.strip('/').split('/')
+        parts = self.path.strip("/").split("/")
         if len(parts) >= 2:
             try:
                 idx = int(parts[1])
@@ -199,21 +212,21 @@ class CameraHandler(BaseHTTPRequestHandler):
             return
 
         self.send_response(200)
-        self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
-        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
         cam = cameras[idx]
         try:
             while True:
                 frame = cam.get_frame()
-                self.wfile.write(b'--frame\r\n')
-                self.wfile.write(b'Content-Type: image/jpeg\r\n')
-                self.wfile.write(f'Content-Length: {len(frame)}\r\n'.encode())
-                self.wfile.write(b'\r\n')
+                self.wfile.write(b"--frame\r\n")
+                self.wfile.write(b"Content-Type: image/jpeg\r\n")
+                self.wfile.write(f"Content-Length: {len(frame)}\r\n".encode())
+                self.wfile.write(b"\r\n")
                 self.wfile.write(frame)
-                self.wfile.write(b'\r\n')
+                self.wfile.write(b"\r\n")
                 time.sleep(1.0 / cam.fps)
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -226,15 +239,16 @@ class CameraHandler(BaseHTTPRequestHandler):
 
         frame = cameras[idx].get_frame()
         self.send_response(200)
-        self.send_header('Content-Type', 'image/jpeg')
-        self.send_header('Content-Length', str(len(frame)))
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Cache-Control', 'no-cache')
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(frame)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(frame)
 
     def _handle_status(self):
         import json
+
         status = {}
         for idx, cam in cameras.items():
             cam_status = {
@@ -249,19 +263,22 @@ class CameraHandler(BaseHTTPRequestHandler):
             status[str(idx)] = cam_status
         body = json.dumps(status).encode()
         self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(body)))
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
 
 class ThreadedHTTPServer(HTTPServer):
     """Handle each request in a new thread."""
+
     daemon_threads = True
 
     def process_request(self, request, client_address):
-        t = threading.Thread(target=self.process_request_thread, args=(request, client_address), daemon=True)
+        t = threading.Thread(
+            target=self.process_request_thread, args=(request, client_address), daemon=True
+        )
         t.start()
 
     def process_request_thread(self, request, client_address):
@@ -277,10 +294,15 @@ class ThreadedHTTPServer(HTTPServer):
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="th3cl4w Camera Streaming Server")
-    parser.add_argument("--cam0", type=int, default=0, help="Device index for camera 0 (default: 0)")
-    parser.add_argument("--cam1", type=int, default=4, help="Device index for camera 1 (default: 4)")
+    parser.add_argument(
+        "--cam0", type=int, default=0, help="Device index for camera 0 (default: 0)"
+    )
+    parser.add_argument(
+        "--cam1", type=int, default=4, help="Device index for camera 1 (default: 4)"
+    )
     parser.add_argument("--port", type=int, default=8081, help="HTTP port (default: 8081)")
     parser.add_argument("--width", type=int, default=640, help="Capture width (default: 640)")
     parser.add_argument("--height", type=int, default=480, help="Capture height (default: 480)")
@@ -297,7 +319,7 @@ def main():
     logger.info("Cameras started: cam0=/dev/video%d, cam1=/dev/video%d", args.cam0, args.cam1)
 
     # Start HTTP server
-    server = ThreadedHTTPServer(('0.0.0.0', args.port), CameraHandler)
+    server = ThreadedHTTPServer(("0.0.0.0", args.port), CameraHandler)
     logger.info("Camera server listening on http://0.0.0.0:%d", args.port)
     logger.info("  MJPEG streams: /cam/0, /cam/1")
     logger.info("  Snapshots:     /snap/0, /snap/1")
