@@ -9,7 +9,6 @@ import pytest
 from src.telemetry.collector import EventType, TelemetryCollector, TelemetryEvent
 from src.telemetry.camera_monitor import CameraHealthMonitor
 
-
 # ── TelemetryCollector ──────────────────────────────────────────────
 
 

@@ -15,16 +15,22 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.planning.motion_planner import (
-    MotionPlanner, Waypoint, Trajectory, TrajectoryPoint,
-    NUM_ARM_JOINTS, JOINT_LIMITS_DEG, GRIPPER_MIN_MM, GRIPPER_MAX_MM,
+    MotionPlanner,
+    Waypoint,
+    Trajectory,
+    TrajectoryPoint,
+    NUM_ARM_JOINTS,
+    JOINT_LIMITS_DEG,
+    GRIPPER_MIN_MM,
+    GRIPPER_MAX_MM,
 )
 from src.planning.task_planner import TaskPlanner, TaskResult, TaskStatus, HOME_POSE, READY_POSE
 from src.planning.path_optimizer import PathOptimizer
 
-
 # ======================================================================
 # Fixtures
 # ======================================================================
+
 
 @pytest.fixture
 def planner():
@@ -60,6 +66,7 @@ def pose_b():
 # Waypoint Tests
 # ======================================================================
 
+
 class TestWaypoint:
     def test_creation(self):
         wp = Waypoint(np.zeros(6))
@@ -93,6 +100,7 @@ class TestWaypoint:
 # Trajectory Tests
 # ======================================================================
 
+
 class TestTrajectory:
     def test_empty(self):
         t = Trajectory()
@@ -106,20 +114,14 @@ class TestTrajectory:
         assert t.num_points == 1
 
     def test_positions_array(self):
-        pts = [
-            TrajectoryPoint(0.0, np.ones(6) * i, np.zeros(6), np.zeros(6))
-            for i in range(5)
-        ]
+        pts = [TrajectoryPoint(0.0, np.ones(6) * i, np.zeros(6), np.zeros(6)) for i in range(5)]
         t = Trajectory(points=pts)
         arr = t.positions_array()
         assert arr.shape == (5, 6)
         np.testing.assert_allclose(arr[3], np.ones(6) * 3)
 
     def test_times_array(self):
-        pts = [
-            TrajectoryPoint(i * 0.1, np.zeros(6), np.zeros(6), np.zeros(6))
-            for i in range(10)
-        ]
+        pts = [TrajectoryPoint(i * 0.1, np.zeros(6), np.zeros(6), np.zeros(6)) for i in range(10)]
         t = Trajectory(points=pts)
         times = t.times_array()
         assert len(times) == 10
@@ -129,6 +131,7 @@ class TestTrajectory:
 # ======================================================================
 # MotionPlanner Tests
 # ======================================================================
+
 
 class TestMotionPlanner:
     def test_validate_joint_angles_valid(self, planner, home):
@@ -224,7 +227,10 @@ class TestMotionPlanner:
         target = np.eye(4)
         target[:3, 3] = [0.2, 0.0, 0.3]
         traj = planner.cartesian_linear_path(
-            home, target, n_cartesian_steps=5, speed_factor=0.5,
+            home,
+            target,
+            n_cartesian_steps=5,
+            speed_factor=0.5,
         )
         assert traj.num_points >= 2
         assert traj.duration > 0
@@ -234,20 +240,25 @@ class TestMotionPlanner:
 # TaskPlanner Tests
 # ======================================================================
 
+
 class TestTaskPlanner:
     def test_go_home(self, task_planner, pose_a):
         result = task_planner.go_home(pose_a)
         assert result.status == TaskStatus.SUCCESS
         assert result.trajectory.num_points >= 2
         np.testing.assert_allclose(
-            result.trajectory.points[-1].positions, HOME_POSE, atol=1e-6,
+            result.trajectory.points[-1].positions,
+            HOME_POSE,
+            atol=1e-6,
         )
 
     def test_go_ready(self, task_planner, home):
         result = task_planner.go_ready(home)
         assert result.status == TaskStatus.SUCCESS
         np.testing.assert_allclose(
-            result.trajectory.points[-1].positions, READY_POSE, atol=1e-6,
+            result.trajectory.points[-1].positions,
+            READY_POSE,
+            atol=1e-6,
         )
 
     def test_pick_and_place(self, task_planner, home):
@@ -298,15 +309,20 @@ class TestTaskPlanner:
 # PathOptimizer Tests
 # ======================================================================
 
+
 class TestPathOptimizer:
     def test_smooth_preserves_endpoints(self, optimizer, planner, home, pose_a):
         traj = planner.linear_joint_trajectory(home, pose_a)
         smoothed = optimizer.smooth(traj)
         np.testing.assert_allclose(
-            smoothed.points[0].positions, home, atol=1.0,
+            smoothed.points[0].positions,
+            home,
+            atol=1.0,
         )
         np.testing.assert_allclose(
-            smoothed.points[-1].positions, pose_a, atol=1.0,
+            smoothed.points[-1].positions,
+            pose_a,
+            atol=1.0,
         )
 
     def test_smooth_short_trajectory(self, optimizer):
@@ -340,10 +356,14 @@ class TestPathOptimizer:
         traj = planner.linear_joint_trajectory(home, pose_a)
         optimized = optimizer.time_optimal_parameterize(traj)
         np.testing.assert_allclose(
-            optimized.points[0].positions, home, atol=1e-6,
+            optimized.points[0].positions,
+            home,
+            atol=1e-6,
         )
         np.testing.assert_allclose(
-            optimized.points[-1].positions, pose_a, atol=1e-6,
+            optimized.points[-1].positions,
+            pose_a,
+            atol=1e-6,
         )
 
     def test_time_optimal_single_point(self, optimizer):
@@ -364,12 +384,15 @@ class TestPathOptimizer:
         optimized = optimizer.time_optimal_parameterize(traj)
         for pt in optimized.points:
             for j in range(NUM_ARM_JOINTS):
-                assert abs(pt.velocities[j]) <= optimizer.max_joint_speed[j] + 5.0  # small tolerance
+                assert (
+                    abs(pt.velocities[j]) <= optimizer.max_joint_speed[j] + 5.0
+                )  # small tolerance
 
 
 # ======================================================================
 # Integration Tests
 # ======================================================================
+
 
 class TestIntegration:
     def test_full_pick_and_place_optimized(self):

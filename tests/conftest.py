@@ -12,11 +12,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Mock optional C-library dependencies so test collection never fails.
 # Individual tests that need the real library should use the skip markers below.
 # ---------------------------------------------------------------------------
+
 
 def _install_mock_module(name: str) -> types.ModuleType:
     """Create and register a MagicMock as a module if the real one isn't installed."""
@@ -53,6 +53,7 @@ def _ensure_cyclonedds_mocks():
 
             The real IdlStruct accepts typename= in __init_subclass__.
             """
+
             def __init_subclass__(cls, **kwargs):
                 super().__init_subclass__()
 
@@ -84,6 +85,7 @@ requires_cv2 = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def tmp_telemetry_db(tmp_path):

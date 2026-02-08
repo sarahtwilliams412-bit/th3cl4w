@@ -26,6 +26,7 @@ from .d1_connection import D1State, NUM_JOINTS
 
 try:
     from src.telemetry import get_collector, EventType
+
     _HAS_TELEMETRY = True
 except ImportError:
     _HAS_TELEMETRY = False
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 # IDL type — must match the Unitree DDS schema exactly
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ArmString_(IdlStruct, typename="unitree_arm.msg.dds_.ArmString_"):
     data_: str = ""
@@ -45,6 +47,7 @@ class ArmString_(IdlStruct, typename="unitree_arm.msg.dds_.ArmString_"):
 # ---------------------------------------------------------------------------
 # Feedback cache
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class _FeedbackCache:
@@ -60,6 +63,7 @@ class _FeedbackCache:
 # ---------------------------------------------------------------------------
 # Main class
 # ---------------------------------------------------------------------------
+
 
 class D1DDSConnection:
     """
@@ -200,7 +204,12 @@ class D1DDSConnection:
             logger.error("Cannot send command — not connected")
             tc = self._get_collector()
             if tc is not None and tc.enabled:
-                tc.emit("dds", EventType.ERROR, {"error": "not_connected", "cmd": str(cmd)}, correlation_id)
+                tc.emit(
+                    "dds",
+                    EventType.ERROR,
+                    {"error": "not_connected", "cmd": str(cmd)},
+                    correlation_id,
+                )
             return False
 
         if "seq" not in cmd:
@@ -214,16 +223,25 @@ class D1DDSConnection:
             if tc is not None and tc.enabled:
                 data = cmd.get("data", {}) or {}
                 tc.log_dds_command(
-                    seq=cmd.get("seq", 0), funcode=cmd.get("funcode", 0),
-                    joint_id=data.get("id"), target_value=data.get("angle"),
-                    data=data, correlation_id=correlation_id, raw_len=len(payload),
+                    seq=cmd.get("seq", 0),
+                    funcode=cmd.get("funcode", 0),
+                    joint_id=data.get("id"),
+                    target_value=data.get("angle"),
+                    data=data,
+                    correlation_id=correlation_id,
+                    raw_len=len(payload),
                 )
             return True
         except Exception:
             logger.exception("Failed to publish command")
             tc = self._get_collector()
             if tc is not None and tc.enabled:
-                tc.emit("dds", EventType.ERROR, {"error": "publish_failed", "seq": cmd.get("seq")}, correlation_id)
+                tc.emit(
+                    "dds",
+                    EventType.ERROR,
+                    {"error": "publish_failed", "seq": cmd.get("seq")},
+                    correlation_id,
+                )
             return False
 
     # ------------------------------------------------------------------
@@ -265,7 +283,13 @@ class D1DDSConnection:
             cmd["_correlation_id"] = _correlation_id
         return self.send_command(cmd)
 
-    def set_joint(self, joint_id: int, angle_deg: float, delay_ms: int = 0, _correlation_id: Optional[str] = None) -> bool:
+    def set_joint(
+        self,
+        joint_id: int,
+        angle_deg: float,
+        delay_ms: int = 0,
+        _correlation_id: Optional[str] = None,
+    ) -> bool:
         """Move a single joint to the given angle (degrees).
 
         Args:
@@ -275,12 +299,18 @@ class D1DDSConnection:
         """
         if not 0 <= joint_id <= 6:
             raise ValueError(f"joint_id must be 0–6, got {joint_id}")
-        cmd: Dict[str, Any] = {"address": 1, "funcode": 1, "data": {"id": joint_id, "angle": angle_deg, "delay_ms": delay_ms}}
+        cmd: Dict[str, Any] = {
+            "address": 1,
+            "funcode": 1,
+            "data": {"id": joint_id, "angle": angle_deg, "delay_ms": delay_ms},
+        }
         if _correlation_id:
             cmd["_correlation_id"] = _correlation_id
         return self.send_command(cmd)
 
-    def set_all_joints(self, angles_deg: List[float], mode: int = 0, _correlation_id: Optional[str] = None) -> bool:
+    def set_all_joints(
+        self, angles_deg: List[float], mode: int = 0, _correlation_id: Optional[str] = None
+    ) -> bool:
         """Move all joints to the given angles (degrees).
 
         Args:
@@ -392,10 +422,14 @@ class D1DDSConnection:
                     last = self._cache.last_update
                 if last > 0 and (now - last) > 2.0:
                     if (now - self._last_stale_warn) > 5.0:
-                        tc.emit("dds", EventType.ERROR, {
-                            "error": "stale_connection",
-                            "seconds_since_last": round(now - last, 2),
-                        })
+                        tc.emit(
+                            "dds",
+                            EventType.ERROR,
+                            {
+                                "error": "stale_connection",
+                                "seconds_since_last": round(now - last, 2),
+                            },
+                        )
                         self._last_stale_warn = now
 
             self._stop_event.wait(self._POLL_INTERVAL)
@@ -416,7 +450,8 @@ class D1DDSConnection:
         tc = self._get_collector()
         if tc is not None and tc.enabled:
             tc.log_dds_feedback(
-                seq=seq, funcode=funcode,
+                seq=seq,
+                funcode=funcode,
                 angles=data if funcode == 1 and isinstance(data, dict) else None,
                 status=data if funcode == 3 and isinstance(data, dict) else None,
             )
@@ -444,14 +479,23 @@ class D1DDSConnection:
                 if tc is not None and isinstance(data, dict):
                     if tc.enabled:
                         if "recv_status" in data:
-                            tc.emit("dds", EventType.CMD_ACK, {"seq": seq, "recv_status": data["recv_status"]})
+                            tc.emit(
+                                "dds",
+                                EventType.CMD_ACK,
+                                {"seq": seq, "recv_status": data["recv_status"]},
+                            )
                         if "exec_status" in data:
-                            tc.emit("dds", EventType.CMD_EXEC, {"seq": seq, "exec_status": data["exec_status"]})
+                            tc.emit(
+                                "dds",
+                                EventType.CMD_EXEC,
+                                {"seq": seq, "exec_status": data["exec_status"]},
+                            )
 
 
 # ---------------------------------------------------------------------------
 # Convenience
 # ---------------------------------------------------------------------------
+
 
 def connect_d1_dds(interface_name: str = "eno1") -> D1DDSConnection:
     """Connect to the D1 arm via DDS on the given network interface."""

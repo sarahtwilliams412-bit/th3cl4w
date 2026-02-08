@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PIDGains:
     """PID gains per joint (arrays of 7)."""
+
     kp: np.ndarray = field(default_factory=lambda: np.full(NUM_JOINTS, 100.0))
     ki: np.ndarray = field(default_factory=lambda: np.full(NUM_JOINTS, 0.0))
     kd: np.ndarray = field(default_factory=lambda: np.full(NUM_JOINTS, 10.0))

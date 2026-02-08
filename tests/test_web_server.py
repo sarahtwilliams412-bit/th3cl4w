@@ -38,6 +38,7 @@ def reset_server(tmp_path):
 
     from web.server import SimulatedArm, action_log, CommandSmoother
     import web.server as srv
+
     srv.arm = SimulatedArm()
     srv.smoother = CommandSmoother(srv.arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=15.0)
     srv.smoother.sync_from_feedback([0.0] * 6, 0.0)
@@ -48,6 +49,7 @@ def reset_server(tmp_path):
     # Initialize task planner if available
     if srv._HAS_PLANNING:
         from src.planning.task_planner import TaskPlanner
+
         srv.task_planner = TaskPlanner()
 
     yield
@@ -60,6 +62,7 @@ def reset_server(tmp_path):
 def enabled_client():
     """Client with arm powered on and enabled."""
     from web.server import app
+
     with TestClient(app) as c:
         c.post("/api/command/power-on")
         c.post("/api/command/enable")
@@ -69,11 +72,13 @@ def enabled_client():
 @pytest.fixture
 def client():
     from web.server import app
+
     with TestClient(app) as c:
         yield c
 
 
 # --- State endpoint ---
+
 
 class TestState:
     def test_get_state(self, client):
@@ -97,6 +102,7 @@ class TestState:
 
 
 # --- Power endpoints ---
+
 
 class TestPower:
     def test_power_on(self, client):
@@ -130,6 +136,7 @@ class TestPower:
 
 # --- Enable/Disable ---
 
+
 class TestEnableDisable:
     def test_enable_without_power_fails(self, client):
         r = client.post("/api/command/enable")
@@ -160,6 +167,7 @@ class TestEnableDisable:
 
 # --- Emergency Stop ---
 
+
 class TestEmergencyStop:
     def test_estop_disables_and_powers_off(self, client):
         client.post("/api/command/power-on")
@@ -174,6 +182,7 @@ class TestEmergencyStop:
 
 # --- Set Joint ---
 
+
 class TestSetJoint:
     def test_set_joint_valid(self, enabled_client):
         r = enabled_client.post("/api/command/set-joint", json={"id": 0, "angle": 45.0})
@@ -186,7 +195,9 @@ class TestSetJoint:
         assert r.json()["ok"] is False
 
     def test_set_joint_all_joints(self, enabled_client):
-        for i, (lo, hi) in enumerate([(-135,135), (-90,90), (-90,90), (-135,135), (-90,90), (-135,135)]):
+        for i, (lo, hi) in enumerate(
+            [(-135, 135), (-90, 90), (-90, 90), (-135, 135), (-90, 90), (-135, 135)]
+        ):
             r = enabled_client.post("/api/command/set-joint", json={"id": i, "angle": hi / 2})
             assert r.json()["ok"] is True
 
@@ -221,6 +232,7 @@ class TestSetJoint:
 
 # --- Set All Joints ---
 
+
 class TestSetAllJoints:
     def test_set_all_joints(self, enabled_client):
         angles = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
@@ -251,6 +263,7 @@ class TestSetAllJoints:
 
 
 # --- Set Gripper ---
+
 
 class TestSetGripper:
     def test_set_gripper_valid(self, enabled_client):
@@ -284,6 +297,7 @@ class TestSetGripper:
 
 # --- Reset ---
 
+
 class TestReset:
     def test_reset(self, client):
         client.post("/api/command/set-joint", json={"id": 0, "angle": 45.0})
@@ -292,6 +306,7 @@ class TestReset:
 
 
 # --- Log endpoint ---
+
 
 class TestLog:
     def test_log_returns_entries(self, client):
@@ -313,6 +328,7 @@ class TestLog:
 
     def test_every_command_generates_log(self, client):
         from web.server import action_log
+
         action_log._entries.clear()
 
         client.post("/api/command/power-on")
@@ -333,6 +349,7 @@ class TestLog:
 
 
 # --- Command ordering enforcement ---
+
 
 class TestOrdering:
     def test_full_sequence(self, client):
@@ -359,6 +376,7 @@ class TestOrdering:
 
 # --- WebSocket ---
 
+
 class TestWebSocket:
     def test_ws_receives_state(self, client):
         with client.websocket_connect("/ws/state") as ws:
@@ -384,6 +402,7 @@ class TestWebSocket:
 
 # --- Response format ---
 
+
 class TestResponseFormat:
     def test_command_response_has_state(self, client):
         """Every command response must include state."""
@@ -403,6 +422,7 @@ class TestResponseFormat:
 
 
 # --- Telemetry query endpoints ---
+
 
 class TestTelemetryQuery:
     def test_query_summary(self, client):
@@ -460,6 +480,7 @@ class TestTelemetryQuery:
 
 
 # --- Task / planning endpoints ---
+
 
 class TestTasks:
     def test_task_home_requires_enable(self, client):

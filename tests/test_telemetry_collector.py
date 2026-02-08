@@ -8,6 +8,7 @@ import time
 import unittest
 
 import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from telemetry.collector import TelemetryCollector, EventType, TelemetryEvent
@@ -26,18 +27,31 @@ class TestTelemetryCollectorSchema(unittest.TestCase):
 
     def test_tables_exist(self):
         conn = sqlite3.connect(self.db_path)
-        tables = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        ).fetchall()}
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        }
         conn.close()
-        expected = {"dds_commands", "dds_feedback", "smoother_state", "web_requests", "camera_health", "system_events"}
+        expected = {
+            "dds_commands",
+            "dds_feedback",
+            "smoother_state",
+            "web_requests",
+            "camera_health",
+            "system_events",
+        }
         self.assertEqual(expected, tables)
 
     def test_indexes_exist(self):
         conn = sqlite3.connect(self.db_path)
-        indexes = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
-        ).fetchall()}
+        indexes = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
+            ).fetchall()
+        }
         conn.close()
         self.assertIn("idx_dds_commands_ts", indexes)
         self.assertIn("idx_dds_feedback_ts", indexes)
@@ -81,7 +95,15 @@ class TestLogMethods(unittest.TestCase):
         return n
 
     def test_log_dds_command(self):
-        self.tc.log_dds_command(seq=1, funcode=1, joint_id=0, target_value=45.0, data={"test": 1}, correlation_id="abc", raw_len=32)
+        self.tc.log_dds_command(
+            seq=1,
+            funcode=1,
+            joint_id=0,
+            target_value=45.0,
+            data={"test": 1},
+            correlation_id="abc",
+            raw_len=32,
+        )
         self._wait_flush()
         self.assertEqual(self._count("dds_commands"), 1)
         conn = sqlite3.connect(self.db_path)
@@ -105,15 +127,31 @@ class TestLogMethods(unittest.TestCase):
         self.assertAlmostEqual(row["angle1"], 20.0)
 
     def test_log_smoother_state(self):
-        self.tc.log_smoother_state([
-            {"joint_id": 0, "target": 10.0, "current": 8.0, "sent": 9.0, "step_size": 1.0, "dirty": 1},
-            {"joint_id": 1, "target": 20.0, "current": 18.0, "sent": 19.0},
-        ])
+        self.tc.log_smoother_state(
+            [
+                {
+                    "joint_id": 0,
+                    "target": 10.0,
+                    "current": 8.0,
+                    "sent": 9.0,
+                    "step_size": 1.0,
+                    "dirty": 1,
+                },
+                {"joint_id": 1, "target": 20.0, "current": 18.0, "sent": 19.0},
+            ]
+        )
         self._wait_flush()
         self.assertEqual(self._count("smoother_state"), 2)
 
     def test_log_web_request(self):
-        self.tc.log_web_request(endpoint="/api/test", method="GET", params={"a": 1}, response_ms=12.5, status_code=200, ok=True)
+        self.tc.log_web_request(
+            endpoint="/api/test",
+            method="GET",
+            params={"a": 1},
+            response_ms=12.5,
+            status_code=200,
+            ok=True,
+        )
         self._wait_flush()
         self.assertEqual(self._count("web_requests"), 1)
 
@@ -123,7 +161,9 @@ class TestLogMethods(unittest.TestCase):
         self.assertEqual(self._count("camera_health"), 1)
 
     def test_log_system_event(self):
-        self.tc.log_system_event(event_type="power_on", source="dds", detail="Arm powered on", level="info")
+        self.tc.log_system_event(
+            event_type="power_on", source="dds", detail="Arm powered on", level="info"
+        )
         self._wait_flush()
         self.assertEqual(self._count("system_events"), 1)
 
@@ -151,7 +191,11 @@ class TestEmitRouting(unittest.TestCase):
         return n
 
     def test_emit_dds_publish(self):
-        self.tc.emit("dds", EventType.DDS_PUBLISH, {"funcode": 1, "seq": 1, "joint_id": 0, "target_value": 30.0})
+        self.tc.emit(
+            "dds",
+            EventType.DDS_PUBLISH,
+            {"funcode": 1, "seq": 1, "joint_id": 0, "target_value": 30.0},
+        )
         self._wait_flush()
         self.assertEqual(self._count("dds_commands"), 1)
 
