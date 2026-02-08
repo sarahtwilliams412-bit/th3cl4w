@@ -147,9 +147,6 @@ class CollisionAnalyzer:
         cam1_bytes: Optional[bytes],
     ) -> str:
         """Send images to Gemini for collision analysis."""
-        import google.generativeai as genai
-        from google.generativeai.types import content_types
-
         prompt = (
             f"This robotic arm (Unitree D1) is stuck. "
             f"Joint {joint_id} was commanded to {commanded_deg:.1f}° but is at {actual_deg:.1f}°. "
