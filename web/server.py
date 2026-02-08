@@ -22,6 +22,11 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+# Ensure project root is in sys.path so src.* imports work regardless of CWD
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 try:
     from src.telemetry import get_collector, EventType
 
