@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>th3cl4w — Live Telemetry</title>
+<style>
+:root {
+  --bg: #111827;
+  --card: #1f2937;
+  --card-border: #374151;
+  --primary: #3b82f6;
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #eab308;
+  --info: #3b82f6;
+  --text: #e5e7eb;
+  --text-dim: #9ca3af;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--card); border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+.logo { font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 2px; color: var(--danger); }
+.logo-sub { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+.conn-dot { width: 10px; height: 10px; border-radius: 50%; background: #666; }
+.conn-dot.on { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.conn-dot.off { background: var(--danger); }
+.topbar-spacer { flex: 1; }
+.btn { font-family: var(--mono); font-size: 11px; padding: 5px 12px; border: 1px solid var(--card-border); border-radius: 4px; cursor: pointer; background: var(--card); color: var(--text); text-decoration: none; }
+.btn:hover { background: var(--primary); border-color: var(--primary); }
+.btn.active { background: var(--primary); border-color: var(--primary); }
+.btn.paused { background: #92400e; border-color: var(--warning); color: var(--warning); }
+
+.main { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr 1fr; gap: 8px; padding: 8px; flex: 1; overflow: hidden; min-height: 0; }
+
+/* Stats panel */
+.stats-panel { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+.stat-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px 14px; min-width: 120px; flex: 1; }
+.stat-label { font-family: var(--mono); font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+.stat-value { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--text); margin-top: 2px; }
+.stat-value.good { color: var(--success); }
+.stat-value.warn { color: var(--warning); }
+.stat-value.bad { color: var(--danger); }
+
+/* Charts */
+.chart-container { background: var(--card); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.chart-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; flex-shrink: 0; }
+.chart-canvas { flex: 1; width: 100%; min-height: 0; }
+
+/* Event stream */
+.event-panel { grid-column: 1 / -1; background: var(--card); border: 1px solid var(--card-border); border-radius: 6px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.event-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; flex-wrap: wrap; }
+.event-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+.filter-label { font-family: var(--mono); font-size: 9px; color: var(--text-dim); display: flex; align-items: center; gap: 3px; cursor: pointer; }
+.filter-label input { cursor: pointer; }
+.event-scroll { flex: 1; overflow-y: auto; padding: 4px 12px; font-family: var(--mono); font-size: 10px; line-height: 1.6; min-height: 0; }
+.evt { white-space: nowrap; }
+.evt .ts { color: #6b7280; margin-right: 6px; }
+.evt .src { margin-right: 6px; font-weight: 600; }
+.evt .pay { color: var(--text-dim); }
+.evt.dds_publish .src { color: #a78bfa; }
+.evt.dds_receive .src { color: #60a5fa; }
+.evt.cmd_sent .src { color: var(--success); }
+.evt.state_update .src { color: var(--warning); }
+.evt.error .src { color: var(--danger); }
+.evt.cam_frame .src { color: #818cf8; }
+.evt.cmd_ack .src { color: #34d399; }
+.evt.cmd_exec .src { color: #2dd4bf; }
+.evt.ws_send .src { color: #6b7280; }
+
+.event-count { font-family: var(--mono); font-size: 9px; color: var(--text-dim); margin-left: auto; }
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">th3cl4w</div>
+  <span class="logo-sub">TELEMETRY</span>
+  <div class="conn-dot" id="connDot"></div>
+  <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">CONNECTING</span>
+  <div class="topbar-spacer"></div>
+  <button class="btn" id="btnPause">⏸ PAUSE</button>
+  <button class="btn" id="btnClear">🗑 CLEAR</button>
+  <a href="/" class="btn">← DASHBOARD</a>
+</div>
+
+<div class="main">
+  <!-- Stats row -->
+  <div class="stats-panel">
+    <div class="stat-card"><div class="stat-label">Feedback Rate</div><div class="stat-value" id="statFeedback">—</div></div>
+    <div class="stat-card"><div class="stat-label">Command Rate</div><div class="stat-value" id="statCommand">—</div></div>
+    <div class="stat-card"><div class="stat-label">Smoother Ticks</div><div class="stat-value" id="statSmoother">—</div></div>
+    <div class="stat-card"><div class="stat-label">Camera FPS</div><div class="stat-value" id="statCamera">—</div></div>
+    <div class="stat-card"><div class="stat-label">Events/sec</div><div class="stat-value" id="statEvents">—</div></div>
+    <div class="stat-card"><div class="stat-label">Total Events</div><div class="stat-value" id="statTotal">0</div></div>
+  </div>
+
+  <!-- Joint positions chart -->
+  <div class="chart-container">
+    <div class="chart-title">Joint Positions (last 60s)</div>
+    <canvas class="chart-canvas" id="chartJoints"></canvas>
+  </div>
+
+  <!-- Command rate chart -->
+  <div class="chart-container">
+    <div class="chart-title">Command Rate & Tracking Error</div>
+    <canvas class="chart-canvas" id="chartRate"></canvas>
+  </div>
+
+  <!-- Event stream -->
+  <div class="event-panel">
+    <div class="event-header">
+      <span class="event-title">Live Event Stream</span>
+      <label class="filter-label"><input type="checkbox" data-type="dds_publish" checked> DDS TX</label>
+      <label class="filter-label"><input type="checkbox" data-type="dds_receive" checked> DDS RX</label>
+      <label class="filter-label"><input type="checkbox" data-type="cmd_sent" checked> CMD</label>
+      <label class="filter-label"><input type="checkbox" data-type="state_update" checked> STATE</label>
+      <label class="filter-label"><input type="checkbox" data-type="error" checked> ERROR</label>
+      <label class="filter-label"><input type="checkbox" data-type="cam_frame" checked> CAM</label>
+      <label class="filter-label"><input type="checkbox" data-type="cmd_ack"> ACK</label>
+      <label class="filter-label"><input type="checkbox" data-type="ws_send"> WS</label>
+      <span class="event-count" id="eventCount">0 events</span>
+    </div>
+    <div class="event-scroll" id="eventScroll"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ---- State ----
+let ws = null;
+let paused = false;
+let events = [];
+const MAX_EVENTS = 2000;
+let totalEvents = 0;
+
+// Rate tracking
+const rateBuckets = { dds_publish: [], dds_receive: [], cmd_sent: [], state_update: [], cam_frame: [], error: [] };
+const RATE_WINDOW = 10; // seconds
+
+// Joint position history: { ts: number, angles: number[] }[]
+const jointHistory = [];
+const MAX_HISTORY = 600; // 60s at 10Hz
+
+// Command rate history for chart
+const cmdRateHistory = []; // { ts, rate }
+const MAX_RATE_HISTORY = 120;
+
+// Tracking error history per joint
+const trackingErrors = []; // { ts, errors: number[] }
+const MAX_ERROR_HISTORY = 120;
+
+// Last known smoother state
+let lastSmootherState = null;
+let lastCameraHealth = null;
+
+// Filters
+const filters = {};
+document.querySelectorAll('.event-header input[data-type]').forEach(cb => {
+  filters[cb.dataset.type] = cb.checked;
+  cb.addEventListener('change', () => { filters[cb.dataset.type] = cb.checked; renderEvents(); });
+});
+
+// ---- WebSocket ----
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/telemetry`);
+  ws.onopen = () => {
+    document.getElementById('connDot').className = 'conn-dot on';
+    document.getElementById('connLabel').textContent = 'CONNECTED';
+  };
+  ws.onclose = () => {
+    document.getElementById('connDot').className = 'conn-dot off';
+    document.getElementById('connLabel').textContent = 'DISCONNECTED';
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    if (paused) return;
+    try {
+      const evt = JSON.parse(e.data);
+      processEvent(evt);
+    } catch(err) {}
+  };
+}
+
+function processEvent(evt) {
+  totalEvents++;
+  events.push(evt);
+  if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
+
+  const type = evt.event_type;
+  const now = Date.now() / 1000;
+
+  // Rate tracking
+  if (rateBuckets[type]) {
+    rateBuckets[type].push(now);
+  }
+
+  // Joint positions from feedback
+  if (type === 'dds_receive' && evt.payload && evt.payload.angles) {
+    const a = evt.payload.angles;
+    const angles = [];
+    for (let i = 0; i < 7; i++) angles.push(a['angle' + i] || 0);
+    jointHistory.push({ ts: now, angles });
+    if (jointHistory.length > MAX_HISTORY) jointHistory.shift();
+  }
+
+  // Smoother state
+  if (type === 'state_update' && evt.payload && evt.payload.joints) {
+    lastSmootherState = evt.payload.joints;
+    // Compute tracking error
+    const errors = lastSmootherState.map(j => Math.abs(j.target - j.current));
+    trackingErrors.push({ ts: now, errors });
+    if (trackingErrors.length > MAX_ERROR_HISTORY) trackingErrors.shift();
+  }
+
+  // Camera health
+  if (type === 'cam_frame' && evt.payload) {
+    lastCameraHealth = evt.payload;
+  }
+}
+
+// ---- Rates ----
+function calcRate(type) {
+  const now = Date.now() / 1000;
+  const cutoff = now - RATE_WINDOW;
+  const bucket = rateBuckets[type];
+  if (!bucket) return 0;
+  while (bucket.length && bucket[0] < cutoff) bucket.shift();
+  return bucket.length / RATE_WINDOW;
+}
+
+// ---- Rendering ----
+function renderEvents() {
+  const el = document.getElementById('eventScroll');
+  const visible = events.filter(e => filters[e.event_type] !== false);
+  const last200 = visible.slice(-200);
+
+  el.innerHTML = last200.map(e => {
+    const ts = new Date(e.wall_time_ms).toTimeString().slice(0, 12);
+    const pay = e.payload ? JSON.stringify(e.payload).slice(0, 120) : '';
+    const cid = e.correlation_id ? `[${e.correlation_id.slice(0,8)}]` : '';
+    return `<div class="evt ${e.event_type}"><span class="ts">${esc(ts)}</span><span class="src">${esc(e.event_type)}</span><span class="pay">${esc(cid)} ${esc(pay)}</span></div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+  document.getElementById('eventCount').textContent = `${totalEvents} events`;
+}
+
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ---- Stats ----
+function updateStats() {
+  const fbRate = calcRate('dds_receive');
+  const cmdRate = calcRate('dds_publish');
+  const evtRate = Object.keys(rateBuckets).reduce((s, k) => s + calcRate(k), 0);
+
+  const setVal = (id, val, thresholds) => {
+    const el = document.getElementById(id);
+    el.textContent = val;
+    if (thresholds) {
+      if (parseFloat(val) >= thresholds[0]) el.className = 'stat-value good';
+      else if (parseFloat(val) >= thresholds[1]) el.className = 'stat-value warn';
+      else el.className = 'stat-value bad';
+    }
+  };
+
+  setVal('statFeedback', fbRate.toFixed(1) + '/s', [5, 1]);
+  setVal('statCommand', cmdRate.toFixed(1) + '/s', [1, 0.1]);
+  setVal('statSmoother', lastSmootherState ? '✓ active' : '—');
+  setVal('statCamera', lastCameraHealth && lastCameraHealth.actual_fps ? lastCameraHealth.actual_fps.toFixed(1) : '—');
+  setVal('statEvents', evtRate.toFixed(1) + '/s');
+  setVal('statTotal', totalEvents.toString());
+
+  // Update rate history
+  const now = Date.now() / 1000;
+  cmdRateHistory.push({ ts: now, rate: cmdRate });
+  if (cmdRateHistory.length > MAX_RATE_HISTORY) cmdRateHistory.shift();
+}
+
+// ---- Charts ----
+function drawJointChart() {
+  const canvas = document.getElementById('chartJoints');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width - 16;
+  canvas.height = rect.height - 30;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, W, H);
+
+  if (jointHistory.length < 2) {
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '12px monospace';
+    ctx.fillText('Waiting for joint feedback...', W/2 - 100, H/2);
+    return;
+  }
+
+  const now = Date.now() / 1000;
+  const timeWindow = 60; // seconds
+  const minTs = now - timeWindow;
+  const yMin = -145, yMax = 145;
+  const pad = { l: 40, r: 10, t: 10, b: 20 };
+  const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+
+  // Grid
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 1;
+  for (let a = -135; a <= 135; a += 45) {
+    const y = pad.t + ph * (1 - (a - yMin) / (yMax - yMin));
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+    ctx.fillStyle = '#4b5563'; ctx.font = '9px monospace';
+    ctx.fillText(a + '°', 2, y + 3);
+  }
+  // Zero line
+  const zeroY = pad.t + ph * (1 - (0 - yMin) / (yMax - yMin));
+  ctx.strokeStyle = '#374151'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad.l, zeroY); ctx.lineTo(W - pad.r, zeroY); ctx.stroke();
+
+  const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
+  const names = ['J0', 'J1', 'J2', 'J3', 'J4', 'J5', 'Grip'];
+
+  for (let j = 0; j < 7; j++) {
+    ctx.strokeStyle = colors[j];
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let first = true;
+    for (const pt of jointHistory) {
+      if (pt.ts < minTs) continue;
+      const x = pad.l + pw * ((pt.ts - minTs) / timeWindow);
+      const y = pad.t + ph * (1 - (pt.angles[j] - yMin) / (yMax - yMin));
+      if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Legend
+  ctx.font = '9px monospace';
+  for (let j = 0; j < 7; j++) {
+    const x = pad.l + j * 50;
+    ctx.fillStyle = colors[j];
+    ctx.fillText('■ ' + names[j], x, H - 4);
+  }
+}
+
+function drawRateChart() {
+  const canvas = document.getElementById('chartRate');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width - 16;
+  canvas.height = rect.height - 30;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, W, H);
+
+  const halfH = H / 2;
+  const pad = { l: 40, r: 10, t: 10, b: 10 };
+
+  // Top half: command rate
+  ctx.fillStyle = '#9ca3af'; ctx.font = '9px monospace';
+  ctx.fillText('CMD rate (Hz)', pad.l, 10);
+
+  if (cmdRateHistory.length >= 2) {
+    const maxRate = Math.max(20, ...cmdRateHistory.map(r => r.rate));
+    const pw = W - pad.l - pad.r;
+    const ph = halfH - pad.t - 5;
+    ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < cmdRateHistory.length; i++) {
+      const x = pad.l + pw * (i / (cmdRateHistory.length - 1));
+      const y = pad.t + ph * (1 - cmdRateHistory[i].rate / maxRate);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Fill under
+    ctx.lineTo(pad.l + pw, pad.t + ph);
+    ctx.lineTo(pad.l, pad.t + ph);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(34,197,94,0.1)';
+    ctx.fill();
+  }
+
+  // Bottom half: tracking error
+  const errorTop = halfH + 5;
+  ctx.fillStyle = '#9ca3af';
+  ctx.fillText('Tracking error (°)', pad.l, errorTop);
+
+  if (trackingErrors.length >= 2) {
+    const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7'];
+    const maxErr = Math.max(5, ...trackingErrors.flatMap(e => e.errors.slice(0, 6)));
+    const pw = W - pad.l - pad.r;
+    const ph = halfH - 20;
+
+    for (let j = 0; j < 6; j++) {
+      ctx.strokeStyle = colors[j]; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < trackingErrors.length; i++) {
+        const x = pad.l + pw * (i / (trackingErrors.length - 1));
+        const y = errorTop + 12 + ph * (1 - (trackingErrors[i].errors[j] || 0) / maxErr);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+}
+
+// ---- Main loop ----
+let renderCounter = 0;
+function mainLoop() {
+  renderCounter++;
+  if (renderCounter % 5 === 0) { // Update visuals at ~12fps
+    updateStats();
+    drawJointChart();
+    drawRateChart();
+  }
+  if (renderCounter % 10 === 0) { // Render events at ~6fps
+    renderEvents();
+  }
+  requestAnimationFrame(mainLoop);
+}
+
+// ---- Controls ----
+document.getElementById('btnPause').addEventListener('click', () => {
+  paused = !paused;
+  const btn = document.getElementById('btnPause');
+  btn.textContent = paused ? '▶ RESUME' : '⏸ PAUSE';
+  btn.className = paused ? 'btn paused' : 'btn';
+});
+
+document.getElementById('btnClear').addEventListener('click', () => {
+  events = [];
+  totalEvents = 0;
+  jointHistory.length = 0;
+  cmdRateHistory.length = 0;
+  trackingErrors.length = 0;
+  Object.values(rateBuckets).forEach(b => b.length = 0);
+  renderEvents();
+});
+
+// Start
+connect();
+requestAnimationFrame(mainLoop);
+</script>
+</body>
+</html>

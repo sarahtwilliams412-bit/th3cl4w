@@ -204,12 +204,12 @@ class D1DDSConnection:
             if _HAS_TELEMETRY:
                 tc = get_collector()
                 if tc.enabled:
-                    tc.emit("dds", EventType.DDS_PUBLISH, {
-                        "seq": cmd.get("seq"),
-                        "funcode": cmd.get("funcode"),
-                        "data": cmd.get("data"),
-                        "raw_len": len(payload),
-                    }, correlation_id)
+                    data = cmd.get("data", {}) or {}
+                    tc.log_dds_command(
+                        seq=cmd.get("seq", 0), funcode=cmd.get("funcode", 0),
+                        joint_id=data.get("id"), target_value=data.get("angle"),
+                        data=data, correlation_id=correlation_id, raw_len=len(payload),
+                    )
             return True
         except Exception:
             logger.exception("Failed to publish command")
@@ -289,6 +289,31 @@ class D1DDSConnection:
         if _correlation_id:
             cmd["_correlation_id"] = _correlation_id
         return self.send_command(cmd)
+
+    def set_gripper(self, position_mm: float, _correlation_id: Optional[str] = None) -> bool:
+        """Set gripper opening in millimetres (0–65 mm).
+
+        The D1 gripper is joint 6.  The DDS protocol expects an angle value
+        for joint 6, and the firmware interprets it as millimetres of opening.
+        We use funcode 1 (single-joint move) targeting joint id 6.
+        """
+        if not (0.0 <= position_mm <= 65.0):
+            logger.warning("Gripper position %.1f out of range [0, 65]", position_mm)
+        cmd: Dict[str, Any] = {
+            "address": 1,
+            "funcode": 1,
+            "data": {"id": 6, "angle": position_mm, "delay_ms": 0},
+        }
+        if _correlation_id:
+            cmd["_correlation_id"] = _correlation_id
+        return self.send_command(cmd)
+
+    def get_gripper_position(self) -> float:
+        """Return the latest gripper position (joint 6) in mm, or 0.0."""
+        with self._cache.lock:
+            if self._cache.joint_angles is None:
+                return 0.0
+            return float(self._cache.joint_angles.get("angle6", 0.0))
 
     # ------------------------------------------------------------------
     # State reading
@@ -385,11 +410,11 @@ class D1DDSConnection:
         if _HAS_TELEMETRY:
             tc = get_collector()
             if tc.enabled:
-                tc.emit("dds", EventType.DDS_RECEIVE, {
-                    "seq": seq,
-                    "funcode": funcode,
-                    "data_keys": list(data.keys()) if isinstance(data, dict) else None,
-                })
+                tc.log_dds_feedback(
+                    seq=seq, funcode=funcode,
+                    angles=data if funcode == 1 and isinstance(data, dict) else None,
+                    status=data if funcode == 3 and isinstance(data, dict) else None,
+                )
 
         if data is None and funcode != 7:
             return

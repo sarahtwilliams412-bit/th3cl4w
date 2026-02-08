@@ -151,6 +151,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">DISCONNECTED</span>
   <span class="conn-quality" id="connQuality"></span>
   <button class="btn" id="btnDebug" style="font-size:10px;padding:3px 8px">🔧 DEBUG</button>
+  <a href="/telemetry" class="btn" style="font-size:10px;padding:3px 8px;text-decoration:none">📊 TELEMETRY</a>
   <div class="topbar-spacer"></div>
   <div class="badge" id="badgePower">PWR OFF</div>
   <div class="badge" id="badgeEnabled">DISABLED</div>
@@ -308,6 +309,7 @@ for (let i = 0; i < 6; i++) {
   slider.addEventListener('touchstart', () => userDragging = i);
   slider.addEventListener('input', () => {
     document.getElementById(`jv${i}`).textContent = parseFloat(slider.value).toFixed(1) + '°';
+    throttledSendJoint(i, parseFloat(slider.value));
   });
   const release = () => { if (userDragging === i) { sendJoint(i, parseFloat(slider.value)); userDragging = -1; } };
   slider.addEventListener('mouseup', release);
@@ -321,11 +323,29 @@ gripSlider.addEventListener('mousedown', () => userDragging = 6);
 gripSlider.addEventListener('touchstart', () => userDragging = 6);
 gripSlider.addEventListener('input', () => {
   document.getElementById('gripperValue').textContent = parseFloat(gripSlider.value).toFixed(1) + ' mm';
+  throttledSendGripper(parseFloat(gripSlider.value));
 });
 const gripRelease = () => { if (userDragging === 6) { sendGripper(parseFloat(gripSlider.value)); userDragging = -1; } };
 gripSlider.addEventListener('mouseup', gripRelease);
 gripSlider.addEventListener('touchend', gripRelease);
 gripSlider.addEventListener('change', gripRelease);
+
+// ---- Throttle helper (50ms = 20Hz max send rate, server smooths the rest) ----
+function makeThrottle(fn, ms = 50) {
+  let lastCall = 0, timer = null;
+  return function(...args) {
+    const now = Date.now();
+    if (now - lastCall >= ms) {
+      lastCall = now;
+      fn(...args);
+    } else {
+      clearTimeout(timer);
+      timer = setTimeout(() => { lastCall = Date.now(); fn(...args); }, ms - (now - lastCall));
+    }
+  };
+}
+const throttledSendJoint = makeThrottle((id, angle) => sendJoint(id, angle), 50);
+const throttledSendGripper = makeThrottle((pos) => sendGripper(pos), 50);
 
 // ---- Commands ----
 async function cmd(action) {
