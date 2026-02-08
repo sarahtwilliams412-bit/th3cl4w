@@ -1,0 +1,1525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>th3cl4w V2 — D1 Arm Control</title>
+<style>
+:root {
+  --bg: #0a0a12;
+  --surface: #12121e;
+  --surface-raised: #1a1a2c;
+  --surface-hover: #222238;
+  --border: #2a2a44;
+  --border-focus: #4a90d9;
+  --danger: #e94560;
+  --danger-bg: #2d0f15;
+  --success: #53d769;
+  --success-bg: #0f2d15;
+  --warning: #f0ad4e;
+  --info: #4a90d9;
+  --accent: #6c5ce7;
+  --text: #e8e8f0;
+  --text-dim: #7b7b98;
+  --text-muted: #3d3d55;
+  --gripper: #53d769;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 8px;
+  --pad-accent: #4a90d9;
+  --pad-grid: rgba(74,144,217,0.06);
+  --pad-grid-major: rgba(74,144,217,0.12);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh;display:flex;flex-direction:column;overflow:hidden;user-select:none}
+
+/* === TOPBAR === */
+.topbar{display:flex;align-items:center;gap:10px;padding:0 16px;height:48px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;z-index:100}
+.logo{font-family:var(--mono);font-size:18px;font-weight:700;letter-spacing:2px;color:var(--danger)}
+.conn-indicator{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:#555;flex-shrink:0;transition:background .3s,box-shadow .3s}
+.conn-dot.on{background:var(--success);box-shadow:0 0 6px var(--success)}
+.conn-dot.off{background:var(--danger);box-shadow:0 0 6px var(--danger)}
+.conn-label{color:var(--text-dim)}
+.latency-pill{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:10px;background:var(--surface-raised);border:1px solid var(--border);color:var(--text-dim)}
+.latency-pill.good{color:var(--success);border-color:rgba(83,215,105,.3)}
+.latency-pill.warn{color:var(--warning);border-color:rgba(240,173,78,.3)}
+.latency-pill.bad{color:var(--danger);border-color:rgba(233,69,96,.3)}
+
+.mode-strip{display:flex;align-items:center;gap:0;font-family:var(--mono);font-size:10px;letter-spacing:1px}
+.mode-step{padding:3px 8px;color:var(--text-muted);position:relative;text-transform:uppercase}
+.mode-step.active{color:var(--text);background:var(--surface-raised);border-radius:3px}
+.mode-step.active.state-connected{color:var(--info)}
+.mode-step.active.state-powered{color:var(--warning)}
+.mode-step.active.state-enabled{color:var(--success)}
+.mode-arrow{color:var(--text-muted);font-size:8px;margin:0 2px}
+
+.topbar-spacer{flex:1}
+
+.badge{font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:3px;background:var(--surface-raised);color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;transition:all .15s}
+.badge.active{background:var(--success-bg);color:var(--success)}
+.badge.error{background:var(--danger-bg);color:var(--danger);animation:badge-pulse 1s infinite}
+@keyframes badge-pulse{0%,100%{opacity:1}50%{opacity:.7}}
+
+.estop-topbar{width:120px;height:36px;border:none;border-radius:4px;background:linear-gradient(180deg,#cc2244 0%,#991133 100%);color:#fff;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:2px;cursor:pointer;text-transform:uppercase;transition:all .15s;flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:6px}
+.estop-topbar:hover{background:linear-gradient(180deg,#ff2244 0%,#cc1133 100%);box-shadow:0 0 20px rgba(233,69,96,.5)}
+.estop-topbar.armed{animation:estop-breathe 2s ease-in-out infinite}
+.estop-topbar.moving{animation:estop-breathe 1s ease-in-out infinite}
+@keyframes estop-breathe{0%,100%{box-shadow:0 0 5px rgba(233,69,96,.3)}50%{box-shadow:0 0 25px rgba(233,69,96,.7)}}
+.estop-topbar.fired{background:#fff!important;color:var(--danger)!important;box-shadow:0 0 30px rgba(233,69,96,.8)}
+
+/* === MAIN AREA === */
+.main-area{display:flex;flex:1;overflow:hidden;min-height:0}
+
+/* === MAIN VIEWPORT (Cartesian Controls) === */
+.viewport{flex:1;display:flex;flex-direction:column;position:relative;background:var(--bg);min-width:0;overflow:hidden}
+
+.controls-grid{display:grid;grid-template-columns:1fr 280px;grid-template-rows:1fr auto;gap:0;flex:1;min-height:0}
+
+/* XYZ Pad - Hero element */
+.xy-pad-container{position:relative;grid-column:1;grid-row:1;display:flex;flex-direction:column;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+.xy-pad-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+.xy-pad-header h3{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--info)}
+.xy-pad-header .coord-readout{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+.xy-pad-header .coord-readout span{margin-left:10px}
+.xy-pad-header .coord-readout .cx{color:#e94560}
+.xy-pad-header .coord-readout .cy{color:#53d769}
+.xy-pad-header .coord-readout .cz{color:#4a90d9}
+.xy-pad-wrap{flex:1;display:flex;min-height:0;position:relative}
+.xy-pad-canvas{flex:1;display:block;cursor:crosshair;touch-action:none}
+.xy-pad-canvas.dragging{cursor:grabbing}
+
+/* Z Strip */
+.z-strip{width:52px;flex-shrink:0;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:8px 0;position:relative;touch-action:none;cursor:ns-resize}
+.z-strip-label{font-family:var(--mono);font-size:9px;color:var(--text-muted);letter-spacing:1px;margin-bottom:4px;text-transform:uppercase}
+.z-strip-track{flex:1;width:8px;background:var(--border);border-radius:4px;position:relative;margin:4px 0;overflow:visible}
+.z-strip-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top, #2a5a9c, #4a90d9);border-radius:4px;transition:height 50ms}
+.z-strip-thumb{position:absolute;left:50%;width:24px;height:12px;background:var(--info);border-radius:6px;transform:translate(-50%,-50%);box-shadow:0 0 8px rgba(74,144,217,.4);cursor:ns-resize;transition:top 50ms}
+.z-strip-value{font-family:var(--mono);font-size:10px;color:var(--info);margin-top:4px}
+
+/* Right panel: orientation + gripper + presets */
+.right-panel{grid-column:2;grid-row:1/3;display:flex;flex-direction:column;background:var(--surface);overflow-y:auto;overflow-x:hidden}
+.panel-section{padding:14px;border-bottom:1px solid var(--border)}
+.panel-section:last-child{border-bottom:none}
+.panel-section-header{font-family:var(--mono);font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+
+/* Safety zone */
+.safety-zone{background:var(--danger-bg);border-left:3px solid var(--danger)}
+.safety-zone .panel-section-header{color:var(--danger)}
+.safety-btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.state-summary{font-family:var(--mono);font-size:11px;padding:6px 8px;background:rgba(0,0,0,.2);border-radius:3px;color:var(--text-dim)}
+.state-summary.ready{color:var(--success)}
+.state-summary.error{color:var(--danger)}
+
+/* Orientation pad */
+.orient-pads{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.orient-pad{position:relative;aspect-ratio:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:crosshair;touch-action:none}
+.orient-pad canvas{width:100%;height:100%;display:block}
+.orient-label{position:absolute;bottom:4px;left:6px;font-family:var(--mono);font-size:8px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;pointer-events:none}
+.orient-value{position:absolute;top:4px;right:6px;font-family:var(--mono);font-size:9px;color:var(--text-dim);pointer-events:none}
+.roll-control{display:flex;align-items:center;gap:8px;margin-top:8px}
+.roll-knob{width:48px;height:48px;position:relative;cursor:grab;touch-action:none}
+.roll-knob canvas{width:100%;height:100%;display:block}
+.roll-label{font-family:var(--mono);font-size:10px;color:var(--text-dim)}
+.roll-value{font-family:var(--mono);font-size:11px;color:var(--text)}
+
+/* Gripper */
+.gripper-controls{display:flex;align-items:center;gap:8px}
+.gripper-btn{flex:1;height:44px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-raised);color:var(--text);font-family:var(--mono);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px}
+.gripper-btn:hover:not(:disabled){background:var(--surface-hover);border-color:var(--gripper)}
+.gripper-btn:active:not(:disabled){transform:scale(.97)}
+.gripper-btn:disabled{opacity:.25;cursor:not-allowed}
+.gripper-btn.open{border-color:rgba(83,215,105,.3)}
+.gripper-btn.close{border-color:rgba(233,69,96,.3)}
+.gripper-btn.open:hover:not(:disabled){background:var(--success-bg);border-color:var(--success)}
+.gripper-btn.close:hover:not(:disabled){background:var(--danger-bg);border-color:var(--danger)}
+.gripper-readout{font-family:var(--mono);font-size:14px;color:var(--gripper);text-align:center;min-width:54px}
+.gripper-readout small{display:block;font-size:9px;color:var(--text-muted)}
+
+/* Presets */
+.preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.preset-card{background:var(--surface-raised);border:1px solid var(--border);border-radius:var(--radius);padding:10px;cursor:pointer;transition:all .15s;text-align:center}
+.preset-card:hover:not(.disabled){background:var(--surface-hover);border-color:var(--info);transform:translateY(-1px)}
+.preset-card:active:not(.disabled){transform:scale(.97)}
+.preset-card.disabled{opacity:.25;cursor:not-allowed;pointer-events:none}
+.preset-icon{font-size:24px;margin-bottom:4px;display:block}
+.preset-name{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text)}
+.preset-desc{font-size:9px;color:var(--text-muted);margin-top:2px}
+.task-progress{margin-top:8px;display:none}
+.task-progress.active{display:block}
+.task-progress-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:4px}
+.task-progress-fill{height:100%;background:var(--info);border-radius:2px;transition:width .3s}
+.task-progress-text{font-family:var(--mono);font-size:9px;color:var(--text-dim)}
+
+/* Advanced (Joint-space) - collapsible */
+.advanced-toggle{width:100%;background:none;border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;font-family:var(--mono);font-size:10px;color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:space-between;letter-spacing:1px;text-transform:uppercase;transition:all .15s}
+.advanced-toggle:hover{border-color:var(--text-muted);color:var(--text)}
+.advanced-toggle .arrow{transition:transform .2s}
+.advanced-toggle.open .arrow{transform:rotate(180deg)}
+.advanced-body{max-height:0;overflow:hidden;transition:max-height .3s ease-out}
+.advanced-body.open{max-height:600px}
+.joint-compact{display:grid;grid-template-columns:28px 1fr 44px;gap:4px;align-items:center;padding:3px 0;border-bottom:1px solid rgba(42,42,68,.3)}
+.joint-compact:last-child{border-bottom:none}
+.jc-label{font-family:var(--mono);font-size:10px;color:var(--text-muted);text-align:right}
+.jc-bar{height:6px;background:var(--border);border-radius:3px;position:relative;overflow:hidden;cursor:pointer}
+.jc-bar-fill{height:100%;background:var(--info);border-radius:3px;position:absolute;top:0;transition:left 100ms, width 100ms}
+.jc-bar.roll .jc-bar-fill{background:var(--warning)}
+.jc-val{font-family:var(--mono);font-size:10px;color:var(--text);text-align:right;cursor:pointer}
+.jc-val:hover{color:var(--info)}
+
+/* Bottom info bar */
+.bottom-info{grid-column:1;grid-row:2;display:flex;align-items:center;gap:8px;padding:4px 12px;background:var(--surface);border-top:1px solid var(--border);font-family:var(--mono);font-size:9px;color:var(--text-muted)}
+.bottom-info .sep{color:var(--border)}
+.speed-ctrl{display:flex;align-items:center;gap:4px}
+.speed-ctrl label{color:var(--text-muted)}
+.speed-btn{background:var(--surface-raised);border:1px solid var(--border);border-radius:3px;padding:1px 6px;font-family:var(--mono);font-size:9px;color:var(--text-dim);cursor:pointer;transition:all .1s}
+.speed-btn:hover{border-color:var(--info);color:var(--text)}
+.speed-btn.active{border-color:var(--info);color:var(--info);background:rgba(74,144,217,.1)}
+
+/* Stale overlay */
+.stale-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(233,69,96,.08);display:none;align-items:center;justify-content:center;font-family:var(--mono);font-size:24px;color:var(--danger);letter-spacing:4px;pointer-events:none;z-index:10}
+
+/* === STATE GATING === */
+body:not([data-connected="true"]) .needs-connected{opacity:.25;pointer-events:none}
+body:not([data-power="true"]) .needs-power{opacity:.25;pointer-events:none}
+body:not([data-enabled="true"]) .needs-enabled{opacity:.25;pointer-events:none}
+.lockout-msg{display:none;font-family:var(--mono);font-size:10px;color:var(--text-muted);text-align:center;padding:8px;background:rgba(0,0,0,.3);border-radius:3px;margin-top:4px}
+body:not([data-enabled="true"]) .lockout-msg.enable-msg{display:block}
+
+/* === BUTTONS === */
+.btn{font-family:var(--mono);font-size:11px;padding:6px 12px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface-raised);color:var(--text);transition:all .15s;text-transform:uppercase;letter-spacing:1px}
+.btn:hover:not(:disabled){background:var(--border);border-color:var(--info)}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn:disabled{opacity:.25;cursor:not-allowed;pointer-events:none}
+.btn.on{background:var(--success-bg);border-color:var(--success);color:var(--success)}
+.btn.danger{border-color:var(--danger);color:var(--danger)}
+.btn.danger:hover:not(:disabled){background:var(--danger-bg)}
+.btn-sm{font-size:10px;padding:4px 8px}
+
+/* === DRAWER === */
+.drawer-bar{display:flex;align-items:center;gap:0;padding:0 8px;height:32px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0;z-index:50}
+.drawer-tab{font-family:var(--mono);font-size:10px;padding:6px 14px;cursor:pointer;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;border:none;background:none;position:relative;transition:color .15s}
+.drawer-tab:hover{color:var(--text)}
+.drawer-tab.active{color:var(--info)}
+.drawer-badge{position:absolute;top:2px;right:4px;font-size:8px;background:var(--danger);color:#fff;border-radius:6px;padding:0 4px;min-width:14px;text-align:center;display:none}
+.drawer-badge.visible{display:inline}
+.drawer-spacer{flex:1}
+
+.drawer-content{flex-shrink:0;max-height:0;overflow:hidden;transition:max-height .25s ease-out;background:var(--surface-raised);border-top:1px solid var(--border)}
+.drawer-content.open{max-height:350px;overflow-y:auto}
+.drawer-panel{display:none;padding:10px 14px}
+.drawer-panel.active{display:block}
+
+/* Camera drawer */
+.cam-feeds{display:flex;gap:10px}
+.cam-feed{flex:1;min-width:0}
+.cam-label{font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.cam-live{color:var(--danger);font-size:9px;animation:cam-blink 2s infinite}
+@keyframes cam-blink{0%,100%{opacity:1}50%{opacity:.3}}
+.cam-img{width:100%;aspect-ratio:4/3;object-fit:contain;background:#0a0a14;border:1px solid var(--border);border-radius:4px}
+
+/* Log */
+.log-controls{display:flex;gap:4px;margin-bottom:6px;align-items:center}
+.log-filter-btn{font-family:var(--mono);font-size:9px;padding:2px 6px;cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--text-dim)}
+.log-filter-btn.active{border-color:var(--info);color:var(--info)}
+.log-search{font-family:var(--mono);font-size:10px;padding:3px 8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);outline:none;width:140px;margin-left:auto}
+.log-search:focus{border-color:var(--info)}
+.log-scroll{max-height:260px;overflow-y:auto;font-family:var(--mono);font-size:10px;line-height:1.6}
+.log-entry{white-space:nowrap}
+.log-entry .ts{color:var(--text-muted);margin-right:6px}
+.log-entry .act{margin-right:6px;font-weight:600}
+.log-entry.info .act{color:var(--info)}
+.log-entry.error .act{color:var(--danger)}
+.log-entry.warning .act{color:var(--warning)}
+.log-entry .detail{color:var(--text-dim)}
+.log-entry.error .detail{color:#d9534f}
+
+/* Telemetry */
+.telem-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px}
+.telem-joint{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:6px;text-align:center;font-family:var(--mono)}
+.telem-joint-id{font-size:9px;color:var(--text-dim);margin-bottom:2px}
+.telem-joint-val{font-size:13px;font-weight:600}
+.telem-joint-vel{font-size:9px;color:var(--text-muted);margin-top:2px}
+.telem-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.telem-stat{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:6px 8px}
+.telem-stat-header{font-family:var(--mono);font-size:9px;color:var(--info);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.telem-stat-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;padding:1px 0}
+.telem-stat-row span:first-child{color:var(--text-dim);font-size:9px}
+
+/* Debug */
+.debug-pipeline{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:10px}
+.pipe-stage{display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;min-width:50px;background:var(--surface)}
+.pipe-stage.active{border-color:var(--success)}
+.pipe-stage.active .pipe-dot{background:var(--success);box-shadow:0 0 6px var(--success)}
+.pipe-dot{width:6px;height:6px;border-radius:50%;background:#444}
+.pipe-label{font-family:var(--mono);font-size:9px;color:var(--text-dim)}
+.pipe-arrow{color:var(--text-muted);font-size:12px}
+.debug-events{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:4px 8px;max-height:200px;overflow-y:auto;font-family:var(--mono);font-size:10px;line-height:1.6}
+
+/* Toast */
+.toast{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:11px;padding:6px 16px;background:rgba(22,22,37,.95);border:1px solid var(--border);border-radius:4px;color:var(--text);z-index:200;opacity:0;transition:opacity .2s;pointer-events:none;backdrop-filter:blur(4px)}
+.toast.visible{opacity:1}
+.toast.danger{border-color:var(--danger);color:var(--danger)}
+
+/* Shortcuts overlay */
+.shortcuts-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:300;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.shortcuts-overlay.visible{display:flex}
+.shortcuts-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 30px;max-width:500px;font-family:var(--mono);font-size:12px}
+.shortcuts-card h3{font-size:14px;margin-bottom:12px;color:var(--info);letter-spacing:2px}
+.shortcut-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(42,42,68,.3)}
+.shortcut-key{color:var(--warning);min-width:80px}
+.shortcut-action{color:var(--text-dim)}
+
+/* Connection lost banner */
+.conn-lost-banner{display:none;position:fixed;top:48px;left:0;right:0;background:var(--danger);color:#fff;font-family:var(--mono);font-size:12px;text-align:center;padding:8px;z-index:150;letter-spacing:2px;animation:conn-flash .5s infinite}
+@keyframes conn-flash{0%,100%{opacity:1}50%{opacity:.8}}
+body:not([data-connected="true"]) .conn-lost-banner{display:block}
+
+/* E-stop flash overlay */
+.estop-flash{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(233,69,96,.3);z-index:250;pointer-events:none;opacity:0;transition:opacity .1s}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+@media(max-width:900px){
+  .controls-grid{grid-template-columns:1fr;grid-template-rows:1fr auto auto}
+  .right-panel{grid-column:1;grid-row:2;max-height:40vh;border-top:1px solid var(--border)}
+  .xy-pad-container{border-right:none}
+}
+</style>
+</head>
+<body data-connected="false" data-power="false" data-enabled="false">
+
+<div class="conn-lost-banner">⚠ CONNECTION LOST — CONTROLS LOCKED ⚠</div>
+<div class="estop-flash" id="estopFlash"></div>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo">th3cl4w</div>
+  <div class="conn-indicator">
+    <div class="conn-dot" id="connDot"></div>
+    <span class="conn-label" id="connLabel">DISCONNECTED</span>
+  </div>
+  <div class="latency-pill" id="latencyPill">— ms</div>
+  <div class="mode-strip" id="modeStrip">
+    <span class="mode-step active" id="modeDisconn">DISCONN</span>
+    <span class="mode-arrow">→</span>
+    <span class="mode-step" id="modeConn">CONNECTED</span>
+    <span class="mode-arrow">→</span>
+    <span class="mode-step" id="modePower">POWERED</span>
+    <span class="mode-arrow">→</span>
+    <span class="mode-step" id="modeEnabled">ENABLED</span>
+  </div>
+  <div class="topbar-spacer"></div>
+  <div class="badge" id="badgeError">NO ERR</div>
+  <button class="estop-topbar" id="btnEstop" title="Emergency Stop (Space)">⚠ E-STOP</button>
+</div>
+
+<!-- MAIN -->
+<div class="main-area">
+  <div class="viewport">
+    <div class="stale-overlay" id="staleOverlay">⚠ STALE DATA</div>
+    <div class="controls-grid">
+
+      <!-- XY PAD (Hero) -->
+      <div class="xy-pad-container needs-enabled">
+        <div class="xy-pad-header">
+          <h3>◎ Cartesian Control</h3>
+          <div class="coord-readout">
+            <span class="cx" id="coordX">X 0.0</span>
+            <span class="cy" id="coordY">Y 0.0</span>
+            <span class="cz" id="coordZ">Z 0.0</span>
+          </div>
+        </div>
+        <div class="xy-pad-wrap">
+          <canvas class="xy-pad-canvas" id="xyPad"></canvas>
+          <div class="z-strip" id="zStrip">
+            <div class="z-strip-label">Z ↕</div>
+            <div class="z-strip-track" id="zTrack">
+              <div class="z-strip-fill" id="zFill"></div>
+              <div class="z-strip-thumb" id="zThumb"></div>
+            </div>
+            <div class="z-strip-value" id="zValue">0.0</div>
+          </div>
+        </div>
+        <div class="lockout-msg enable-msg">Enable arm to control</div>
+      </div>
+
+      <!-- Bottom info bar -->
+      <div class="bottom-info">
+        <div class="speed-ctrl">
+          <label>Speed:</label>
+          <button class="speed-btn" data-speed="0.3">Slow</button>
+          <button class="speed-btn active" data-speed="1.0">Normal</button>
+          <button class="speed-btn" data-speed="3.0">Fast</button>
+        </div>
+        <span class="sep">│</span>
+        <span>Drag XY pad to move • Scroll/drag Z strip for height</span>
+        <span class="sep">│</span>
+        <span id="shortcutHint">? = shortcuts</span>
+      </div>
+
+      <!-- RIGHT PANEL -->
+      <div class="right-panel">
+
+        <!-- Safety -->
+        <div class="panel-section safety-zone">
+          <div class="panel-section-header">🛡 Safety</div>
+          <div class="safety-btns">
+            <button class="btn needs-connected" id="btnPowerOn">Power On</button>
+            <button class="btn needs-connected" id="btnPowerOff">Power Off</button>
+            <button class="btn needs-power" id="btnEnable">Enable</button>
+            <button class="btn needs-connected" id="btnDisable">Disable</button>
+          </div>
+          <div class="state-summary" id="stateSummary">DISCONNECTED</div>
+        </div>
+
+        <!-- Orientation -->
+        <div class="panel-section needs-enabled">
+          <div class="panel-section-header">🔄 Wrist Orientation</div>
+          <div class="orient-pads">
+            <div class="orient-pad" id="orientPitchYaw" title="Drag: Wrist Pitch (↕) / Yaw (↔)">
+              <canvas id="orientPYCanvas"></canvas>
+              <div class="orient-label">Pitch / Yaw</div>
+              <div class="orient-value" id="orientPYVal">0° / 0°</div>
+            </div>
+            <div class="orient-pad" id="orientRoll" title="Drag: Wrist Roll">
+              <canvas id="orientRollCanvas"></canvas>
+              <div class="orient-label">Roll</div>
+              <div class="orient-value" id="orientRollVal">0°</div>
+            </div>
+          </div>
+          <div class="lockout-msg enable-msg">Enable arm to control</div>
+        </div>
+
+        <!-- Gripper -->
+        <div class="panel-section needs-enabled">
+          <div class="panel-section-header">🤏 Gripper</div>
+          <div class="gripper-controls">
+            <button class="gripper-btn close" id="gripClose" title="Close gripper">✊ Close</button>
+            <div class="gripper-readout" id="gripReadout">0.0<small>mm</small></div>
+            <button class="gripper-btn open" id="gripOpen" title="Open gripper">🖐 Open</button>
+          </div>
+          <div class="lockout-msg enable-msg">Enable arm to control</div>
+        </div>
+
+        <!-- Presets -->
+        <div class="panel-section">
+          <div class="panel-section-header">🎯 Presets</div>
+          <div class="preset-grid needs-enabled" id="presetGrid">
+            <div class="preset-card" data-task="home">
+              <span class="preset-icon">🏠</span>
+              <div class="preset-name">Home</div>
+              <div class="preset-desc">Zero pose</div>
+            </div>
+            <div class="preset-card" data-task="ready">
+              <span class="preset-icon">✋</span>
+              <div class="preset-name">Ready</div>
+              <div class="preset-desc">Neutral position</div>
+            </div>
+            <div class="preset-card" data-task="wave">
+              <span class="preset-icon">👋</span>
+              <div class="preset-name">Wave</div>
+              <div class="preset-desc">Friendly wave</div>
+            </div>
+            <div class="preset-card" data-task="stop">
+              <span class="preset-icon">⏹</span>
+              <div class="preset-name">Stop</div>
+              <div class="preset-desc">Cancel task</div>
+            </div>
+          </div>
+          <div class="task-progress" id="taskProgress">
+            <div class="task-progress-bar"><div class="task-progress-fill" id="taskProgressFill"></div></div>
+            <div class="task-progress-text" id="taskProgressText"></div>
+          </div>
+        </div>
+
+        <!-- Advanced: Joint-space (collapsed) -->
+        <div class="panel-section">
+          <button class="advanced-toggle" id="advancedToggle">
+            <span>🎛 Joint Space (Advanced)</span>
+            <span class="arrow">▼</span>
+          </button>
+          <div class="advanced-body" id="advancedBody">
+            <div style="padding-top:8px" id="jointCompact"></div>
+          </div>
+        </div>
+
+      </div><!-- /right-panel -->
+    </div><!-- /controls-grid -->
+  </div><!-- /viewport -->
+</div>
+
+<!-- DRAWER BAR -->
+<div class="drawer-bar">
+  <button class="drawer-tab" data-drawer="cameras">📷 Cameras</button>
+  <button class="drawer-tab" data-drawer="telemetry">📊 Telemetry</button>
+  <button class="drawer-tab" data-drawer="log">📋 Log <span class="drawer-badge" id="logBadge">0</span></button>
+  <button class="drawer-tab" data-drawer="debug">🔧 Debug</button>
+  <div class="drawer-spacer"></div>
+</div>
+
+<div class="drawer-content" id="drawerContent">
+  <div class="drawer-panel" data-drawer="cameras" id="panelCameras">
+    <div class="cam-feeds">
+      <div class="cam-feed"><div class="cam-label"><span class="cam-live">● LIVE</span> Camera 1</div><img class="cam-img" id="camImg0" alt="Camera 1"></div>
+      <div class="cam-feed"><div class="cam-label"><span class="cam-live">● LIVE</span> Camera 2</div><img class="cam-img" id="camImg1" alt="Camera 2"></div>
+    </div>
+  </div>
+  <div class="drawer-panel" data-drawer="telemetry" id="panelTelemetry">
+    <div class="telem-grid" id="telemGrid"></div>
+    <div class="telem-stats" id="telemStats">
+      <div class="telem-stat"><div class="telem-stat-header">Connection</div><div class="telem-stat-row"><span>Status</span><span id="tsConn">—</span></div><div class="telem-stat-row"><span>Latency</span><span id="tsLat">—</span></div><div class="telem-stat-row"><span>RX rate</span><span id="tsRxRate">—</span></div></div>
+      <div class="telem-stat"><div class="telem-stat-header">Arm</div><div class="telem-stat-row"><span>Power</span><span id="tsPower">—</span></div><div class="telem-stat-row"><span>Motors</span><span id="tsMotors">—</span></div><div class="telem-stat-row"><span>Error</span><span id="tsError">—</span></div></div>
+      <div class="telem-stat"><div class="telem-stat-header">Motion</div><div class="telem-stat-row"><span>Moving</span><span id="tsMoving">—</span></div><div class="telem-stat-row"><span>Max vel</span><span id="tsMaxVel">—</span></div><div class="telem-stat-row"><span>Task</span><span id="tsTask">—</span></div></div>
+      <div class="telem-stat"><div class="telem-stat-header">Session</div><div class="telem-stat-row"><span>WS msgs</span><span id="tsWsMsgs">0</span></div><div class="telem-stat-row"><span>Cmds sent</span><span id="tsCmds">0</span></div><div class="telem-stat-row"><span>Uptime</span><span id="tsUptime">0s</span></div></div>
+    </div>
+  </div>
+  <div class="drawer-panel" data-drawer="log" id="panelLog">
+    <div class="log-controls">
+      <button class="log-filter-btn active" data-filter="all">ALL</button>
+      <button class="log-filter-btn" data-filter="info">INFO</button>
+      <button class="log-filter-btn" data-filter="warning">WARN</button>
+      <button class="log-filter-btn" data-filter="error">ERROR</button>
+      <input class="log-search" id="logSearch" placeholder="Search..." type="text">
+      <button class="btn btn-sm" id="logClear" style="font-size:9px;padding:2px 6px">Clear</button>
+    </div>
+    <div class="log-scroll" id="logScroll"></div>
+  </div>
+  <div class="drawer-panel" data-drawer="debug" id="panelDebug">
+    <div class="debug-pipeline" id="debugPipeline">
+      <div class="pipe-stage" data-stage="CMD"><div class="pipe-dot"></div><div class="pipe-label">CMD</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="DDS_TX"><div class="pipe-dot"></div><div class="pipe-label">DDS TX</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="ARM_RX"><div class="pipe-dot"></div><div class="pipe-label">ARM RX</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="EXEC"><div class="pipe-dot"></div><div class="pipe-label">EXEC</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="STATE"><div class="pipe-dot"></div><div class="pipe-label">STATE</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="WS"><div class="pipe-dot"></div><div class="pipe-label">WS</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage active" data-stage="UI"><div class="pipe-dot"></div><div class="pipe-label">UI</div></div>
+    </div>
+    <div class="debug-events" id="debugEvents"><span style="color:var(--text-muted)">Open debug to stream events...</span></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Shortcuts overlay -->
+<div class="shortcuts-overlay" id="shortcutsOverlay">
+  <div class="shortcuts-card">
+    <h3>KEYBOARD SHORTCUTS</h3>
+    <div class="shortcut-row"><span class="shortcut-key">Space</span><span class="shortcut-action">E-Stop (always active)</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">WASD</span><span class="shortcut-action">Move XY (fwd/left/back/right)</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">Q / E</span><span class="shortcut-action">Move Z down / up</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">Shift+WASD</span><span class="shortcut-action">Fine movement</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">G</span><span class="shortcut-action">Toggle gripper</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">H</span><span class="shortcut-action">Home task</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">R</span><span class="shortcut-action">Ready task</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">Escape</span><span class="shortcut-action">Stop current task</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">C</span><span class="shortcut-action">Toggle cameras</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">L</span><span class="shortcut-action">Toggle log</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">?</span><span class="shortcut-action">Show this overlay</span></div>
+    <p style="margin-top:12px;font-size:10px;color:var(--text-muted)">Press any key to close</p>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// D1 SPECS
+// ============================================================
+const JOINT_SPECS = [
+  { name:'J0', min:-135, max:135, label:'Base Yaw',    type:'roll' },
+  { name:'J1', min:-90,  max:90,  label:'Shoulder',    type:'pitch' },
+  { name:'J2', min:-90,  max:90,  label:'Elbow',       type:'pitch' },
+  { name:'J3', min:-135, max:135, label:'Wrist Roll',  type:'roll' },
+  { name:'J4', min:-90,  max:90,  label:'Wrist Pitch', type:'pitch' },
+  { name:'J5', min:-135, max:135, label:'Wrist Roll',  type:'roll' },
+];
+const LINKS_MM = { base:80, shoulder:170, elbow:170, wrist1:60, wrist2:60, end:50 };
+
+// ============================================================
+// STATE
+// ============================================================
+let ws = null;
+let armState = { connected:false, joints:[0,0,0,0,0,0], gripper:0, power:false, enabled:false, error:0, log:[] };
+let lastStateTs = 0;
+let armSynced = false;
+let updatingFromState = false;
+let wsUpdateCount = 0;
+let cmdsSent = 0;
+let startTime = Date.now();
+let logFilter = 'all';
+let logSearchText = '';
+let localLog = [];
+let activeDrawer = null;
+let debugEnabled = false;
+let debugPollTimer = null;
+let errorCountSinceOpen = 0;
+let wsRxTimes = [];
+let taskRunning = false;
+let taskStartTime = 0;
+let taskDuration = 0;
+let taskName = '';
+let estopFired = false;
+let prevJoints = [0,0,0,0,0,0];
+let jointVelocities = [0,0,0,0,0,0];
+let lastGoodJoints = [0,0,0,0,0,0];
+let speedMultiplier = 1.0;
+
+// Cartesian state — virtual XY position, Z height
+// These represent cumulative deltas in a normalized space [-1, 1]
+let cartX = 0, cartY = 0, cartZ = 0.5; // Z 0=bottom, 1=top
+
+// ============================================================
+// HELPERS
+// ============================================================
+function esc(s) { if(!s) return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function showToast(text, danger=false, ms=1500) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.className = 'toast visible' + (danger?' danger':'');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = 'toast', ms);
+}
+
+function logLocal(action, details, level='info') {
+  const now = new Date();
+  const ts_str = now.toTimeString().slice(0,8) + '.' + String(now.getMilliseconds()).padStart(3,'0');
+  localLog.push({ ts_str, action, details, level });
+  if (localLog.length > 200) localLog.shift();
+  if (level === 'error') { errorCountSinceOpen++; updateLogBadge(); }
+}
+
+function makeThrottle(fn, ms=50) {
+  let last=0, timer=null;
+  return function(...args) {
+    const now = Date.now();
+    if (now - last >= ms) { last = now; fn(...args); }
+    else { clearTimeout(timer); timer = setTimeout(() => { last = Date.now(); fn(...args); }, ms-(now-last)); }
+  };
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ============================================================
+// COMMANDS
+// ============================================================
+const throttledSendJoint = makeThrottle((id,angle) => sendJoint(id,angle), 50);
+const throttledSendGripper = makeThrottle((pos) => sendGripper(pos), 50);
+const throttledSendAllJoints = makeThrottle((angles) => sendAllJoints(angles), 50);
+
+async function apiPost(url, body=null) {
+  cmdsSent++;
+  try {
+    const opts = { method:'POST' };
+    if (body) { opts.headers = {'Content-Type':'application/json'}; opts.body = JSON.stringify(body); }
+    const resp = await fetch(url, opts);
+    return await resp.json();
+  } catch(e) {
+    logLocal('ERROR', `Network: ${e.message}`, 'error');
+    return { ok:false, error:e.message };
+  }
+}
+
+async function cmd(action) {
+  logLocal(action.toUpperCase(), `POST /api/command/${action}`, 'info');
+  const data = await apiPost(`/api/command/${action}`);
+  if (data.ok) logLocal(action.toUpperCase(), '✓ OK', 'info');
+  else logLocal(action.toUpperCase(), `✗ ${data.error||'failed'}`, 'error');
+  if (data.state) { armState = {...armState, ...data.state}; }
+  updateUI();
+}
+
+async function sendJoint(id, angle) {
+  if (!armSynced) return;
+  await apiPost('/api/command/set-joint', {id, angle});
+}
+
+async function sendAllJoints(angles) {
+  if (!armSynced) return;
+  await apiPost('/api/command/set-all-joints', {angles});
+}
+
+async function sendGripper(pos) {
+  if (!armSynced) return;
+  await apiPost('/api/command/set-gripper', {position: pos});
+}
+
+async function runTask(name) {
+  if (name === 'stop') {
+    await apiPost('/api/task/stop');
+    taskRunning = false;
+    document.getElementById('taskProgress').classList.remove('active');
+    showToast('Task stopped', true);
+    return;
+  }
+  logLocal('TASK', `Starting: ${name}`, 'info');
+  const data = await apiPost(`/api/task/${name}`);
+  if (data.ok) {
+    taskRunning = true;
+    taskStartTime = Date.now();
+    taskDuration = (data.duration_s || 3) * 1000;
+    taskName = name;
+    document.getElementById('taskProgress').classList.add('active');
+    showToast(`Task: ${name}`);
+  } else {
+    showToast(`Task failed: ${data.error||'unknown'}`, true);
+  }
+}
+
+async function triggerEstop() {
+  estopFired = true;
+  const btn = document.getElementById('btnEstop');
+  btn.classList.add('fired');
+  btn.textContent = '■ STOPPED';
+  const flash = document.getElementById('estopFlash');
+  flash.style.opacity = '1';
+  setTimeout(() => flash.style.opacity = '0', 150);
+  if (navigator.vibrate) navigator.vibrate(200);
+  showToast('⚠ EMERGENCY STOP', true, 3000);
+  logLocal('E-STOP', '⚠ TRIGGERED', 'error');
+  await cmd('stop');
+  taskRunning = false;
+  document.getElementById('taskProgress').classList.remove('active');
+  setTimeout(() => { estopFired = false; btn.classList.remove('fired'); btn.textContent = '⚠ E-STOP'; }, 3000);
+}
+
+// ============================================================
+// CARTESIAN → JOINT MAPPING (rough, immediate functionality)
+// ============================================================
+// X (left/right) → J0 base rotation
+// Y (forward/back) → J1+J2 combined (reach)
+// Z (up/down) → J1-J2 differential (height)
+// This is an approximate mapping for spatial feel.
+
+function cartesianToJoints(dx, dy, dz) {
+  // dx, dy, dz are delta values in normalized units
+  const s = speedMultiplier;
+  const joints = (armState.joints || [0,0,0,0,0,0]).slice();
+
+  // X → J0 (base yaw): scale so full pad sweep ≈ ±45°
+  const j0delta = dx * 40 * s;
+  joints[0] = clamp(joints[0] + j0delta, -135, 135);
+
+  // Y → J1+J2 reach: both move same direction
+  const reachDelta = dy * 25 * s;
+  joints[1] = clamp(joints[1] + reachDelta * 0.6, -90, 90);
+  joints[2] = clamp(joints[2] + reachDelta * 0.4, -90, 90);
+
+  // Z → J1-J2 height: shoulder up, elbow compensates
+  const heightDelta = dz * 25 * s;
+  joints[1] = clamp(joints[1] - heightDelta * 0.7, -90, 90);
+  joints[2] = clamp(joints[2] + heightDelta * 0.3, -90, 90);
+
+  return joints;
+}
+
+function applyCartesianDelta(dx, dy, dz) {
+  if (!armState.enabled || !armSynced) return;
+  const newJoints = cartesianToJoints(dx, dy, dz);
+  throttledSendAllJoints(newJoints);
+}
+
+// ============================================================
+// XY PAD
+// ============================================================
+const xyCanvas = document.getElementById('xyPad');
+const xyCtx = xyCanvas.getContext('2d');
+let xyDragging = false;
+let xyLastPt = null;
+
+function resizeXYPad() {
+  const r = xyCanvas.parentElement;
+  // Account for z-strip width
+  xyCanvas.width = r.clientWidth - 52;
+  xyCanvas.height = r.clientHeight;
+  drawXYPad();
+}
+
+function drawXYPad() {
+  const W = xyCanvas.width, H = xyCanvas.height;
+  const ctx = xyCtx;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = 'var(--bg)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  const gridSize = 40;
+  ctx.strokeStyle = 'rgba(74,144,217,0.04)';
+  ctx.lineWidth = 1;
+  for (let x = gridSize; x < W; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = gridSize; y < H; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // Major grid
+  const majGrid = gridSize * 4;
+  ctx.strokeStyle = 'rgba(74,144,217,0.08)';
+  for (let x = majGrid; x < W; x += majGrid) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = majGrid; y < H; y += majGrid) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // Center crosshair (workspace origin)
+  const cx = W / 2, cy = H / 2;
+  ctx.strokeStyle = 'rgba(74,144,217,0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Workspace boundary (ellipse)
+  const rx = W * 0.4, ry = H * 0.4;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(74,144,217,0.1)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Current position from joints (derive approximate XY from arm FK)
+  const joints = armState.joints || [0,0,0,0,0,0];
+  const j0rad = joints[0] * Math.PI / 180;
+  const j1rad = joints[1] * Math.PI / 180;
+  const j2rad = joints[2] * Math.PI / 180;
+
+  // Approximate end-effector position
+  // X corresponds to base rotation (J0)
+  const normX = joints[0] / 135; // -1 to 1
+  // Y corresponds to reach (J1+J2 average)
+  const normY = (joints[1] * 0.6 + joints[2] * 0.4) / 90;
+
+  const posX = cx + normX * rx;
+  const posY = cy + normY * ry;
+
+  // Position dot with glow
+  ctx.beginPath();
+  ctx.arc(posX, posY, 16, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(74,144,217,0.08)';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(posX, posY, 10, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(74,144,217,0.15)';
+  ctx.fill();
+
+  // Crosshair at position
+  const chLen = 20;
+  ctx.strokeStyle = 'rgba(74,144,217,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(posX - chLen, posY); ctx.lineTo(posX - 5, posY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(posX + 5, posY); ctx.lineTo(posX + chLen, posY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(posX, posY - chLen); ctx.lineTo(posX, posY - 5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(posX, posY + 5); ctx.lineTo(posX, posY + chLen); ctx.stroke();
+
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(posX, posY, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#4a90d9';
+  ctx.fill();
+
+  // Axis labels
+  ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.fillStyle = 'rgba(233,69,96,0.4)';
+  ctx.textAlign = 'center';
+  ctx.fillText('← X →', cx, H - 8);
+  ctx.save();
+  ctx.translate(12, cy);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = 'rgba(83,215,105,0.4)';
+  ctx.fillText('← Y →', 0, 0);
+  ctx.restore();
+  ctx.textAlign = 'left';
+
+  // Update coord readout
+  document.getElementById('coordX').textContent = `X ${(normX * 100).toFixed(0)}`;
+  document.getElementById('coordY').textContent = `Y ${(normY * 100).toFixed(0)}`;
+}
+
+// XY Pad interaction
+xyCanvas.addEventListener('pointerdown', (e) => {
+  if (!armState.enabled) return;
+  xyDragging = true;
+  xyCanvas.classList.add('dragging');
+  xyCanvas.setPointerCapture(e.pointerId);
+  xyLastPt = { x: e.offsetX, y: e.offsetY };
+});
+
+xyCanvas.addEventListener('pointermove', (e) => {
+  if (!xyDragging || !xyLastPt) return;
+  const dx = (e.offsetX - xyLastPt.x) / xyCanvas.width;
+  const dy = (e.offsetY - xyLastPt.y) / xyCanvas.height;
+  xyLastPt = { x: e.offsetX, y: e.offsetY };
+  applyCartesianDelta(dx * 2, dy * 2, 0);
+});
+
+xyCanvas.addEventListener('pointerup', () => { xyDragging = false; xyCanvas.classList.remove('dragging'); xyLastPt = null; });
+xyCanvas.addEventListener('pointercancel', () => { xyDragging = false; xyCanvas.classList.remove('dragging'); xyLastPt = null; });
+
+// Scroll for Z on the XY pad
+xyCanvas.addEventListener('wheel', (e) => {
+  if (!armState.enabled) return;
+  e.preventDefault();
+  const dz = -e.deltaY / 300;
+  applyCartesianDelta(0, 0, dz * speedMultiplier);
+  updateZStrip();
+}, { passive: false });
+
+// ============================================================
+// Z STRIP
+// ============================================================
+let zDragging = false;
+
+function updateZStrip() {
+  const joints = armState.joints || [0,0,0,0,0,0];
+  // Z derived from J1-J2 differential: higher = more negative J1
+  const zNorm = clamp(0.5 - (joints[1] * 0.7 - joints[2] * 0.3) / 90, 0, 1);
+  const track = document.getElementById('zTrack');
+  const h = track.clientHeight;
+  const topPx = (1 - zNorm) * h;
+  document.getElementById('zThumb').style.top = topPx + 'px';
+  document.getElementById('zFill').style.height = (zNorm * 100) + '%';
+  document.getElementById('zValue').textContent = (zNorm * 100).toFixed(0);
+  document.getElementById('coordZ').textContent = `Z ${(zNorm * 100).toFixed(0)}`;
+}
+
+const zStrip = document.getElementById('zStrip');
+zStrip.addEventListener('pointerdown', (e) => {
+  if (!armState.enabled) return;
+  zDragging = true;
+  zStrip.setPointerCapture(e.pointerId);
+});
+zStrip.addEventListener('pointermove', (e) => {
+  if (!zDragging) return;
+  const track = document.getElementById('zTrack');
+  const rect = track.getBoundingClientRect();
+  const norm = 1 - clamp((e.clientY - rect.top) / rect.height, 0, 1);
+  // Convert Z norm to delta from current
+  const joints = armState.joints || [0,0,0,0,0,0];
+  const curZ = clamp(0.5 - (joints[1] * 0.7 - joints[2] * 0.3) / 90, 0, 1);
+  const dz = (norm - curZ) * 0.3;
+  applyCartesianDelta(0, 0, dz);
+});
+zStrip.addEventListener('pointerup', () => { zDragging = false; });
+
+// ============================================================
+// ORIENTATION PADS (Wrist: J3=roll, J4=pitch, J5=yaw-ish roll)
+// ============================================================
+const orientPYCanvas = document.getElementById('orientPYCanvas');
+const orientPYCtx = orientPYCanvas.getContext('2d');
+const orientRollCanvas = document.getElementById('orientRollCanvas');
+const orientRollCtx = orientRollCanvas.getContext('2d');
+let orientPYDrag = false, orientPYLast = null;
+let orientRollDrag = false, orientRollLast = null;
+
+function resizeOrientPads() {
+  const pyPad = document.getElementById('orientPitchYaw');
+  orientPYCanvas.width = pyPad.clientWidth;
+  orientPYCanvas.height = pyPad.clientHeight;
+  const rPad = document.getElementById('orientRoll');
+  orientRollCanvas.width = rPad.clientWidth;
+  orientRollCanvas.height = rPad.clientHeight;
+  drawOrientPads();
+}
+
+function drawOrientPads() {
+  // Pitch/Yaw pad
+  const W = orientPYCanvas.width, H = orientPYCanvas.height;
+  if (W <= 0 || H <= 0) return;
+  const ctx = orientPYCtx;
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W/2, cy = H/2;
+  // Grid
+  ctx.strokeStyle = 'rgba(108,92,231,0.08)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2,2]);
+  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Circle boundary
+  const r = Math.min(W, H) * 0.42;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.strokeStyle = 'rgba(108,92,231,0.12)';
+  ctx.stroke();
+
+  // Current position (J4=pitch vertical, J3=yaw horizontal)
+  const joints = armState.joints || [0,0,0,0,0,0];
+  const nPitch = joints[4] / 90;
+  const nYaw = joints[3] / 135;
+  const px = cx + nYaw * r;
+  const py = cy + nPitch * r;
+
+  ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(108,92,231,0.3)';
+  ctx.fill();
+  ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI*2);
+  ctx.fillStyle = '#6c5ce7';
+  ctx.fill();
+
+  document.getElementById('orientPYVal').textContent = `${joints[4].toFixed(0)}° / ${joints[3].toFixed(0)}°`;
+
+  // Roll knob
+  const W2 = orientRollCanvas.width, H2 = orientRollCanvas.height;
+  if (W2 <= 0 || H2 <= 0) return;
+  const ctx2 = orientRollCtx;
+  ctx2.clearRect(0, 0, W2, H2);
+  const cx2 = W2/2, cy2 = H2/2;
+  const r2 = Math.min(W2, H2) * 0.38;
+
+  // Ring
+  ctx2.beginPath(); ctx2.arc(cx2, cy2, r2, 0, Math.PI*2);
+  ctx2.strokeStyle = 'rgba(232,168,56,0.15)';
+  ctx2.lineWidth = 3;
+  ctx2.stroke();
+
+  // Arc showing angle
+  const rollRad = joints[5] * Math.PI / 180;
+  ctx2.beginPath();
+  ctx2.arc(cx2, cy2, r2, -Math.PI/2, -Math.PI/2 + rollRad, rollRad < 0);
+  ctx2.strokeStyle = Math.abs(joints[5]) > 100 ? '#e94560' : '#e8a838';
+  ctx2.lineWidth = 4;
+  ctx2.stroke();
+
+  // Needle
+  const nx = cx2 + Math.cos(-Math.PI/2 + rollRad) * r2 * 0.85;
+  const ny = cy2 + Math.sin(-Math.PI/2 + rollRad) * r2 * 0.85;
+  ctx2.beginPath(); ctx2.moveTo(cx2, cy2); ctx2.lineTo(nx, ny);
+  ctx2.strokeStyle = '#e8a838';
+  ctx2.lineWidth = 2;
+  ctx2.stroke();
+
+  // Center dot
+  ctx2.beginPath(); ctx2.arc(cx2, cy2, 3, 0, Math.PI*2);
+  ctx2.fillStyle = '#e8a838';
+  ctx2.fill();
+
+  document.getElementById('orientRollVal').textContent = `${joints[5].toFixed(0)}°`;
+}
+
+// Pitch/Yaw pad interaction
+orientPYCanvas.addEventListener('pointerdown', (e) => {
+  if (!armState.enabled) return;
+  orientPYDrag = true;
+  orientPYCanvas.setPointerCapture(e.pointerId);
+  orientPYLast = { x: e.offsetX, y: e.offsetY };
+});
+orientPYCanvas.addEventListener('pointermove', (e) => {
+  if (!orientPYDrag || !orientPYLast) return;
+  const dx = (e.offsetX - orientPYLast.x) / orientPYCanvas.width;
+  const dy = (e.offsetY - orientPYLast.y) / orientPYCanvas.height;
+  orientPYLast = { x: e.offsetX, y: e.offsetY };
+  const joints = (armState.joints || [0,0,0,0,0,0]).slice();
+  // dx → J3 (wrist yaw/roll), dy → J4 (wrist pitch)
+  joints[3] = clamp(joints[3] + dx * 80 * speedMultiplier, -135, 135);
+  joints[4] = clamp(joints[4] + dy * 60 * speedMultiplier, -90, 90);
+  throttledSendAllJoints(joints);
+});
+orientPYCanvas.addEventListener('pointerup', () => { orientPYDrag = false; orientPYLast = null; });
+
+// Roll pad interaction
+orientRollCanvas.addEventListener('pointerdown', (e) => {
+  if (!armState.enabled) return;
+  orientRollDrag = true;
+  orientRollCanvas.setPointerCapture(e.pointerId);
+  orientRollLast = { x: e.offsetX, y: e.offsetY };
+});
+orientRollCanvas.addEventListener('pointermove', (e) => {
+  if (!orientRollDrag || !orientRollLast) return;
+  // Rotary: compute angle delta
+  const cx = orientRollCanvas.width / 2;
+  const cy = orientRollCanvas.height / 2;
+  const prevAngle = Math.atan2(orientRollLast.y - cy, orientRollLast.x - cx);
+  const curAngle = Math.atan2(e.offsetY - cy, e.offsetX - cx);
+  let da = (curAngle - prevAngle) * 180 / Math.PI;
+  if (da > 180) da -= 360;
+  if (da < -180) da += 360;
+  orientRollLast = { x: e.offsetX, y: e.offsetY };
+  const joints = (armState.joints || [0,0,0,0,0,0]).slice();
+  joints[5] = clamp(joints[5] + da * speedMultiplier, -135, 135);
+  throttledSendAllJoints(joints);
+});
+orientRollCanvas.addEventListener('pointerup', () => { orientRollDrag = false; orientRollLast = null; });
+
+// ============================================================
+// GRIPPER CONTROLS
+// ============================================================
+let gripperTarget = 0;
+const gripOpen = document.getElementById('gripOpen');
+const gripClose = document.getElementById('gripClose');
+
+gripOpen.addEventListener('click', () => {
+  if (!armState.enabled) return;
+  gripperTarget = 65;
+  throttledSendGripper(gripperTarget);
+  showToast('Gripper: Open');
+});
+gripClose.addEventListener('click', () => {
+  if (!armState.enabled) return;
+  gripperTarget = 0;
+  throttledSendGripper(gripperTarget);
+  showToast('Gripper: Close');
+});
+
+// ============================================================
+// PRESET CARDS
+// ============================================================
+document.querySelectorAll('.preset-card').forEach(card => {
+  card.addEventListener('click', () => {
+    if (!armState.enabled) return;
+    runTask(card.dataset.task);
+  });
+});
+
+// ============================================================
+// ADVANCED JOINT PANEL
+// ============================================================
+const advToggle = document.getElementById('advancedToggle');
+const advBody = document.getElementById('advancedBody');
+advToggle.addEventListener('click', () => {
+  advToggle.classList.toggle('open');
+  advBody.classList.toggle('open');
+});
+
+// Build compact joint indicators
+const jointCompact = document.getElementById('jointCompact');
+for (let i = 0; i < 6; i++) {
+  const spec = JOINT_SPECS[i];
+  const row = document.createElement('div');
+  row.className = 'joint-compact';
+  row.innerHTML = `
+    <div class="jc-label">${spec.name}</div>
+    <div class="jc-bar${spec.type==='roll'?' roll':''}" id="jcBar${i}" title="${spec.label} [${spec.min}°, ${spec.max}°]">
+      <div class="jc-bar-fill" id="jcFill${i}"></div>
+    </div>
+    <div class="jc-val" id="jcVal${i}" title="Click to edit">0.0°</div>
+  `;
+  jointCompact.appendChild(row);
+
+  // Click bar to set joint directly
+  const bar = row.querySelector('.jc-bar');
+  bar.addEventListener('click', (e) => {
+    if (!armState.enabled) return;
+    const rect = bar.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    const angle = spec.min + pct * (spec.max - spec.min);
+    sendJoint(i, Math.round(angle * 2) / 2);
+  });
+
+  // Click value to prompt
+  row.querySelector('.jc-val').addEventListener('click', () => {
+    if (!armState.enabled) return;
+    const val = prompt(`Set ${spec.name} angle (${spec.min}° to ${spec.max}°):`, (armState.joints[i]||0).toFixed(1));
+    if (val !== null) {
+      const angle = clamp(parseFloat(val), spec.min, spec.max);
+      if (!isNaN(angle)) sendJoint(i, angle);
+    }
+  });
+}
+// Gripper row
+const gripRow = document.createElement('div');
+gripRow.className = 'joint-compact';
+gripRow.innerHTML = `<div class="jc-label" style="color:var(--gripper)">G</div><div class="jc-bar" id="jcBarG"><div class="jc-bar-fill" id="jcFillG" style="background:var(--gripper)"></div></div><div class="jc-val" id="jcValG">0.0mm</div>`;
+jointCompact.appendChild(gripRow);
+
+function updateJointCompact() {
+  const joints = armState.joints || [0,0,0,0,0,0];
+  for (let i = 0; i < 6; i++) {
+    const spec = JOINT_SPECS[i];
+    const pct = (joints[i] - spec.min) / (spec.max - spec.min) * 100;
+    const fill = document.getElementById(`jcFill${i}`);
+    fill.style.left = Math.min(pct, 50) + '%';
+    fill.style.width = Math.abs(pct - 50) + '%';
+    if (pct < 50) { fill.style.left = pct + '%'; fill.style.width = (50 - pct) + '%'; }
+    else { fill.style.left = '50%'; fill.style.width = (pct - 50) + '%'; }
+    document.getElementById(`jcVal${i}`).textContent = joints[i].toFixed(1) + '°';
+  }
+  const gPct = ((armState.gripper || 0) / 65) * 100;
+  document.getElementById('jcFillG').style.left = '0';
+  document.getElementById('jcFillG').style.width = gPct + '%';
+  document.getElementById('jcValG').textContent = (armState.gripper || 0).toFixed(1) + 'mm';
+}
+
+// ============================================================
+// SPEED CONTROLS
+// ============================================================
+document.querySelectorAll('.speed-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    speedMultiplier = parseFloat(btn.dataset.speed);
+    showToast(`Speed: ${btn.textContent.trim()}`);
+  });
+});
+
+// ============================================================
+// TELEMETRY GRID
+// ============================================================
+const telemGrid = document.getElementById('telemGrid');
+for (let i=0; i<6; i++) {
+  const d = document.createElement('div'); d.className = 'telem-joint';
+  d.innerHTML = `<div class="telem-joint-id">${JOINT_SPECS[i].name}</div><div class="telem-joint-val" id="tv${i}">0.0°</div><div class="telem-joint-vel" id="tvel${i}">0.0°/s</div>`;
+  telemGrid.appendChild(d);
+}
+const gd = document.createElement('div'); gd.className = 'telem-joint';
+gd.innerHTML = `<div class="telem-joint-id">GRIP</div><div class="telem-joint-val" id="tvG">0.0</div><div class="telem-joint-vel" style="color:var(--gripper)">mm</div>`;
+telemGrid.appendChild(gd);
+
+// ============================================================
+// BUTTON WIRING
+// ============================================================
+document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
+document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
+document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
+document.getElementById('btnDisable').addEventListener('click', () => cmd('disable'));
+document.getElementById('btnEstop').addEventListener('click', triggerEstop);
+
+// ============================================================
+// WEBSOCKET
+// ============================================================
+function connectWS() {
+  const proto = location.protocol==='https:'?'wss:':'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/state`);
+  ws.onopen = () => { updateConn(true); logLocal('WS','Connected','info'); };
+  ws.onclose = () => { updateConn(false); setTimeout(connectWS, 2000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    const now = Date.now();
+    wsRxTimes.push(now);
+    if (wsRxTimes.length > 20) wsRxTimes.shift();
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'ack') return;
+
+      const newJoints = data.joints || [0,0,0,0,0,0];
+      const allZero = newJoints.every(v=>Math.abs(v)<0.01);
+      const hadReal = lastGoodJoints.some(v=>Math.abs(v)>0.1);
+      if (allZero && hadReal && armSynced) { data.joints = lastGoodJoints.slice(); }
+      else { lastGoodJoints = newJoints.slice(); }
+
+      const dt = (now - lastStateTs) / 1000 || 0.1;
+      for (let i=0;i<6;i++) jointVelocities[i] = Math.abs(((data.joints||[0,0,0,0,0,0])[i] - prevJoints[i]) / dt);
+      prevJoints = (data.joints||[0,0,0,0,0,0]).slice();
+
+      armState = data;
+      lastStateTs = now;
+      wsUpdateCount++;
+      if(!armSynced) { armSynced=true; logLocal('SYNC','First state received','info'); }
+    } catch(err) {}
+  };
+}
+
+function updateConn(on) {
+  document.getElementById('connDot').className = 'conn-dot '+(on?'on':'off');
+  document.getElementById('connLabel').textContent = on?'CONNECTED':'DISCONNECTED';
+  document.body.dataset.connected = on?'true':'false';
+}
+
+// ============================================================
+// UI UPDATE
+// ============================================================
+function updateUI() {
+  document.body.dataset.power = armState.power?'true':'false';
+  document.body.dataset.enabled = armState.enabled?'true':'false';
+
+  // Mode strip
+  const steps = ['modeDisconn','modeConn','modePower','modeEnabled'];
+  let activeStep = 0;
+  if (armState.connected || document.body.dataset.connected==='true') activeStep=1;
+  if (armState.power) activeStep=2;
+  if (armState.enabled) activeStep=3;
+  steps.forEach((id,i) => {
+    const el = document.getElementById(id);
+    el.classList.toggle('active', i===activeStep);
+    el.classList.toggle('state-connected', i===1&&activeStep===1);
+    el.classList.toggle('state-powered', i===2&&activeStep===2);
+    el.classList.toggle('state-enabled', i===3&&activeStep===3);
+  });
+
+  // Error badge
+  const berr = document.getElementById('badgeError');
+  if (armState.error) { berr.textContent='ERR '+armState.error; berr.className='badge error'; }
+  else { berr.textContent='NO ERR'; berr.className='badge'; }
+
+  // State summary
+  const ss = document.getElementById('stateSummary');
+  if (armState.error) { ss.textContent=`ERROR: Code ${armState.error}`; ss.className='state-summary error'; }
+  else if (armState.enabled) { ss.textContent='ARM READY — ENABLED'; ss.className='state-summary ready'; }
+  else if (armState.power) { ss.textContent='POWERED — NOT ENABLED'; ss.className='state-summary'; }
+  else if (document.body.dataset.connected==='true') { ss.textContent='CONNECTED — POWER OFF'; ss.className='state-summary'; }
+  else { ss.textContent='DISCONNECTED'; ss.className='state-summary'; }
+
+  // Buttons
+  document.getElementById('btnPowerOn').disabled = armState.power;
+  document.getElementById('btnPowerOn').className = 'btn needs-connected'+(armState.power?' on':'');
+  document.getElementById('btnPowerOff').disabled = !armState.power;
+  document.getElementById('btnEnable').disabled = !armState.power||armState.enabled;
+  document.getElementById('btnEnable').className = 'btn needs-power'+(armState.enabled?' on':'');
+  document.getElementById('btnDisable').disabled = !armState.enabled;
+
+  // E-stop visual
+  if (!estopFired) {
+    const btn = document.getElementById('btnEstop');
+    const isMoving = jointVelocities.some(v=>v>0.5);
+    btn.classList.toggle('armed', armState.enabled && !isMoving);
+    btn.classList.toggle('moving', armState.enabled && isMoving);
+  }
+
+  // Latency
+  if (lastStateTs > 0) {
+    const age = Date.now() - lastStateTs;
+    const pill = document.getElementById('latencyPill');
+    if (age < 500) { pill.textContent=`${age}ms`; pill.className='latency-pill good'; }
+    else if (age < 2000) { pill.textContent=`${(age/1000).toFixed(1)}s`; pill.className='latency-pill warn'; }
+    else { pill.textContent=`${(age/1000).toFixed(0)}s stale`; pill.className='latency-pill bad'; }
+  }
+
+  // Stale overlay
+  const stale = Date.now() - lastStateTs > 3000 && lastStateTs > 0;
+  document.getElementById('staleOverlay').style.display = stale?'flex':'none';
+
+  // Gripper readout
+  document.getElementById('gripReadout').innerHTML = `${(armState.gripper||0).toFixed(1)}<small>mm</small>`;
+
+  // Task progress
+  if (taskRunning) {
+    const elapsed = Date.now()-taskStartTime;
+    const pct = Math.min(100, (elapsed/taskDuration)*100);
+    document.getElementById('taskProgressFill').style.width = pct+'%';
+    document.getElementById('taskProgressText').textContent = `${taskName} — ${(elapsed/1000).toFixed(1)}s / ${(taskDuration/1000).toFixed(1)}s`;
+    if (pct >= 100) { taskRunning = false; setTimeout(() => document.getElementById('taskProgress').classList.remove('active'), 1000); }
+  }
+
+  // Update compact joints
+  updateJointCompact();
+
+  // Telemetry
+  if (activeDrawer === 'telemetry') updateTelemetry();
+
+  // Render visual controls
+  drawXYPad();
+  updateZStrip();
+  drawOrientPads();
+
+  renderLog();
+}
+
+function updateTelemetry() {
+  const joints = armState.joints||[0,0,0,0,0,0];
+  for (let i=0;i<6;i++) {
+    document.getElementById(`tv${i}`).textContent = (joints[i]||0).toFixed(1)+'°';
+    document.getElementById(`tvel${i}`).textContent = jointVelocities[i].toFixed(1)+'°/s';
+  }
+  document.getElementById('tvG').textContent = (armState.gripper||0).toFixed(1);
+  document.getElementById('tsConn').textContent = document.body.dataset.connected==='true'?'OK':'DOWN';
+  const age = lastStateTs>0?Date.now()-lastStateTs:0;
+  document.getElementById('tsLat').textContent = age<2000?age+'ms':'STALE';
+  if (wsRxTimes.length>1) {
+    const span = (wsRxTimes[wsRxTimes.length-1]-wsRxTimes[0])/1000;
+    document.getElementById('tsRxRate').textContent = span>0?(((wsRxTimes.length-1)/span).toFixed(1)+'/s'):'—';
+  }
+  document.getElementById('tsPower').textContent = armState.power?'ON':'OFF';
+  document.getElementById('tsMotors').textContent = armState.enabled?'ENABLED':'OFF';
+  document.getElementById('tsError').textContent = armState.error||'None';
+  document.getElementById('tsMoving').textContent = jointVelocities.some(v=>v>0.5)?'YES':'No';
+  document.getElementById('tsMaxVel').textContent = Math.max(...jointVelocities).toFixed(1)+'°/s';
+  document.getElementById('tsTask').textContent = taskRunning?taskName:'Idle';
+  document.getElementById('tsWsMsgs').textContent = wsUpdateCount;
+  document.getElementById('tsCmds').textContent = cmdsSent;
+  document.getElementById('tsUptime').textContent = ((Date.now()-startTime)/1000|0)+'s';
+}
+
+// ============================================================
+// LOG
+// ============================================================
+let lastLogHash = '';
+function renderLog() {
+  const serverEntries = (armState.log||[]).map(e=>({...e, src:'s'}));
+  let all = [...serverEntries, ...localLog.map(e=>({...e, src:'c'}))];
+  all.sort((a,b)=>a.ts_str.localeCompare(b.ts_str));
+  if (logFilter !== 'all') all = all.filter(e=>e.level===logFilter);
+  if (logSearchText) { const q=logSearchText.toLowerCase(); all = all.filter(e=>(e.action+e.details).toLowerCase().includes(q)); }
+  const last50 = all.slice(-50);
+  const hash = last50.map(e=>e.ts_str+e.action).join('|');
+  if (hash===lastLogHash) return;
+  lastLogHash = hash;
+  const el = document.getElementById('logScroll');
+  el.innerHTML = last50.map(e=>
+    `<div class="log-entry ${e.level}"><span class="ts">${esc(e.ts_str)}</span><span class="act">${esc(e.action)}</span><span class="detail">${esc(e.details)}</span></div>`
+  ).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateLogBadge() {
+  const badge = document.getElementById('logBadge');
+  if (activeDrawer==='log') { errorCountSinceOpen=0; badge.classList.remove('visible'); return; }
+  if (errorCountSinceOpen>0) { badge.textContent=errorCountSinceOpen; badge.classList.add('visible'); }
+  else badge.classList.remove('visible');
+}
+
+document.querySelectorAll('.log-filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.log-filter-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    logFilter = btn.dataset.filter;
+    lastLogHash = '';
+    renderLog();
+  });
+});
+document.getElementById('logSearch').addEventListener('input', (e) => { logSearchText = e.target.value; lastLogHash=''; renderLog(); });
+document.getElementById('logClear').addEventListener('click', () => { localLog = []; lastLogHash=''; renderLog(); });
+
+// ============================================================
+// DRAWER SYSTEM
+// ============================================================
+document.querySelectorAll('.drawer-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const name = tab.dataset.drawer;
+    if (activeDrawer === name) {
+      activeDrawer = null;
+      document.getElementById('drawerContent').classList.remove('open');
+      document.querySelectorAll('.drawer-tab').forEach(t=>t.classList.remove('active'));
+      document.querySelectorAll('.drawer-panel').forEach(p=>p.classList.remove('active'));
+    } else {
+      activeDrawer = name;
+      document.getElementById('drawerContent').classList.add('open');
+      document.querySelectorAll('.drawer-tab').forEach(t=>t.classList.toggle('active', t.dataset.drawer===name));
+      document.querySelectorAll('.drawer-panel').forEach(p=>p.classList.toggle('active', p.dataset.drawer===name));
+    }
+    onDrawerChanged();
+  });
+});
+
+function onDrawerChanged() {
+  const camPanel = activeDrawer === 'cameras';
+  document.getElementById('camImg0').src = camPanel ? '/cam/0' : '';
+  document.getElementById('camImg1').src = camPanel ? '/cam/1' : '';
+  if (activeDrawer === 'log') { errorCountSinceOpen = 0; updateLogBadge(); }
+  if (activeDrawer === 'debug' && !debugEnabled) {
+    debugEnabled = true;
+    fetch('/api/debug/enable', {method:'POST'}).catch(()=>{});
+    debugPollTimer = setInterval(pollDebug, 1000);
+    pollDebug();
+  } else if (activeDrawer !== 'debug' && debugEnabled) {
+    debugEnabled = false;
+    fetch('/api/debug/disable', {method:'POST'}).catch(()=>{});
+    if (debugPollTimer) { clearInterval(debugPollTimer); debugPollTimer=null; }
+  }
+  setTimeout(() => { resizeXYPad(); resizeOrientPads(); }, 50);
+}
+
+async function pollDebug() {
+  try {
+    const resp = await fetch('/api/debug/telemetry?limit=20');
+    if (resp.ok) {
+      const data = await resp.json();
+      const events = data.events || data;
+      renderDebugEvents(events);
+      updateDebugPipeline(events);
+    }
+  } catch(e) {}
+}
+
+function renderDebugEvents(events) {
+  const container = document.getElementById('debugEvents');
+  if (!Array.isArray(events)||!events.length) { container.innerHTML='<span style="color:var(--text-muted)">No events</span>'; return; }
+  container.innerHTML = events.map(ev => {
+    const ts = ev.timestamp ? new Date(ev.timestamp).toTimeString().slice(0,8) : (ev.wall_time_ms ? new Date(ev.wall_time_ms).toTimeString().slice(0,8) : '??');
+    const payload = ev.payload ? JSON.stringify(ev.payload).slice(0,80) : '';
+    return `<div style="white-space:nowrap"><span style="color:var(--text-muted)">${esc(ts)}</span> <span style="color:var(--info);font-weight:600">${esc(ev.event_type||'?')}</span> <span style="color:var(--text-dim)">${esc(payload)}</span></div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function updateDebugPipeline(events) {
+  const now = Date.now();
+  const recent = new Set();
+  if (Array.isArray(events)) {
+    events.forEach(ev => {
+      const ts = ev.wall_time_ms || (ev.timestamp ? new Date(ev.timestamp).getTime() : 0);
+      if (now - ts < 3000) recent.add(ev.event_type);
+    });
+  }
+  const mapping = {'CMD_SENT':'CMD','DDS_PUBLISH':'DDS_TX','DDS_RECEIVE':'ARM_RX','CMD_EXEC':'EXEC','STATE_UPDATE':'STATE','WS_SEND':'WS'};
+  document.querySelectorAll('#debugPipeline .pipe-stage').forEach(el => {
+    const stage = el.dataset.stage;
+    if (stage==='UI') return;
+    const active = Object.entries(mapping).some(([evType,s]) => s===stage && recent.has(evType));
+    el.classList.toggle('active', active);
+  });
+}
+
+// ============================================================
+// KEYBOARD SHORTCUTS
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); triggerEstop(); return; }
+
+  if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+    document.getElementById('shortcutsOverlay').classList.toggle('visible'); return;
+  }
+  if (document.getElementById('shortcutsOverlay').classList.contains('visible')) {
+    document.getElementById('shortcutsOverlay').classList.remove('visible'); return;
+  }
+  if (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+
+  const step = e.shiftKey ? 0.01 : 0.04;
+
+  // WASD for XY control
+  if (e.key.toLowerCase()==='w' && armState.enabled) { applyCartesianDelta(0, -step, 0); return; }
+  if (e.key.toLowerCase()==='s' && armState.enabled) { applyCartesianDelta(0, step, 0); return; }
+  if (e.key.toLowerCase()==='a' && armState.enabled) { applyCartesianDelta(-step, 0, 0); return; }
+  if (e.key.toLowerCase()==='d' && armState.enabled) { applyCartesianDelta(step, 0, 0); return; }
+  if (e.key.toLowerCase()==='q' && armState.enabled) { applyCartesianDelta(0, 0, -step); return; }
+  if (e.key.toLowerCase()==='e' && armState.enabled) { applyCartesianDelta(0, 0, step); return; }
+
+  // Gripper toggle
+  if (e.key.toLowerCase()==='g' && armState.enabled) {
+    const cur = armState.gripper || 0;
+    const target = cur > 30 ? 0 : 65;
+    throttledSendGripper(target);
+    showToast(target > 0 ? 'Gripper: Open' : 'Gripper: Close');
+    return;
+  }
+
+  // Tasks
+  if (e.key.toLowerCase()==='h'&&armState.enabled) { runTask('home'); return; }
+  if (e.key.toLowerCase()==='r'&&armState.enabled) { runTask('ready'); return; }
+  if (e.key==='Escape') { runTask('stop'); return; }
+
+  // Drawers
+  if (e.key.toLowerCase()==='c') { document.querySelector('[data-drawer="cameras"]').click(); return; }
+  if (e.key.toLowerCase()==='l') { document.querySelector('.drawer-tab[data-drawer="log"]').click(); return; }
+});
+
+// ============================================================
+// ANIMATION LOOP
+// ============================================================
+function animLoop() {
+  updateUI();
+  requestAnimationFrame(animLoop);
+}
+
+function resizeAll() {
+  resizeXYPad();
+  resizeOrientPads();
+}
+
+window.addEventListener('resize', resizeAll);
+
+// ============================================================
+// INIT
+// ============================================================
+connectWS();
+setTimeout(() => { resizeAll(); animLoop(); }, 100);
+</script>
+</body>
+</html>

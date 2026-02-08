@@ -1,3 +1,4 @@
+<!-- th3cl4w V1 Control Panel — Stable Base -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>th3cl4w — D1 Arm Control</title>
 <style>
+/* === Variables & Reset === */
 :root {
   --bg: #1a1a2e;
   --card: #16213e;
@@ -22,6 +24,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); font-family: var(--sans); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
+/* === Top Bar === */
 .topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--card); border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
 .logo { font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 2px; color: var(--danger); }
 .conn-dot { width: 10px; height: 10px; border-radius: 50%; background: #666; flex-shrink: 0; }
@@ -33,16 +36,20 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .conn-quality { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
 .topbar-spacer { flex: 1; }
 
+/* === Layout === */
 .main { display: flex; flex: 1; overflow: hidden; }
 .panel-left { flex: 1; min-width: 300px; display: flex; flex-direction: column; border-right: 1px solid var(--card-border); }
 .panel-right { width: 400px; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; }
 
+/* === Visualization === */
 .viz-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; }
 .viz-container canvas { max-width: 100%; max-height: 100%; }
 
+/* === Controls === */
 .controls { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .section-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 2px; }
 
+/* === Joint Sliders === */
 .joint-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
 .joint-label { font-family: var(--mono); font-size: 11px; width: 22px; color: var(--text-dim); text-align: right; }
 .joint-slider { flex: 1; -webkit-appearance: none; appearance: none; height: 5px; background: #1a2744; border-radius: 3px; outline: none; }
@@ -52,6 +59,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .joint-value { font-family: var(--mono); font-size: 11px; width: 58px; text-align: right; color: var(--text); }
 .joint-range { font-family: var(--mono); font-size: 9px; color: #555; width: 40px; text-align: center; }
 
+/* === Buttons === */
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn { font-family: var(--mono); font-size: 11px; padding: 6px 12px; border: 1px solid var(--card-border); border-radius: 4px; cursor: pointer; background: var(--card); color: var(--text); transition: all 0.15s; text-transform: uppercase; letter-spacing: 1px; }
 .btn:hover:not(:disabled) { background: var(--primary); border-color: #4a90d9; }
@@ -60,16 +68,19 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .btn.on { background: #0a3d20; border-color: var(--success); color: var(--success); }
 .btn.danger-active { background: #3d1a1a; border-color: var(--danger); color: var(--danger); }
 
+/* === Emergency Stop === */
 .estop { width: 100%; padding: 14px; font-size: 15px; font-weight: 700; background: var(--danger); color: #fff; border: 2px solid #ff6b81; border-radius: 6px; cursor: pointer; letter-spacing: 3px; text-transform: uppercase; font-family: var(--mono); transition: all 0.15s; }
 .estop:hover { background: #ff2244; box-shadow: 0 0 20px rgba(233,69,96,0.5); }
 .estop:active { transform: scale(0.98); }
 .estop.flash { animation: estop-flash 0.8s infinite; }
 @keyframes estop-flash { 0%,100% { box-shadow: 0 0 5px rgba(233,69,96,0.3); } 50% { box-shadow: 0 0 25px rgba(233,69,96,0.8); border-color: #fff; } }
 
+/* === Raw Command Input === */
 .raw-cmd { display: flex; gap: 6px; margin-top: 4px; }
 .raw-cmd input { flex: 1; font-family: var(--mono); font-size: 11px; padding: 6px 8px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; color: var(--text); outline: none; }
 .raw-cmd input:focus { border-color: var(--info); }
 
+/* === Action Log === */
 .log-panel { height: 150px; flex-shrink: 0; border-top: 1px solid var(--card-border); display: flex; flex-direction: column; }
 .log-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); padding: 6px 12px 2px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
 .log-scroll { flex: 1; overflow-y: auto; padding: 0 12px 6px; font-family: var(--mono); font-size: 10px; line-height: 1.5; }
@@ -83,6 +94,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .log-entry.error .detail { color: #d9534f; }
 .log-entry.warning .detail { color: #c09853; }
 
+/* === Camera Panel === */
 .camera-panel { border-top: 1px solid var(--card-border); flex-shrink: 0; }
 .camera-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; }
 .cam-toggle { font-size: 10px !important; padding: 3px 8px !important; }
@@ -95,11 +107,12 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .cam-img { width: 100%; aspect-ratio: 4/3; object-fit: contain; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; }
 .cam-snap { font-size: 9px !important; padding: 2px 6px !important; align-self: flex-start; }
 
+/* === Scrollbar === */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 3px; }
 
-/* Debug Panel */
+/* === Debug Panel === */
 .debug-panel { background: #111827; border-top: 2px solid #4a90d9; font-family: var(--mono); font-size: 11px; padding: 8px 12px; overflow-y: auto; max-height: 340px; }
 .debug-section { margin-bottom: 10px; }
 .debug-title { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; }
@@ -135,35 +148,12 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .de-ERROR { color: #e94560; }
 .de-CAM_FRAME { color: #888; }
 
-/* Bifocal Workspace Mapping Panel */
-.bifocal-panel { background: #111827; border-top: 2px solid #9b59b6; font-family: var(--mono); font-size: 11px; padding: 8px 12px; overflow-y: auto; max-height: 320px; }
-.bifocal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.bifocal-title { font-size: 10px; color: #9b59b6; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
-.bifocal-status { display: flex; gap: 8px; align-items: center; }
-.bf-badge { font-size: 9px; padding: 2px 6px; border-radius: 3px; background: #1a2744; color: var(--text-dim); }
-.bf-badge.active { background: #1a3d2e; color: var(--success); }
-.bf-badge.calib { background: #3d2e1a; color: #f0ad4e; }
-.bifocal-controls { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-.bifocal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.bf-section { background: #0d1525; border: 1px solid #333; border-radius: 4px; padding: 6px 8px; }
-.bf-section-title { font-size: 9px; color: #9b59b6; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
-.bf-stat { display: flex; justify-content: space-between; padding: 1px 0; }
-.bf-stat span:first-child { color: var(--text-dim); font-size: 9px; }
-.bf-stat span:last-child { color: var(--text); font-size: 10px; }
-.bf-preview-result { margin-top: 6px; padding: 6px 8px; border-radius: 4px; font-size: 10px; }
-.bf-preview-result.clear { background: #0a3d20; border: 1px solid var(--success); color: var(--success); }
-.bf-preview-result.collision { background: #3d0a0a; border: 1px solid var(--danger); color: var(--danger); }
-.bf-preview-result.unknown { background: #1a2744; border: 1px solid #444; color: var(--text-dim); }
-.bf-workspace-viz { width: 100%; height: 120px; background: #0a0f1a; border: 1px solid #333; border-radius: 4px; margin-top: 4px; }
-.bf-calib-row { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
-.bf-calib-row input { width: 70px; font-family: var(--mono); font-size: 10px; padding: 3px 6px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 3px; color: var(--text); }
-
+/* === Responsive === */
 @media (max-width: 800px) {
   .main { flex-direction: column; }
   .panel-left { min-height: 220px; border-right: none; border-bottom: 1px solid var(--card-border); }
   .panel-right { width: 100%; flex: 1; }
   .debug-stats { grid-template-columns: repeat(2, 1fr); }
-  .bifocal-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -174,7 +164,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="conn-dot" id="connDot"></div>
   <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">DISCONNECTED</span>
   <span class="conn-quality" id="connQuality"></span>
-  <button class="btn" id="btnBifocal" style="font-size:10px;padding:3px 8px;border-color:#9b59b6;color:#9b59b6">BIFOCAL</button>
   <button class="btn" id="btnDebug" style="font-size:10px;padding:3px 8px">🔧 DEBUG</button>
   <a href="/telemetry" class="btn" style="font-size:10px;padding:3px 8px;text-decoration:none">📊 TELEMETRY</a>
   <div class="topbar-spacer"></div>
@@ -258,46 +247,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="log-scroll" id="logScroll"></div>
 </div>
 
-<div class="bifocal-panel" id="bifocalPanel" style="display:none">
-  <div class="bifocal-header">
-    <span class="bifocal-title">Bifocal Workspace Mapping</span>
-    <div class="bifocal-status">
-      <span class="bf-badge" id="bfBadgeEnabled">OFF</span>
-      <span class="bf-badge" id="bfBadgeCalib">UNCALIBRATED</span>
-      <span class="bf-badge" id="bfBadgeMap">NO MAP</span>
-    </div>
-  </div>
-  <div class="bifocal-controls">
-    <button class="btn" id="btnBfToggle" style="border-color:#9b59b6;color:#9b59b6">Enable Mapper</button>
-    <button class="btn" id="btnBfUpdate">Scan Now</button>
-    <button class="btn" id="btnBfPreview">Preview Pose</button>
-    <button class="btn" id="btnBfClear" style="border-color:var(--warning);color:var(--warning)">Clear Map</button>
-  </div>
-  <div class="bifocal-grid">
-    <div class="bf-section">
-      <div class="bf-section-title">Workspace Map</div>
-      <div class="bf-stat"><span>Voxels occupied</span><span id="bfOccupied">0</span></div>
-      <div class="bf-stat"><span>Mapped %</span><span id="bfMapped">0%</span></div>
-      <div class="bf-stat"><span>Grid size</span><span id="bfGridSize">--</span></div>
-      <div class="bf-stat"><span>Voxel size</span><span id="bfVoxelSize">--</span></div>
-      <div class="bf-stat"><span>Updates</span><span id="bfUpdates">0</span></div>
-      <canvas class="bf-workspace-viz" id="bfVizCanvas" width="300" height="120"></canvas>
-    </div>
-    <div class="bf-section">
-      <div class="bf-section-title">Scale Calibration</div>
-      <div class="bf-stat"><span>Scale factor</span><span id="bfScale">1.0000</span></div>
-      <div class="bf-stat"><span>Calibrated</span><span id="bfScaleStatus">No</span></div>
-      <div class="bf-calib-row">
-        <span style="font-size:9px;color:var(--text-dim)">Square mm:</span>
-        <input type="number" id="bfSquareSize" value="25" min="1" max="200" step="0.5">
-        <button class="btn" id="btnBfCalibBoard" style="font-size:9px;padding:2px 6px">Checkerboard</button>
-      </div>
-      <div class="bf-section-title" style="margin-top:6px">Collision Preview</div>
-      <div class="bf-preview-result unknown" id="bfPreviewResult">No preview run yet</div>
-    </div>
-  </div>
-</div>
-
 <div class="debug-panel" id="debugPanel" style="display:none">
   <div class="debug-section">
     <div class="debug-title">Pipeline</div>
@@ -335,7 +284,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 <script>
 'use strict';
 
-// ---- D1 specs ----
+// ============================================================
+//  CONSTANTS & SPECS
+// ============================================================
+
 const JOINT_SPECS = [
   { name: 'J0', min: -135, max: 135, label: 'Base Yaw',    type: 'yaw'   },
   { name: 'J1', min: -90,  max: 90,  label: 'Shoulder',    type: 'pitch' },
@@ -353,24 +305,29 @@ const LINKS_MM = {
 // DH geometric offsets (degrees) — maps D1 DDS zero convention to viz geometry.
 // The D1's zero-angle config has the arm extended forward (not straight up).
 // At DDS [0, -90, 90, 0, 0, 0] the arm is folded/compact (up then back down).
-// These offsets are added to the DDS pitch angles before FK computation.
 const JOINT_VIZ_OFFSETS = [0, 90, 90, 0, 0, 0];
 
-// ---- State ----
+// ============================================================
+//  STATE
+// ============================================================
+
 let ws = null;
 let armState = { connected: false, joints: [0,0,0,0,0,0], gripper: 0, power: false, enabled: false, error: 0, log: [] };
 let lastStateTs = 0;
-let userDragging = -1; // -1=none, 0-5=joint, 6=gripper
+let userDragging = -1;           // -1=none, 0-5=joint, 6=gripper
 let animFrameId = null;
-let localLog = []; // client-side log entries
-let armSynced = false; // SAFETY: don't send commands until first state received
-let updatingFromState = false; // Guard against state→slider→command feedback loop
-let vizDirty = true; // Only redraw canvas when joint/gripper values change
-let uiDirty = true; // Update DOM elements (log, badges) when any WS data arrives
-let prevJoints = [0,0,0,0,0,0]; // Track previous joint values to detect actual changes
-let prevGripper = 0;
-let lastGoodJoints = [0,0,0,0,0,0]; // Cache last known non-zero joints to prevent zero-snap
-let vizLogCounter = 0; // Throttle telemetry logging
+let localLog = [];               // Client-side log entries
+let armSynced = false;           // SAFETY: don't send commands until first state received
+let updatingFromState = false;   // Guard against state→slider→command feedback loop
+let vizDirty = true;             // Only redraw when state changes
+let lastGoodJoints = [0,0,0,0,0,0]; // Client-side cache to prevent zero-snap
+let vizJoints = [0,0,0,0,0,0];  // Smoothed joints actually rendered
+let jointSource = 'init';        // Telemetry: where current joint values came from
+let wsUpdateCount = 0;           // Telemetry: count of WS updates received
+
+// ============================================================
+//  UTILITIES
+// ============================================================
 
 function logLocal(action, details, level) {
   const now = new Date();
@@ -379,7 +336,31 @@ function logLocal(action, details, level) {
   if (localLog.length > 100) localLog.shift();
 }
 
-// ---- Build sliders ----
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function makeThrottle(fn, ms = 50) {
+  let lastCall = 0, timer = null;
+  return function(...args) {
+    const now = Date.now();
+    if (now - lastCall >= ms) {
+      lastCall = now;
+      fn(...args);
+    } else {
+      clearTimeout(timer);
+      timer = setTimeout(() => { lastCall = Date.now(); fn(...args); }, ms - (now - lastCall));
+    }
+  };
+}
+
+// ============================================================
+//  SLIDER SETUP (Joint + Gripper)
+// ============================================================
+
 const slidersDiv = document.getElementById('jointSliders');
 for (let i = 0; i < 6; i++) {
   const spec = JOINT_SPECS[i];
@@ -397,7 +378,7 @@ for (let i = 0; i < 6; i++) {
   slider.addEventListener('touchstart', () => userDragging = i);
   slider.addEventListener('input', () => {
     document.getElementById(`jv${i}`).textContent = parseFloat(slider.value).toFixed(1) + '°';
-    if (!armSynced || updatingFromState) return; // SAFETY: don't send until synced
+    if (!armSynced || updatingFromState) return;
     throttledSendJoint(i, parseFloat(slider.value));
   });
   const release = () => { if (userDragging === i) { sendJoint(i, parseFloat(slider.value)); userDragging = -1; } };
@@ -406,13 +387,12 @@ for (let i = 0; i < 6; i++) {
   slider.addEventListener('change', release);
 }
 
-// Gripper
 const gripSlider = document.getElementById('gripperSlider');
 gripSlider.addEventListener('mousedown', () => userDragging = 6);
 gripSlider.addEventListener('touchstart', () => userDragging = 6);
 gripSlider.addEventListener('input', () => {
   document.getElementById('gripperValue').textContent = parseFloat(gripSlider.value).toFixed(1) + ' mm';
-  if (!armSynced || updatingFromState) return; // SAFETY: don't send until synced
+  if (!armSynced || updatingFromState) return;
   throttledSendGripper(parseFloat(gripSlider.value));
 });
 const gripRelease = () => { if (userDragging === 6) { sendGripper(parseFloat(gripSlider.value)); userDragging = -1; } };
@@ -420,31 +400,20 @@ gripSlider.addEventListener('mouseup', gripRelease);
 gripSlider.addEventListener('touchend', gripRelease);
 gripSlider.addEventListener('change', gripRelease);
 
-// ---- Throttle helper (50ms = 20Hz max send rate, server smooths the rest) ----
-function makeThrottle(fn, ms = 50) {
-  let lastCall = 0, timer = null;
-  return function(...args) {
-    const now = Date.now();
-    if (now - lastCall >= ms) {
-      lastCall = now;
-      fn(...args);
-    } else {
-      clearTimeout(timer);
-      timer = setTimeout(() => { lastCall = Date.now(); fn(...args); }, ms - (now - lastCall));
-    }
-  };
-}
 const throttledSendJoint = makeThrottle((id, angle) => sendJoint(id, angle), 50);
 const throttledSendGripper = makeThrottle((pos) => sendGripper(pos), 50);
 
-// ---- Commands ----
+// ============================================================
+//  COMMANDS (API calls)
+// ============================================================
+
 async function cmd(action) {
   logLocal(action.toUpperCase(), `Sending POST /api/command/${action}`, 'info');
   try {
     const resp = await fetch(`/api/command/${action}`, { method: 'POST' });
     const data = await resp.json();
     if (data.ok) {
-      logLocal(action.toUpperCase(), `✓ Success`, 'info');
+      logLocal(action.toUpperCase(), '✓ Success', 'info');
     } else {
       logLocal(action.toUpperCase(), `✗ Failed: ${data.error || 'unknown'}`, 'error');
     }
@@ -456,12 +425,11 @@ async function cmd(action) {
 }
 
 async function sendJoint(id, angle) {
-  if (!armSynced) return; // SAFETY: don't send before first state sync
-  const body = { id, angle };
+  if (!armSynced) return;
   logLocal('SET_JOINT', `J${id} -> ${angle.toFixed(1)}°`, 'info');
   try {
     const resp = await fetch('/api/command/set-joint', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, angle })
     });
     const data = await resp.json();
     if (!data.ok) logLocal('SET_JOINT', `✗ ${data.error || 'failed'}`, 'error');
@@ -469,7 +437,7 @@ async function sendJoint(id, angle) {
 }
 
 async function sendGripper(pos) {
-  if (!armSynced) return; // SAFETY: don't send before first state sync
+  if (!armSynced) return;
   logLocal('SET_GRIPPER', `${pos.toFixed(1)} mm`, 'info');
   try {
     const resp = await fetch('/api/command/set-gripper', {
@@ -480,25 +448,13 @@ async function sendGripper(pos) {
   } catch(e) { logLocal('SET_GRIPPER', `✗ ${e.message}`, 'error'); }
 }
 
-// Button wiring — system commands
-document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
-document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
-document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
-document.getElementById('btnDisable').addEventListener('click', () => cmd('disable'));
-
-// Task buttons — use planning module for smooth trajectories
 async function runTask(name, body = {}) {
   logLocal('TASK', `Starting task: ${name}`, 'info');
   try {
     const resp = await fetch(`/api/task/${name}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     });
-    const text = await resp.text();
-    let data;
-    try { data = JSON.parse(text); } catch(parseErr) {
-      logLocal('TASK', `${name}: server error (HTTP ${resp.status})`, 'error');
-      return;
-    }
+    const data = await resp.json();
     if (data.ok) {
       logLocal('TASK', `${name}: ${data.points} pts, ${data.duration_s}s`, 'info');
     } else {
@@ -506,13 +462,21 @@ async function runTask(name, body = {}) {
     }
   } catch(e) { logLocal('TASK', `${name}: ${e.message}`, 'error'); }
 }
+
+// ============================================================
+//  BUTTON WIRING
+// ============================================================
+
+document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
+document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
+document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
+document.getElementById('btnDisable').addEventListener('click', () => cmd('disable'));
 document.getElementById('btnTaskHome').addEventListener('click', () => runTask('home'));
 document.getElementById('btnTaskReady').addEventListener('click', () => runTask('ready'));
 document.getElementById('btnTaskWave').addEventListener('click', () => runTask('wave'));
 document.getElementById('btnTaskStop').addEventListener('click', () => runTask('stop'));
 document.getElementById('btnEstop').addEventListener('click', () => cmd('stop'));
 
-// Raw command
 document.getElementById('btnRawSend').addEventListener('click', async () => {
   const raw = document.getElementById('rawInput').value.trim();
   if (!raw) return;
@@ -530,7 +494,10 @@ document.getElementById('btnRawSend').addEventListener('click', async () => {
 });
 document.getElementById('rawInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnRawSend').click(); });
 
-// ---- WebSocket ----
+// ============================================================
+//  WEBSOCKET
+// ============================================================
+
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws/state`);
@@ -544,37 +511,27 @@ function connectWS() {
         logLocal('ACK', `${data.action}: ${data.ok ? 'OK' : 'FAIL'}`, data.ok ? 'info' : 'error');
         return;
       }
-      // Zero-snap protection: if server sends all-zero joints but we previously
-      // had real values, substitute cached joints to prevent the viz jumping.
+
+      // Zero-snap protection: if server sends all-zero joints but we had real values, keep cached
       const newJoints = data.joints || [0,0,0,0,0,0];
       const allZero = newJoints.every(v => Math.abs(v) < 0.01);
       const hadReal = lastGoodJoints.some(v => Math.abs(v) > 0.1);
       if (allZero && hadReal && armSynced) {
         data.joints = lastGoodJoints.slice();
-        console.warn('[VIZ] Blocked zero-snap, using cached joints:', lastGoodJoints);
-      } else if (!allZero) {
+        jointSource = 'cached (zero-snap blocked)';
+      } else {
         lastGoodJoints = newJoints.slice();
+        jointSource = 'ws';
       }
 
-      // Detect whether joint/gripper values actually changed before triggering canvas redraw
-      const safeJoints = data.joints;
-      const newGripper = data.gripper || 0;
-      let jointsChanged = false;
-      for (let i = 0; i < 6; i++) {
-        if (Math.abs((safeJoints[i] || 0) - prevJoints[i]) > 0.01) { jointsChanged = true; break; }
-      }
-      const gripperChanged = Math.abs(newGripper - prevGripper) > 0.01;
-      const statusChanged = data.power !== armState.power || data.enabled !== armState.enabled || data.error !== armState.error;
+      // Only mark dirty if joints actually changed meaningfully (>0.05° on any joint)
+      const jointsDiff = newJoints.some((v, i) => Math.abs(v - vizJoints[i]) > 0.05);
+      const otherChanged = data.power !== armState.power || data.enabled !== armState.enabled || data.error !== armState.error;
 
       armState = data;
       lastStateTs = Date.now();
-      uiDirty = true; // Always update DOM (log, badges, connection quality)
-
-      if (jointsChanged || gripperChanged || statusChanged || !armSynced) {
-        vizDirty = true;
-        prevJoints = safeJoints.slice();
-        prevGripper = newGripper;
-      }
+      wsUpdateCount++;
+      if (jointsDiff || otherChanged || !armSynced) vizDirty = true;
       if (!armSynced) {
         armSynced = true;
         logLocal('SYNC', 'First arm state received — sliders synced', 'info');
@@ -588,7 +545,10 @@ function updateConn(on) {
   document.getElementById('connLabel').textContent = on ? 'CONNECTED' : 'DISCONNECTED';
 }
 
-// ---- UI Update ----
+// ============================================================
+//  UI UPDATE & LOG RENDERING
+// ============================================================
+
 function updateUI() {
   // Badges
   const bp = document.getElementById('badgePower');
@@ -624,7 +584,7 @@ function updateUI() {
   // E-stop flash when enabled
   document.getElementById('btnEstop').className = armState.enabled ? 'estop flash' : 'estop';
 
-  // Joint sliders — dead-band to prevent jitter from minor feedback noise
+  // Joint sliders — dead-band update to prevent jitter, guarded against feedback loops
   updatingFromState = true;
   const joints = armState.joints || [0,0,0,0,0,0];
   for (let i = 0; i < 6; i++) {
@@ -639,7 +599,7 @@ function updateUI() {
     }
   }
 
-  // Gripper — same dead-band
+  // Gripper slider — same dead-band guard
   if (userDragging !== 6) {
     const gv = armState.gripper || 0;
     const current = parseFloat(gripSlider.value);
@@ -653,10 +613,8 @@ function updateUI() {
   renderLog();
 }
 
-// ---- Log rendering ----
 let lastLogHash = '';
 function renderLog() {
-  // Merge server log + local log, sort by time string
   const serverEntries = (armState.log || []).map(e => ({
     ts_str: e.ts_str, action: e.action, details: e.details, level: e.level, src: 's'
   }));
@@ -674,26 +632,16 @@ function renderLog() {
   ).join('');
   el.scrollTop = el.scrollHeight;
 }
-function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-// ---- Arm Visualization ----
+// ============================================================
+//  ARM VISUALIZATION (Canvas FK)
+// ============================================================
+
 const canvas = document.getElementById('armCanvas');
-const visCtx = canvas.getContext('2d'); // Visible canvas context (cached for blit)
-// Double-buffer: draw to offscreen canvas, then blit to visible canvas in one
-// operation. This eliminates the flash from clearRect → redraw.
-let offCanvas = document.createElement('canvas');
-let offCtx = offCanvas.getContext('2d');
+const ctx = canvas.getContext('2d');
 
 function drawArm() {
   const W = canvas.width, H = canvas.height;
-  // Keep offscreen canvas size in sync
-  if (offCanvas.width !== W || offCanvas.height !== H) {
-    offCanvas.width = W;
-    offCanvas.height = H;
-  }
-  // Shadow ctx with offscreen context for double-buffering — all drawing
-  // goes to offscreen canvas, then we blit to the visible canvas at the end.
-  const ctx = offCtx;
   ctx.clearRect(0, 0, W, H);
 
   const rawJoints = armState.joints || [0,0,0,0,0,0];
@@ -701,7 +649,7 @@ function drawArm() {
   for (let i = 0; i < 6; i++) {
     const diff = rawJoints[i] - vizJoints[i];
     if (Math.abs(diff) > 0.05) {
-      vizJoints[i] += diff * 0.4; // smooth factor
+      vizJoints[i] += diff * 0.4;
     } else {
       vizJoints[i] = rawJoints[i];
     }
@@ -709,14 +657,13 @@ function drawArm() {
   const joints = vizJoints;
   const deg2rad = Math.PI / 180;
 
-  // --- Grid ---
+  // Grid
   ctx.strokeStyle = 'rgba(42,74,124,0.12)';
   ctx.lineWidth = 1;
   for (let y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
   for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
 
-  // --- Side view FK (using J1, J2, J4 as pitch joints) ---
-  // Scale: convert mm to pixels. Canvas ~500px tall, arm reach ~590mm. Use 0.65 px/mm
+  // Side view FK (using J1, J2, J4 as pitch joints)
   const scale = Math.min(W, H) / 900;
   const baseX = W * 0.35, baseY = H * 0.85;
 
@@ -728,23 +675,14 @@ function drawArm() {
   ctx.fillRect(baseX - bw, baseY, bw * 2, bh);
   ctx.strokeRect(baseX - bw, baseY, bw * 2, bh);
 
-  // FK chain: base(80mm up) -> shoulder(170mm, J1 pitch) -> elbow(170mm, J2 pitch) -> wrist1(60mm, J4 pitch) -> wrist2(60mm) -> end(50mm)
-  // Pitch angles: positive = forward/down from vertical start
+  // FK chain
   const linkLengths = [LINKS_MM.base, LINKS_MM.shoulder, LINKS_MM.elbow, LINKS_MM.wrist1, LINKS_MM.wrist2, LINKS_MM.end];
-  // Which joint angle controls each segment's pitch:
-  // segment 0 (base): straight up, no joint
-  // segment 1 (shoulder): J1
-  // segment 2 (elbow): J2
-  // segment 3 (wrist1): no pitch joint (J3 is roll), carry forward
-  // segment 4 (wrist2): J4
-  // segment 5 (end): no pitch joint (J5 is roll), carry forward
 
   let cumAngle = -Math.PI / 2; // start pointing up
   let pts = [{ x: baseX, y: baseY }];
 
   // Segment 0: base (straight up)
   pts.push({ x: baseX, y: baseY - linkLengths[0] * scale });
-  // cumAngle stays -PI/2
 
   // Segment 1: shoulder — J1 pitch (with DH offset)
   cumAngle += (joints[1] + JOINT_VIZ_OFFSETS[1]) * deg2rad;
@@ -788,17 +726,12 @@ function drawArm() {
   }
 
   // Draw joints
-  const jointMapping = [-1, 1, 2, 3, 4, 5]; // which joint index corresponds to each point (after base)
   for (let i = 0; i < pts.length; i++) {
     const r = (i === 0 ? 10 : i === pts.length - 1 ? 5 : 7) * scale;
-
-    // Glow
     ctx.beginPath();
     ctx.arc(pts[i].x, pts[i].y, r + 3 * scale, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(15,52,96,0.3)';
     ctx.fill();
-
-    // Joint circle
     ctx.beginPath();
     ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
     ctx.fillStyle = '#16213e';
@@ -808,27 +741,27 @@ function drawArm() {
     ctx.stroke();
   }
 
-  // --- Roll joint rotation indicators (V2: larger, color-coded, with degree labels) ---
-  const rollColor = '#e8a838';  // orange-gold for roll joints
-  const pitchColor = '#4a90d9'; // blue for pitch joints
+  // Roll joint rotation indicators
+  const rollColor = '#e8a838';
+  const pitchColor = '#4a90d9';
 
-  function drawRotationIndicator(cx, cy, radius, angleDeg, label, offsetX, offsetY) {
+  function drawRotationIndicator(cx, cy, radius, angleDeg, label) {
     const a = angleDeg * deg2rad;
     const r = radius * scale;
-    // Arc background ring
+    // Background ring
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(232,168,56,0.15)';
     ctx.lineWidth = 3 * scale;
     ctx.stroke();
-    // Zero tick mark (top)
+    // Zero tick
     ctx.beginPath();
     ctx.moveTo(cx, cy - r + 2 * scale);
     ctx.lineTo(cx, cy - r - 3 * scale);
     ctx.strokeStyle = 'rgba(232,168,56,0.4)';
     ctx.lineWidth = 1.5 * scale;
     ctx.stroke();
-    // Filled arc showing angle
+    // Filled arc
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0);
@@ -848,13 +781,12 @@ function drawArm() {
     ctx.arc(ex, ey, 4 * scale, 0, Math.PI * 2);
     ctx.fillStyle = Math.abs(angleDeg) > 100 ? '#e94560' : rollColor;
     ctx.fill();
-    // Label with degree value
+    // Label
+    const lx = cx + (r + 6 * scale);
+    const ly = cy + (4 * scale);
     ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
     ctx.fillStyle = rollColor;
-    const lx = cx + (offsetX || (r + 6 * scale));
-    const ly = cy + (offsetY || (4 * scale));
     ctx.fillText(`${label} ${angleDeg.toFixed(1)}°`, lx, ly);
-    // "roll" sub-label
     ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
     ctx.fillStyle = 'rgba(232,168,56,0.5)';
     ctx.fillText('roll', lx, ly + 10 * scale);
@@ -863,7 +795,6 @@ function drawArm() {
   // J0 base rotation — top-down mini view in upper-right corner
   const j0Angle = joints[0] || 0;
   const j0cx = W - 50 * scale, j0cy = 50 * scale, j0r = 30 * scale;
-  // Background circle
   ctx.beginPath();
   ctx.arc(j0cx, j0cy, j0r + 2 * scale, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(26,39,68,0.6)';
@@ -881,23 +812,20 @@ function drawArm() {
     ctx.lineWidth = 1 * scale;
     ctx.stroke();
   }
-  // Arm direction indicator (top-down: line pointing "forward" rotated by J0)
+  // Direction line
   const j0a = j0Angle * deg2rad;
-  // Filled sweep
   ctx.beginPath();
   ctx.moveTo(j0cx, j0cy);
   ctx.arc(j0cx, j0cy, j0r, -Math.PI / 2, -Math.PI / 2 + j0a, j0a < 0);
   ctx.closePath();
   ctx.fillStyle = Math.abs(j0Angle) > 100 ? 'rgba(233,69,96,0.2)' : 'rgba(232,168,56,0.15)';
   ctx.fill();
-  // Direction line
   ctx.beginPath();
   ctx.moveTo(j0cx, j0cy);
   ctx.lineTo(j0cx + Math.sin(j0a) * j0r * 0.85, j0cy - Math.cos(j0a) * j0r * 0.85);
   ctx.strokeStyle = Math.abs(j0Angle) > 100 ? '#e94560' : rollColor;
   ctx.lineWidth = 3 * scale;
   ctx.stroke();
-  // Center dot
   ctx.beginPath();
   ctx.arc(j0cx, j0cy, 3 * scale, 0, Math.PI * 2);
   ctx.fillStyle = rollColor;
@@ -912,27 +840,25 @@ function drawArm() {
   ctx.fillText('base rotation (top view)', j0cx, j0cy + j0r + 24 * scale);
   ctx.textAlign = 'left';
 
-  // J3 indicator at forearm (pt index 3) — larger
+  // J3 & J5 roll indicators
   drawRotationIndicator(pts[3].x, pts[3].y, 22, joints[3] || 0, 'J3');
-  // J5 indicator at wrist (pt index 5) — larger
   drawRotationIndicator(pts[5].x, pts[5].y, 18, joints[5] || 0, 'J5');
 
-  // --- Joint angle labels for pitch joints (V1: verified correct mapping) ---
+  // Pitch joint labels (J1, J2, J4)
   ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = pitchColor;
-  // J1 at shoulder (pt 1 is top of base, label there)
   ctx.fillText(`J1 ${(joints[1]||0).toFixed(1)}°`, pts[1].x - 55 * scale, pts[1].y - 12 * scale);
   ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(74,144,217,0.5)';
   ctx.fillText('pitch', pts[1].x - 55 * scale, pts[1].y - 2 * scale);
-  // J2 at elbow
+
   ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = pitchColor;
   ctx.fillText(`J2 ${(joints[2]||0).toFixed(1)}°`, pts[2].x + 12 * scale, pts[2].y - 12 * scale);
   ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(74,144,217,0.5)';
   ctx.fillText('pitch', pts[2].x + 12 * scale, pts[2].y - 2 * scale);
-  // J4 at wrist
+
   ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = pitchColor;
   ctx.fillText(`J4 ${(joints[4]||0).toFixed(1)}°`, pts[4].x + 12 * scale, pts[4].y - 12 * scale);
@@ -940,7 +866,7 @@ function drawArm() {
   ctx.fillStyle = 'rgba(74,144,217,0.5)';
   ctx.fillText('pitch', pts[4].x + 12 * scale, pts[4].y - 2 * scale);
 
-  // --- Gripper visualization (V3: two fingers with color-coded open/close) ---
+  // Gripper visualization
   const tip = pts[pts.length - 1];
   const gAngle = cumAngle;
   const gripMM = armState.gripper != null ? armState.gripper : 0;
@@ -948,7 +874,6 @@ function drawArm() {
   const gOpen = gripRatio * 12 * scale;
   const fingerLen = 20 * scale;
   const fingerWid = 4 * scale;
-  // Color: closed=orange, open=green, smooth gradient
   const gR = Math.round(233 - gripRatio * 150);
   const gG = Math.round(120 + gripRatio * 95);
   const gB = Math.round(56 + gripRatio * 50);
@@ -961,7 +886,6 @@ function drawArm() {
     const fy1 = tip.y + perpY;
     const fx2 = fx1 + Math.cos(gAngle) * fingerLen;
     const fy2 = fy1 + Math.sin(gAngle) * fingerLen;
-    // Finger body
     ctx.beginPath();
     ctx.moveTo(fx1, fy1);
     ctx.lineTo(fx2, fy2);
@@ -969,7 +893,6 @@ function drawArm() {
     ctx.lineWidth = fingerWid;
     ctx.lineCap = 'round';
     ctx.stroke();
-    // Fingertip inner edge (small inward nub)
     const tipNubX = fx2 + Math.cos(gAngle + Math.PI / 2) * (-side) * 3 * scale;
     const tipNubY = fy2 + Math.sin(gAngle + Math.PI / 2) * (-side) * 3 * scale;
     ctx.beginPath();
@@ -987,40 +910,26 @@ function drawArm() {
   ctx.fillStyle = gripRatio > 0.5 ? 'rgba(83,215,105,0.6)' : 'rgba(233,69,96,0.6)';
   ctx.fillText(gripRatio > 0.7 ? 'open' : gripRatio < 0.15 ? 'closed' : 'partial', tip.x + 20 * scale, tip.y + 28 * scale);
 
-  // --- Title ---
+  // Title
   ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(136,146,164,0.5)';
   ctx.fillText('D1 Arm (blue=pitch, gold=roll)', 8, 16 * scale);
 
-  // --- Telemetry: log circle positions (~1Hz) to help diagnose jumping ---
-  vizLogCounter++;
-  if (vizLogCounter % 10 === 0) {
-    console.log('[VIZ TELEMETRY]', {
-      joints: joints.map(j => +(j||0).toFixed(2)),
-      gripper: +(gripMM||0).toFixed(1),
-      circlePositions: pts.map((p, i) => ({ idx: i, x: +p.x.toFixed(1), y: +p.y.toFixed(1) })),
-      canvasSize: { W, H },
-      scale: +scale.toFixed(3),
-      base: { x: +baseX.toFixed(1), y: +baseY.toFixed(1) },
-      userDragging,
-      source: 'armState.joints (WebSocket feedback)',
-    });
-  }
-
-  // Blit offscreen canvas to visible canvas in one operation (eliminates flicker)
-  visCtx.clearRect(0, 0, W, H);
-  visCtx.drawImage(offCanvas, 0, 0);
+  // Telemetry overlay
+  ctx.font = `${8 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = 'rgba(136,146,164,0.4)';
+  const jStr = joints.map(v => v.toFixed(1)).join(', ');
+  ctx.fillText(`src:${jointSource} ws#${wsUpdateCount} [${jStr}]`, 8, H - 8 * scale);
 }
 
-// Animation loop — update DOM when new WS data arrives, redraw canvas only
-// when joint/gripper values actually change
+// ============================================================
+//  ANIMATION & RESIZE
+// ============================================================
+
 function animLoop() {
-  if (uiDirty) {
-    uiDirty = false;
-    updateUI();
-  }
   if (vizDirty) {
     vizDirty = false;
+    updateUI();
     drawArm();
   }
   animFrameId = requestAnimationFrame(animLoop);
@@ -1036,13 +945,15 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 
-// Camera toggle
+// ============================================================
+//  CAMERA TOGGLE
+// ============================================================
+
 document.getElementById('btnCamToggle').addEventListener('click', () => {
   const feeds = document.getElementById('cameraFeeds');
   const btn = document.getElementById('btnCamToggle');
   const hidden = feeds.classList.toggle('hidden');
   btn.textContent = hidden ? '👁 SHOW' : '👁 HIDE';
-  // Stop/start streams to save bandwidth
   const imgs = feeds.querySelectorAll('.cam-img');
   imgs.forEach((img, i) => {
     if (hidden) { img.dataset.src = img.src; img.src = ''; }
@@ -1051,14 +962,15 @@ document.getElementById('btnCamToggle').addEventListener('click', () => {
   setTimeout(resizeCanvas, 50);
 });
 
-// ---- Debug Telemetry ----
+// ============================================================
+//  DEBUG TELEMETRY PANEL
+// ============================================================
+
 let debugOn = false;
 let debugInterval = null;
 let wsLastMsgTs = 0;
 let wsRxIntervalMs = 0;
 
-// Track WS message timing for debug
-const origOnMessage = null;
 function hookWsDebug() {
   if (!ws) return;
   const origHandler = ws.onmessage;
@@ -1106,10 +1018,8 @@ async function pollDebug() {
       updateDebugPipeline(tel.events || tel);
       renderDebugEvents(tel.events || tel);
     }
-  } catch(e) { /* endpoints may not exist */ }
-  // Always update client-side WS timing
+  } catch(e) {}
   document.getElementById('dsWsRxInt').textContent = wsRxIntervalMs > 0 ? wsRxIntervalMs + 'ms' : 'N/A';
-  // UI stage always active when debug is on
   const uiStage = document.querySelector('.pipe-stage[data-stage="UI"]');
   if (uiStage) { uiStage.className = 'pipe-stage active'; }
 }
@@ -1144,7 +1054,7 @@ function updateDebugPipeline(events) {
   }
   document.querySelectorAll('.pipe-stage').forEach(el => {
     const stage = el.dataset.stage;
-    if (stage === 'UI') return; // handled separately
+    if (stage === 'UI') return;
     if (errorTypes.has(stage)) el.className = 'pipe-stage error';
     else if (recentTypes.has(stage)) el.className = 'pipe-stage active';
     else el.className = 'pipe-stage';
@@ -1164,249 +1074,10 @@ function renderDebugEvents(events) {
   container.scrollTop = container.scrollHeight;
 }
 
-// ---- Bifocal Workspace Mapping ----
-let bifocalOn = false;
-let bifocalEnabled = false; // mapper active
-let bifocalPollInterval = null;
-let bfOccupiedPoints = []; // cached occupied points for viz
-let bfArmPoints = []; // cached arm envelope points
-let bfPreviewClear = null; // null=unknown, true=clear, false=collision
-let bfPreviewHits = [];
+// ============================================================
+//  INIT
+// ============================================================
 
-document.getElementById('btnBifocal').addEventListener('click', () => {
-  bifocalOn = !bifocalOn;
-  const btn = document.getElementById('btnBifocal');
-  const panel = document.getElementById('bifocalPanel');
-  btn.className = 'btn' + (bifocalOn ? ' on' : '');
-  btn.style.borderColor = bifocalOn ? '#9b59b6' : '#9b59b6';
-  panel.style.display = bifocalOn ? 'block' : 'none';
-  if (bifocalOn) {
-    bifocalPollInterval = setInterval(pollBifocal, 2000);
-    pollBifocal();
-  } else {
-    if (bifocalPollInterval) { clearInterval(bifocalPollInterval); bifocalPollInterval = null; }
-  }
-});
-
-document.getElementById('btnBfToggle').addEventListener('click', async () => {
-  try {
-    const resp = await fetch('/api/bifocal/toggle', { method: 'POST' });
-    const data = await resp.json();
-    bifocalEnabled = data.enabled;
-    updateBifocalBadges();
-    logLocal('BIFOCAL', `Mapper ${bifocalEnabled ? 'enabled' : 'disabled'}`, 'info');
-  } catch(e) { logLocal('BIFOCAL', `Toggle failed: ${e.message}`, 'error'); }
-});
-
-document.getElementById('btnBfUpdate').addEventListener('click', async () => {
-  logLocal('BIFOCAL', 'Scanning workspace...', 'info');
-  try {
-    const resp = await fetch('/api/bifocal/update', { method: 'POST' });
-    const data = await resp.json();
-    if (data.ok) {
-      logLocal('BIFOCAL', `Scan: ${data.voxels_occupied} voxels, ${data.elapsed_ms}ms`, 'info');
-      pollBifocal(); // refresh
-    } else {
-      logLocal('BIFOCAL', `Scan failed: ${data.error}`, 'error');
-    }
-  } catch(e) { logLocal('BIFOCAL', `Scan error: ${e.message}`, 'error'); }
-});
-
-document.getElementById('btnBfPreview').addEventListener('click', async () => {
-  try {
-    const resp = await fetch('/api/bifocal/preview', { method: 'POST' });
-    const data = await resp.json();
-    if (data.ok) {
-      bfPreviewClear = data.clear;
-      bfPreviewHits = data.hits || [];
-      bfArmPoints = data.arm_points_mm || [];
-      const el = document.getElementById('bfPreviewResult');
-      el.textContent = data.summary + ` (${data.elapsed_ms}ms)`;
-      el.className = 'bf-preview-result ' + (data.clear ? 'clear' : 'collision');
-      logLocal('BIFOCAL', `Preview: ${data.summary}`, data.clear ? 'info' : 'warning');
-      vizDirty = true; // redraw arm with overlay
-    }
-  } catch(e) { logLocal('BIFOCAL', `Preview error: ${e.message}`, 'error'); }
-});
-
-document.getElementById('btnBfClear').addEventListener('click', async () => {
-  try {
-    await fetch('/api/bifocal/clear', { method: 'POST' });
-    bfOccupiedPoints = [];
-    bfPreviewClear = null;
-    bfPreviewHits = [];
-    logLocal('BIFOCAL', 'Map cleared', 'info');
-    pollBifocal();
-  } catch(e) { logLocal('BIFOCAL', `Clear error: ${e.message}`, 'error'); }
-});
-
-document.getElementById('btnBfCalibBoard').addEventListener('click', async () => {
-  const sq = parseFloat(document.getElementById('bfSquareSize').value) || 25;
-  logLocal('BIFOCAL', `Calibrating with ${sq}mm squares...`, 'info');
-  try {
-    const resp = await fetch('/api/bifocal/calibrate-scale', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ square_size_mm: sq })
-    });
-    const data = await resp.json();
-    if (data.ok) {
-      logLocal('BIFOCAL', `Scale calibrated: ${data.scale_factor}x (apparent ${data.apparent_square_mm}mm -> ${data.known_square_mm}mm)`, 'info');
-    } else {
-      logLocal('BIFOCAL', `Calibration failed: ${data.error}`, 'error');
-    }
-    pollBifocal();
-  } catch(e) { logLocal('BIFOCAL', `Calibration error: ${e.message}`, 'error'); }
-});
-
-function updateBifocalBadges() {
-  const enBadge = document.getElementById('bfBadgeEnabled');
-  enBadge.textContent = bifocalEnabled ? 'ON' : 'OFF';
-  enBadge.className = 'bf-badge' + (bifocalEnabled ? ' active' : '');
-  const toggleBtn = document.getElementById('btnBfToggle');
-  toggleBtn.textContent = bifocalEnabled ? 'Disable Mapper' : 'Enable Mapper';
-  toggleBtn.className = 'btn' + (bifocalEnabled ? ' on' : '');
-}
-
-async function pollBifocal() {
-  if (!bifocalOn) return;
-  try {
-    // Poll status and workspace in parallel
-    const [statusResp, wsResp] = await Promise.all([
-      fetch('/api/bifocal/status'),
-      fetch('/api/bifocal/workspace?max_points=300')
-    ]);
-    if (statusResp.ok) {
-      const s = await statusResp.json();
-      bifocalEnabled = s.enabled;
-      updateBifocalBadges();
-      document.getElementById('bfOccupied').textContent = s.occupied || 0;
-      document.getElementById('bfMapped').textContent = (s.mapped_pct || 0) + '%';
-      document.getElementById('bfGridSize').textContent = s.grid_shape ? s.grid_shape.join('x') : '--';
-      document.getElementById('bfVoxelSize').textContent = (s.voxel_size_mm || '--') + 'mm';
-      document.getElementById('bfUpdates').textContent = s.update_count || 0;
-      document.getElementById('bfScale').textContent = (s.scale_factor || 1).toFixed(4);
-      document.getElementById('bfScaleStatus').textContent = s.scale_calibrated ? 'Yes' : 'No';
-      const calibBadge = document.getElementById('bfBadgeCalib');
-      calibBadge.textContent = s.scale_calibrated ? 'CALIBRATED' : (s.calibrator_ready ? 'STEREO OK' : 'UNCALIBRATED');
-      calibBadge.className = 'bf-badge' + (s.scale_calibrated ? ' active' : s.calibrator_ready ? ' calib' : '');
-      const mapBadge = document.getElementById('bfBadgeMap');
-      mapBadge.textContent = s.occupied > 0 ? `${s.occupied} VOXELS` : 'NO MAP';
-      mapBadge.className = 'bf-badge' + (s.occupied > 0 ? ' active' : '');
-    }
-    if (wsResp.ok) {
-      const ws = await wsResp.json();
-      bfOccupiedPoints = ws.points || [];
-      drawBifocalViz();
-    }
-  } catch(e) { /* silent */ }
-}
-
-function drawBifocalViz() {
-  const canvas = document.getElementById('bfVizCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-
-  // Background
-  ctx.fillStyle = '#0a0f1a';
-  ctx.fillRect(0, 0, W, H);
-
-  // Grid
-  ctx.strokeStyle = 'rgba(155,89,182,0.1)';
-  ctx.lineWidth = 0.5;
-  for (let x = 0; x < W; x += 20) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-  for (let y = 0; y < H; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-
-  if (bfOccupiedPoints.length === 0) {
-    ctx.fillStyle = 'rgba(155,89,182,0.3)';
-    ctx.font = '10px JetBrains Mono, monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('No workspace data — run a scan', W/2, H/2);
-    ctx.textAlign = 'left';
-    return;
-  }
-
-  // Top-down view (X-Z plane, Y is up)
-  // Find bounds
-  const scale = Math.min(W, H) / 1400; // workspace is ~1200mm across
-  const cx = W / 2, cy = H / 2;
-
-  // Draw occupied voxels as dots
-  ctx.fillStyle = 'rgba(155,89,182,0.6)';
-  for (const pt of bfOccupiedPoints) {
-    const sx = cx + pt[0] * scale;
-    const sy = cy - pt[2] * scale; // Z forward = up on screen
-    ctx.fillRect(sx - 1, sy - 1, 3, 3);
-  }
-
-  // Draw arm base marker
-  ctx.fillStyle = '#e94560';
-  ctx.beginPath();
-  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Draw arm envelope if we have it
-  if (bfArmPoints.length > 0) {
-    ctx.strokeStyle = bfPreviewClear === false ? '#e94560' : '#53d769';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i < bfArmPoints.length; i++) {
-      const sx = cx + bfArmPoints[i][0] * scale;
-      const sy = cy - bfArmPoints[i][2] * scale;
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    }
-    ctx.stroke();
-
-    // Draw collision hits
-    if (bfPreviewHits.length > 0) {
-      ctx.fillStyle = '#e94560';
-      for (const hit of bfPreviewHits) {
-        const sx = cx + hit.point[0] * scale;
-        const sy = cy - hit.point[2] * scale;
-        ctx.beginPath();
-        ctx.arc(sx, sy, 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
-
-  // Labels
-  ctx.fillStyle = 'rgba(155,89,182,0.5)';
-  ctx.font = '8px JetBrains Mono, monospace';
-  ctx.fillText('Top-down (X-Z)', 4, 10);
-  ctx.fillText(`${bfOccupiedPoints.length} pts`, 4, H - 4);
-}
-
-// Draw bifocal collision overlay on the main arm canvas
-function drawBifocalOverlay() {
-  if (!bifocalOn || bfPreviewClear === null) return;
-
-  const W = canvas.width, H = canvas.height;
-  const scale = Math.min(W, H) / 900;
-
-  // Show collision status indicator
-  const indicatorX = 10, indicatorY = H - 30 * scale;
-  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
-
-  if (bfPreviewClear === true) {
-    ctx.fillStyle = 'rgba(83,215,105,0.8)';
-    ctx.fillText('BIFOCAL: PATH CLEAR', indicatorX, indicatorY);
-  } else if (bfPreviewClear === false) {
-    ctx.fillStyle = 'rgba(233,69,96,0.9)';
-    ctx.fillText(`BIFOCAL: ${bfPreviewHits.length} COLLISION(S)`, indicatorX, indicatorY);
-  }
-}
-
-// Patch drawArm to include bifocal overlay
-const _origDrawArm = drawArm;
-drawArm = function() {
-  _origDrawArm();
-  drawBifocalOverlay();
-};
-
-// Start
 connectWS();
 setTimeout(() => { resizeCanvas(); animLoop(); }, 50);
 </script>
