@@ -86,6 +86,14 @@ try:
 except ImportError:
     _HAS_CLAW_PREDICT = False
 
+try:
+    from src.safety.collision_detector import CollisionDetector, StallEvent
+    from src.vision.collision_analyzer import CollisionAnalyzer
+
+    _HAS_COLLISION = True
+except ImportError:
+    _HAS_COLLISION = False
+
 _web_dir = str(Path(__file__).resolve().parent)
 if _web_dir not in sys.path:
     sys.path.insert(0, _web_dir)
@@ -264,6 +272,9 @@ pick_executor: Any = None  # PickExecutor for autonomous pick operations
 vision_task_planner: Any = None  # VisionTaskPlanner for camera-guided planning
 scene_analyzer: Any = None  # SceneAnalyzer for scene understanding
 claw_predictor: Any = None  # ClawPositionPredictor for visual claw tracking
+collision_detector: Any = None  # CollisionDetector for stall detection
+collision_analyzer: Any = None  # CollisionAnalyzer for camera + vision analysis
+collision_events: list = []  # Recent collision events for API
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -356,6 +367,17 @@ async def lifespan(app: FastAPI):
         claw_predictor = ClawPositionPredictor()
         action_log.add(
             "SYSTEM", "Claw position predictor initialized (disabled by default)", "info"
+        )
+
+    # Initialize collision detector + analyzer
+    global collision_detector, collision_analyzer
+    if _HAS_COLLISION:
+        collision_detector = CollisionDetector()
+        collision_analyzer = CollisionAnalyzer()
+        action_log.add(
+            "SYSTEM",
+            f"Collision detector initialized (vision={'yes' if collision_analyzer.vision_available else 'no'})",
+            "info",
         )
 
     yield
@@ -817,6 +839,18 @@ async def ws_state(ws: WebSocket):
                     state["claw_prediction"] = {"enabled": True, "detected": False}
             elif claw_predictor is not None:
                 state["claw_prediction"] = {"enabled": False}
+            # Feed collision detector with commanded vs actual
+            if _HAS_COLLISION and collision_detector and smoother and smoother.arm_enabled:
+                commanded = []
+                for j in range(6):
+                    t = smoother._target[j]
+                    c = smoother._current[j]
+                    # Use target if set, else current smoother position
+                    commanded.append(t if t is not None else (c if c is not None else state["joints"][j]))
+                stall = collision_detector.update(commanded, state["joints"])
+                if stall is not None:
+                    asyncio.create_task(_handle_collision(stall, ws_clients[:]))
+
             await ws.send_json(state)
             if _HAS_TELEMETRY:
                 tc = get_collector()
@@ -2110,6 +2144,106 @@ async def run_viz_calibration():
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     finally:
         _viz_calib_running = False
+
+
+# ---------------------------------------------------------------------------
+# Collision handling
+# ---------------------------------------------------------------------------
+
+
+async def _handle_collision(stall: "StallEvent", clients: list):
+    """Handle a detected collision: stop, analyze, broadcast, back off."""
+    global collision_events
+    action_log.add(
+        "COLLISION",
+        f"⚠ STALL on J{stall.joint_id}: cmd={stall.commanded_deg:.1f}° actual={stall.actual_deg:.1f}° (err={stall.error_deg:.1f}°)",
+        "error",
+    )
+
+    # 1. Stop arm movement
+    if smoother:
+        smoother._clear_targets()
+
+    # 2. Analyze with cameras + vision (in thread to not block)
+    analysis = None
+    if collision_analyzer:
+        try:
+            analysis = await asyncio.get_event_loop().run_in_executor(
+                None,
+                collision_analyzer.analyze,
+                stall.joint_id,
+                stall.commanded_deg,
+                stall.actual_deg,
+            )
+            action_log.add("COLLISION", f"Analysis: {analysis.analysis_text[:120]}", "warning")
+        except Exception as e:
+            logger.error("Collision analysis failed: %s", e)
+
+    # 3. Build event data
+    event = {
+        "type": "collision",
+        "joint": stall.joint_id,
+        "commanded": round(stall.commanded_deg, 1),
+        "actual": round(stall.actual_deg, 1),
+        "error": round(stall.error_deg, 1),
+        "last_good": round(stall.last_good_position, 1),
+        "timestamp": stall.timestamp,
+        "analysis": analysis.analysis_text if analysis else "Analysis unavailable",
+        "images": [],
+    }
+    if analysis:
+        if analysis.cam0_path:
+            event["images"].append(f"/api/collisions/{analysis.timestamp}/cam0.jpg")
+        if analysis.cam1_path:
+            event["images"].append(f"/api/collisions/{analysis.timestamp}/cam1.jpg")
+
+    collision_events.append(event)
+    if len(collision_events) > 100:
+        collision_events = collision_events[-100:]
+
+    # 4. Broadcast to WebSocket clients
+    dead = []
+    for ws in clients:
+        try:
+            await ws.send_json(event)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        if ws in ws_clients:
+            ws_clients.remove(ws)
+
+    # 5. Back off: move stalled joint 10° toward last good position
+    if smoother and smoother.arm_enabled and arm:
+        backoff_angle = stall.actual_deg + (
+            10.0 if stall.last_good_position > stall.actual_deg else -10.0
+        )
+        # Clamp to last good
+        if abs(backoff_angle - stall.actual_deg) > abs(stall.last_good_position - stall.actual_deg):
+            backoff_angle = stall.last_good_position
+        smoother.set_joint_target(stall.joint_id, backoff_angle)
+        action_log.add(
+            "COLLISION",
+            f"Backing off J{stall.joint_id} to {backoff_angle:.1f}°",
+            "info",
+        )
+
+
+@app.get("/api/collisions")
+async def api_collisions(limit: int = 20):
+    """Return recent collision events."""
+    return {"events": collision_events[-limit:]}
+
+
+@app.get("/api/collisions/{timestamp}/{filename}")
+async def api_collision_image(timestamp: str, filename: str):
+    """Serve saved collision images."""
+    from fastapi.responses import FileResponse
+
+    data_dir = Path(__file__).resolve().parent.parent / "data" / "collisions"
+    img_path = data_dir / timestamp / filename
+    if not img_path.exists() or not img_path.is_file():
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return FileResponse(img_path, media_type="image/jpeg")
 
 
 # ---------------------------------------------------------------------------

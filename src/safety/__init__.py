@@ -10,6 +10,7 @@ from src.safety.safety_monitor import (
     MAX_WORKSPACE_RADIUS_M,
     MAX_WORKSPACE_RADIUS_MM,
 )
+from src.safety.collision_detector import CollisionDetector, StallEvent
 
 __all__ = [
     "JointLimits",
@@ -20,4 +21,6 @@ __all__ = [
     "d1_default_limits",
     "MAX_WORKSPACE_RADIUS_M",
     "MAX_WORKSPACE_RADIUS_MM",
+    "CollisionDetector",
+    "StallEvent",
 ]

@@ -155,9 +155,27 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   .panel-right { width: 100%; flex: 1; }
   .debug-stats { grid-template-columns: repeat(2, 1fr); }
 }
+/* === Collision Alert === */
+.collision-alert { position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: linear-gradient(135deg, #8b0000, #c0392b); color: #fff; padding: 16px 20px; box-shadow: 0 4px 20px rgba(233,69,96,0.5); animation: collisionFlash 0.3s ease-in-out; display: none; }
+.collision-alert.visible { display: block; }
+.collision-alert h3 { margin: 0 0 8px; font-family: var(--mono); font-size: 14px; }
+.collision-alert p { margin: 4px 0; font-size: 13px; line-height: 1.4; }
+.collision-alert .collision-images { display: flex; gap: 8px; margin: 8px 0; }
+.collision-alert .collision-images img { width: 120px; height: 90px; object-fit: cover; border: 2px solid rgba(255,255,255,0.3); border-radius: 4px; }
+.collision-alert .dismiss-btn { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: #fff; padding: 4px 16px; border-radius: 4px; cursor: pointer; font-family: var(--mono); font-size: 12px; margin-top: 8px; }
+.collision-alert .dismiss-btn:hover { background: rgba(255,255,255,0.3); }
+@keyframes collisionFlash { 0% { opacity: 0; transform: translateY(-20px); } 100% { opacity: 1; transform: translateY(0); } }
 </style>
 </head>
 <body>
+
+<div id="collisionAlert" class="collision-alert">
+  <h3>⚠ COLLISION DETECTED</h3>
+  <p id="collisionInfo"></p>
+  <p id="collisionAnalysis" style="font-style:italic; opacity:0.9;"></p>
+  <div id="collisionImages" class="collision-images"></div>
+  <button class="dismiss-btn" onclick="dismissCollision()">Dismiss</button>
+</div>
 
 <div class="topbar">
   <div class="logo">th3cl4w</div>
@@ -525,6 +543,11 @@ function connectWS() {
       const data = JSON.parse(e.data);
       if (data.type === 'ack') {
         logLocal('ACK', `${data.action}: ${data.ok ? 'OK' : 'FAIL'}`, data.ok ? 'info' : 'error');
+        return;
+      }
+      if (data.type === 'collision') {
+        showCollisionAlert(data);
+        logLocal('COLLISION', `⚠ J${data.joint} stalled: cmd=${data.commanded}° actual=${data.actual}°`, 'error');
         return;
       }
 
@@ -1119,6 +1142,28 @@ function renderDebugEvents(events) {
 
 connectWS();
 setTimeout(() => { resizeCanvas(); animLoop(); }, 50);
+
+// === Collision Alert ===
+function showCollisionAlert(data) {
+  const el = document.getElementById('collisionAlert');
+  document.getElementById('collisionInfo').textContent =
+    `Joint ${data.joint} commanded to ${data.commanded}° but stuck at ${data.actual}° (error: ${data.error}°)`;
+  document.getElementById('collisionAnalysis').textContent = data.analysis || '';
+  const imgContainer = document.getElementById('collisionImages');
+  imgContainer.innerHTML = '';
+  if (data.images) {
+    data.images.forEach(src => {
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = 'Collision snapshot';
+      imgContainer.appendChild(img);
+    });
+  }
+  el.classList.add('visible');
+}
+function dismissCollision() {
+  document.getElementById('collisionAlert').classList.remove('visible');
+}
 </script>
 </body>
 </html>
