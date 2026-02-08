@@ -1,10 +1,8 @@
 """
 Visualization Calibrator — Camera-based calibration of the V1 UI arm visualization.
 
-Moves the arm through diverse poses, captures camera frames, detects the
-end-effector (and optionally intermediate joints) in cam1 (side view), then
-solves a least-squares optimization to find link lengths and joint offsets that
-best match the observed pixel positions.
+Uses progressive angle increments with self-assessment: starts with small joint
+movements and gradually increases, stopping early when calibration converges.
 """
 
 import asyncio
@@ -37,30 +35,12 @@ JOINT_LIMITS = {
     4: (-85.0, 85.0),
 }
 
-# Calibration poses: vary J1, J2, J4 across the range
-# Each entry is [J0, J1, J2, J3, J4, J5]
-CALIBRATION_POSES = [
-    [0,   0,   0, 0,   0, 0],  # home
-    [0,  30,   0, 0,   0, 0],
-    [0, -30,   0, 0,   0, 0],
-    [0,  60,   0, 0,   0, 0],
-    [0, -60,   0, 0,   0, 0],
-    [0,   0,  40, 0,   0, 0],
-    [0,   0, -40, 0,   0, 0],
-    [0,   0,  70, 0,   0, 0],
-    [0,   0, -70, 0,   0, 0],
-    [0,   0,   0, 0,  40, 0],
-    [0,   0,   0, 0, -40, 0],
-    [0,  30,  30, 0,   0, 0],
-    [0, -30, -30, 0,   0, 0],
-    [0,  40,  40, 0,  30, 0],
-    [0, -40, -40, 0, -30, 0],
-    [0,  60, -30, 0,  20, 0],
-    [0, -20,  60, 0, -20, 0],
-    [0,  50,  50, 0,  40, 0],
-    [0, -50, -50, 0, -40, 0],
-    [0,  20, -60, 0,  30, 0],
-]
+# Progressive calibration config
+PITCH_JOINTS = [1, 2, 4]  # joints that affect side-view
+ANGLE_INCREMENT = 5        # degrees per round
+MAX_ANGLE = 45             # maximum angle to reach
+CONVERGENCE_THRESHOLD = 50.0  # average px residual to consider "good"
+STABLE_ROUNDS_NEEDED = 2      # rounds residual must be stable to stop
 
 CAMERA_URL = "http://localhost:8081/snap/1"
 ARM_API = "http://localhost:8080"
@@ -68,6 +48,30 @@ SETTLE_TIME = 2.0  # seconds to wait after moving
 MOVE_STEP_DEG = 10.0  # max degrees per increment
 
 OUTPUT_PATH = Path(__file__).resolve().parent.parent.parent / "web" / "static" / "v1" / "viz_calibration.json"
+
+
+def generate_round_poses(round_num: int) -> List[List[float]]:
+    """
+    Generate poses for a given round number (1-indexed).
+    Round N tests each pitch joint at ±(N * ANGLE_INCREMENT) degrees individually.
+    Returns list of [J0, J1, J2, J3, J4, J5] poses.
+    """
+    angle = round_num * ANGLE_INCREMENT
+    poses = []
+    for jid in PITCH_JOINTS:
+        lo, hi = JOINT_LIMITS[jid]
+        for sign in [1, -1]:
+            target = sign * angle
+            if lo <= target <= hi:
+                pose = [0, 0, 0, 0, 0, 0]
+                pose[jid] = target
+                poses.append(pose)
+    return poses
+
+
+def max_rounds() -> int:
+    """Number of rounds to reach MAX_ANGLE."""
+    return MAX_ANGLE // ANGLE_INCREMENT
 
 
 @dataclass
@@ -148,11 +152,9 @@ def detect_end_effector(frame: np.ndarray) -> Optional[Tuple[int, int]]:
     h, w = frame.shape[:2]
 
     # Strategy 1: Look for the metallic/dark gripper
-    # The Unitree D1 gripper is typically dark gray/black
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     # Strategy 2: Look for the arm's blue/silver color
-    # Unitree arms often have blue accents
     lower_blue = np.array([100, 50, 50])
     upper_blue = np.array([130, 255, 255])
     blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
@@ -177,7 +179,6 @@ def detect_end_effector(frame: np.ndarray) -> Optional[Tuple[int, int]]:
         return None
 
     # Filter by area and find the topmost point of significant contours
-    # (end-effector tends to be at extremes of the arm)
     min_area = (h * w) * 0.001  # at least 0.1% of image
     valid_contours = [c for c in contours if cv2.contourArea(c) > min_area]
 
@@ -185,14 +186,12 @@ def detect_end_effector(frame: np.ndarray) -> Optional[Tuple[int, int]]:
         return None
 
     # Find the extreme point that's furthest from the base
-    # Base is typically at bottom-center of the side view
     base_x, base_y = w // 2, h
 
     best_point = None
     best_dist = 0
 
     for contour in valid_contours:
-        # Get extreme points
         for point in contour.reshape(-1, 2):
             px, py = int(point[0]), int(point[1])
             dist = math.sqrt((px - base_x) ** 2 + (py - base_y) ** 2)
@@ -209,8 +208,6 @@ def detect_arm_joints(frame: np.ndarray) -> List[Optional[Tuple[int, int]]]:
     Returns a list of detected positions [base, shoulder, elbow, wrist1, wrist2, end]
     with None for undetected joints.
     """
-    # This is harder and less reliable — return empty for now
-    # The optimization can still work with just end-effector positions
     return [None] * 6
 
 
@@ -280,13 +277,11 @@ async def move_joint_slowly(joint_id: int, target_deg: float,
 
 async def move_to_pose(pose: List[float], api_base: str = ARM_API) -> bool:
     """Move the arm to a target pose, one joint at a time, slowly."""
-    # Move pitch joints (J1, J2, J4) which affect the side view
     for jid in [1, 2, 4, 0, 3, 5]:
-        if abs(pose[jid]) > 0.1 or True:  # always send to ensure position
-            ok = await move_joint_slowly(jid, pose[jid], api_base)
-            if not ok:
-                logger.warning("Failed to move J%d to %.1f", jid, pose[jid])
-                return False
+        ok = await move_joint_slowly(jid, pose[jid], api_base)
+        if not ok:
+            logger.warning("Failed to move J%d to %.1f", jid, pose[jid])
+            return False
     return True
 
 
@@ -320,8 +315,6 @@ def solve_calibration(observations: List[PoseObservation],
 
     h, w = image_shape
 
-    # Parameter vector:
-    # [base, shoulder, elbow, wrist1, wrist2, end, off1, off2, off4, sx, sy, tx, ty]
     link_names = ["base", "shoulder", "elbow", "wrist1", "wrist2", "end"]
     x0 = np.array([
         DEFAULT_LINKS_MM["base"],
@@ -333,10 +326,10 @@ def solve_calibration(observations: List[PoseObservation],
         DEFAULT_OFFSETS[1],  # off1
         DEFAULT_OFFSETS[2],  # off2
         DEFAULT_OFFSETS[4],  # off4
-        w / 900.0,    # sx (scale x, approx)
-        h / 900.0,    # sy (scale y)
-        w * 0.35,     # tx (base pixel x)
-        h * 0.85,     # ty (base pixel y)
+        w / 900.0,    # sx
+        h / 900.0,    # sy
+        w * 0.35,     # tx
+        h * 0.85,     # ty
     ])
 
     def residuals(params):
@@ -347,9 +340,7 @@ def solve_calibration(observations: List[PoseObservation],
         total = 0.0
         for obs in valid_obs:
             fk_pts = fk_2d(obs.joint_angles, links, offsets)
-            # End effector is last point
             ee_fk = fk_pts[-1]
-            # Map to pixels
             pred_px = sx * ee_fk[0] + tx
             pred_py = -sy * ee_fk[1] + ty
 
@@ -358,7 +349,6 @@ def solve_calibration(observations: List[PoseObservation],
 
         return total
 
-    # Bounds: links > 10mm, offsets ±180, camera params reasonable
     bounds = [
         (10, 300), (50, 400), (50, 400), (10, 200), (10, 200), (10, 200),  # links
         (-180, 180), (-180, 180), (-180, 180),  # offsets
@@ -367,7 +357,7 @@ def solve_calibration(observations: List[PoseObservation],
     ]
 
     result = minimize(residuals, x0, method='L-BFGS-B', bounds=bounds,
-                      options={'maxiter': 50000, 'maxfun': 200000, 'ftol': 1e-12})
+                      options={'maxiter': 10000, 'maxfun': 50000, 'ftol': 1e-10})
 
     p = result.x
     links_mm = {name: round(float(p[i]), 1) for i, name in enumerate(link_names)}
@@ -379,10 +369,13 @@ def solve_calibration(observations: List[PoseObservation],
         "ty": round(float(p[12]), 1),
     }
 
+    # Compute average per-observation residual in pixels
+    avg_residual = math.sqrt(result.fun / len(valid_obs)) if valid_obs else 0.0
+
     return CalibrationResult(
         links_mm=links_mm,
         joint_viz_offsets=offsets,
-        residual=round(float(result.fun), 2),
+        residual=round(avg_residual, 2),
         n_observations=len(valid_obs),
         camera_params=camera_params,
         success=result.success,
@@ -432,15 +425,11 @@ async def check_for_stall(api_base: str = ARM_API, timeout_s: float = 3.0) -> Op
             await asyncio.sleep(0.2)
             continue
         actual = state["joints"]
-        # We don't have commanded from here; use the target we just sent
-        # This function is called after move_to_pose which sets targets
-        # Check if arm stopped moving but hasn't reached target
         await asyncio.sleep(0.2)
         state2 = await get_arm_state(api_base)
         if state2 is None:
             continue
         actual2 = state2["joints"]
-        # If positions haven't changed much between checks, arm is settled
         settled = all(abs(actual2[i] - actual[i]) < 0.1 for i in range(6))
         if settled:
             return None
@@ -448,91 +437,144 @@ async def check_for_stall(api_base: str = ARM_API, timeout_s: float = 3.0) -> Op
 
 
 async def run_calibration(
-    poses: Optional[List[List[float]]] = None,
     api_base: str = ARM_API,
     camera_url: str = CAMERA_URL,
     progress_callback=None,
 ) -> CalibrationResult:
     """
-    Full calibration routine:
-    1. Move arm through poses
-    2. Capture frames and detect end-effector
-    3. Solve optimization
-    4. Save results
+    Progressive calibration routine with self-assessment:
+    1. Generate poses in rounds of increasing angle (±5°, ±10°, ... ±45°)
+    2. After each round, solve and assess residual
+    3. Stop early if converged (residual < threshold for N stable rounds)
+    4. Always return home between poses and at the end
     """
-    if poses is None:
-        poses = CALIBRATION_POSES
-
-    observations = []
-    total = len(poses)
-    image_shape = (1080, 1920)  # default, updated from first frame
+    observations: List[PoseObservation] = []
+    image_shape = (1080, 1920)
+    n_rounds = max_rounds()
+    prev_residual: Optional[float] = None
+    stable_count = 0
+    skipped_poses: List[Tuple[int, List[float], str]] = []
+    total_poses_planned = sum(len(generate_round_poses(r)) for r in range(1, n_rounds + 1))
+    poses_done = 0
 
     try:
-        for i, pose in enumerate(poses):
-            if progress_callback:
-                progress_callback(i, total, f"Moving to pose {i+1}/{total}")
-
-            logger.info("Pose %d/%d: %s", i + 1, total, pose)
-
-            # Move to pose
-            ok = await move_to_pose(pose, api_base)
-            if not ok:
-                logger.warning("Skipping pose %d — move failed", i + 1)
-                continue
-
-            # Wait for arm to settle and check for stalls
-            await asyncio.sleep(SETTLE_TIME)
-
-            # Check if arm is stalled (collision during move)
-            stalled_joint = await check_for_stall(api_base, timeout_s=1.0)
-            if stalled_joint is not None:
-                logger.warning("Skipping pose %d — J%d stalled (collision)", i + 1, stalled_joint)
-                # Back off toward home
-                await move_joint_slowly(stalled_joint, 0.0, api_base)
-                await asyncio.sleep(1.0)
-                continue
-
-            # Get actual joint angles
-            state = await get_arm_state(api_base)
-            if state is None:
-                continue
-            actual_angles = state["joints"]
-
-            # Capture frame
-            frame = await capture_snapshot(camera_url)
-            if frame is None:
-                logger.warning("Skipping pose %d — capture failed", i + 1)
-                continue
-
+        # Home pose observation first
+        if progress_callback:
+            progress_callback(0, total_poses_planned, "Capturing home pose")
+        frame = await capture_snapshot(camera_url)
+        if frame is not None:
             image_shape = frame.shape[:2]
+            state = await get_arm_state(api_base)
+            if state is not None:
+                ee_px = detect_end_effector(frame)
+                observations.append(PoseObservation(
+                    joint_angles=state["joints"],
+                    end_effector_px=ee_px,
+                    joint_positions_px=detect_arm_joints(frame),
+                    timestamp=time.time(),
+                ))
 
-            # Detect end-effector
-            ee_px = detect_end_effector(frame)
-            joint_px = detect_arm_joints(frame)
+        for round_num in range(1, n_rounds + 1):
+            round_poses = generate_round_poses(round_num)
 
-            obs = PoseObservation(
-                joint_angles=actual_angles,
-                end_effector_px=ee_px,
-                joint_positions_px=joint_px,
-                timestamp=time.time(),
+            for pose in round_poses:
+                poses_done += 1
+                if progress_callback:
+                    progress_callback(poses_done, total_poses_planned,
+                                      f"Round {round_num}: pose {poses_done}")
+
+                logger.info("Round %d — pose %s", round_num, pose)
+
+                # Move to pose
+                ok = await move_to_pose(pose, api_base)
+                if not ok:
+                    reason = "move failed"
+                    logger.warning("Skipping pose %s — %s", pose, reason)
+                    skipped_poses.append((round_num, pose, reason))
+                    await return_home(api_base)
+                    await asyncio.sleep(1.0)
+                    continue
+
+                await asyncio.sleep(SETTLE_TIME)
+
+                # Check for stall / collision
+                stalled_joint = await check_for_stall(api_base, timeout_s=1.0)
+                if stalled_joint is not None:
+                    reason = f"J{stalled_joint} stalled"
+                    logger.warning("Skipping pose %s — %s", pose, reason)
+                    skipped_poses.append((round_num, pose, reason))
+                    await return_home(api_base)
+                    await asyncio.sleep(1.0)
+                    continue
+
+                # Get actual state and capture
+                state = await get_arm_state(api_base)
+                if state is None:
+                    await return_home(api_base)
+                    continue
+
+                frame = await capture_snapshot(camera_url)
+                if frame is None:
+                    logger.warning("Skipping pose %s — capture failed", pose)
+                    skipped_poses.append((round_num, pose, "capture failed"))
+                    await return_home(api_base)
+                    continue
+
+                image_shape = frame.shape[:2]
+                ee_px = detect_end_effector(frame)
+
+                observations.append(PoseObservation(
+                    joint_angles=state["joints"],
+                    end_effector_px=ee_px,
+                    joint_positions_px=detect_arm_joints(frame),
+                    timestamp=time.time(),
+                ))
+                logger.info("  Detected EE: %s", ee_px)
+
+                # Return home between poses
+                await return_home(api_base)
+                await asyncio.sleep(0.5)
+
+            # --- Self-assessment after this round ---
+            result = solve_calibration(observations, image_shape)
+            residual = result.residual if result.success else -1.0
+            n_valid = result.n_observations
+
+            if result.success and prev_residual is not None:
+                if abs(residual - prev_residual) < 5.0 and residual < CONVERGENCE_THRESHOLD:
+                    stable_count += 1
+                else:
+                    stable_count = 0
+            else:
+                stable_count = 0
+
+            converged = stable_count >= STABLE_ROUNDS_NEEDED
+            status = "converged — stopping" if converged else "continuing"
+            logger.info(
+                "Round %d complete: %d observations, residual %.1fpx, %s",
+                round_num, n_valid, residual, status,
             )
-            observations.append(obs)
 
-            logger.info("  Detected EE: %s", ee_px)
+            if converged:
+                break
+
+            prev_residual = residual
 
     finally:
-        # Always return home
         if progress_callback:
-            progress_callback(total, total, "Returning home")
+            progress_callback(total_poses_planned, total_poses_planned, "Returning home")
         await return_home(api_base)
 
+    # Final solve
     if progress_callback:
-        progress_callback(total, total, "Solving optimization")
+        progress_callback(total_poses_planned, total_poses_planned, "Solving optimization")
 
-    # Solve
     result = solve_calibration(observations, image_shape)
 
-    # Save
+    if skipped_poses:
+        logger.info("Skipped %d poses: %s", len(skipped_poses),
+                     [(r, p, reason) for r, p, reason in skipped_poses])
+
     if result.success:
         save_calibration(result)
 
