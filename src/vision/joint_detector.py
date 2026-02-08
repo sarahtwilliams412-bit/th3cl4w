@@ -1,8 +1,11 @@
 """
 Visual joint detection: match segmented arm features to FK-predicted joint positions.
 
-Combines gold centroid proximity, contour inflection points, and silhouette
-width minima to refine FK pixel predictions with visual evidence.
+Combines HSV marker detection, gold centroid proximity, contour inflection points,
+and silhouette width minima to refine FK pixel predictions with visual evidence.
+
+Primary mode: neon-colored marker detection via HSV thresholding.
+Fallback: background subtraction + gold/contour/width features.
 """
 
 import math
@@ -21,8 +24,26 @@ logger = logging.getLogger("th3cl4w.vision.joint_detector")
 # Joint names for the 5 key points
 JOINT_NAMES = ["base", "shoulder", "elbow", "wrist", "end_effector"]
 
+# Default HSV marker color definitions
+# Each entry: name -> (lower_hsv, upper_hsv)
+DEFAULT_MARKER_COLORS: dict[str, tuple[np.ndarray, np.ndarray]] = {
+    "neon_green": (
+        np.array([35, 100, 100], dtype=np.uint8),
+        np.array([85, 255, 255], dtype=np.uint8),
+    ),
+    "neon_orange": (
+        np.array([5, 150, 150], dtype=np.uint8),
+        np.array([25, 255, 255], dtype=np.uint8),
+    ),
+    "hot_pink": (
+        np.array([140, 100, 100], dtype=np.uint8),
+        np.array([170, 255, 255], dtype=np.uint8),
+    ),
+}
+
 
 class DetectionSource(Enum):
+    MARKER = "marker"
     GOLD = "gold"
     CONTOUR = "contour"
     WIDTH = "width"
@@ -58,8 +79,21 @@ _CAMERA_VISIBLE_JOINTS: dict[int, list[int]] = {
 }
 
 
+@dataclass
+class MarkerDetection:
+    """A detected color marker blob."""
+    color_name: str
+    centroid: tuple[float, float]  # (x, y)
+    area: float
+    confidence: float
+
+
 class JointDetector:
-    """Detect arm joints by fusing FK predictions with visual features."""
+    """Detect arm joints by fusing FK predictions with visual features.
+
+    Primary mode: HSV marker detection (neon colored markers on joints).
+    Fallback: background subtraction + gold/contour/width features.
+    """
 
     def __init__(
         self,
@@ -67,32 +101,81 @@ class JointDetector:
         contour_search_radius: float = 30.0,
         width_search_radius: float = 25.0,
         min_inflection_angle: float = 20.0,  # degrees
+        marker_colors: Optional[dict[str, tuple[np.ndarray, np.ndarray]]] = None,
+        marker_min_area: float = 30.0,
+        marker_search_radius: float = 50.0,
+        blur_kernel: int = 5,
     ):
         self.gold_search_radius = gold_search_radius
         self.contour_search_radius = contour_search_radius
         self.width_search_radius = width_search_radius
         self.min_inflection_angle = min_inflection_angle
+        self.marker_colors = marker_colors if marker_colors is not None else dict(DEFAULT_MARKER_COLORS)
+        self.marker_min_area = marker_min_area
+        self.marker_search_radius = marker_search_radius
+        self.blur_kernel = blur_kernel
+        self._morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+
+    def detect_markers(self, frame: np.ndarray) -> list[MarkerDetection]:
+        """Detect all colored markers in frame via HSV thresholding.
+
+        Returns list of MarkerDetection with centroid, color name, area.
+        """
+        blurred = cv2.GaussianBlur(frame, (self.blur_kernel, self.blur_kernel), 0)
+        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+
+        markers: list[MarkerDetection] = []
+        for color_name, (lower, upper) in self.marker_colors.items():
+            mask = cv2.inRange(hsv, lower, upper)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._morph_kernel, iterations=1)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._morph_kernel, iterations=1)
+
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area < self.marker_min_area:
+                    continue
+                M = cv2.moments(contour)
+                if M["m00"] == 0:
+                    continue
+                cx = M["m10"] / M["m00"]
+                cy = M["m01"] / M["m00"]
+                # Confidence based on area (larger = more confident, capped at 1.0)
+                conf = min(1.0, 0.7 + area / 5000.0)
+                markers.append(MarkerDetection(color_name, (cx, cy), area, conf))
+
+        # Sort by area descending (largest markers first)
+        markers.sort(key=lambda m: m.area, reverse=True)
+        return markers
 
     def detect_joints(
         self,
         segmentation: ArmSegmentation,
         fk_pixels: list[tuple[float, float]],
+        frame: Optional[np.ndarray] = None,
     ) -> list[JointDetection]:
-        """Detect joints by matching visual features to FK predictions.
+        """Detect joints — marker-based (primary) with fallback to visual features.
 
-        For each FK-predicted position, searches for:
-        1. Nearby gold centroids (highest confidence)
-        2. Contour inflection points
-        3. Silhouette width minima
-        4. Falls back to FK-only if no visual match
+        If frame is provided, attempts HSV marker detection first.
+        Falls back to gold/contour/width matching per joint.
         """
+        # Try marker detection first if frame available
+        marker_centroids: list[tuple[float, float]] = []
+        if frame is not None:
+            markers = self.detect_markers(frame)
+            marker_centroids = [(m.centroid[0], m.centroid[1]) for m in markers]
+            if markers:
+                logger.debug("Detected %d markers: %s", len(markers),
+                             [(m.color_name, m.centroid) for m in markers])
+
         detections: list[JointDetection] = []
         inflection_pts = self._find_contour_inflections(segmentation)
         width_minima = self._find_width_minima(segmentation)
 
         for i, fk_pos in enumerate(fk_pixels):
             det = self._detect_single_joint(
-                i, fk_pos, segmentation.gold_centroids, inflection_pts, width_minima
+                i, fk_pos, segmentation.gold_centroids, inflection_pts, width_minima,
+                marker_centroids=marker_centroids,
             )
             detections.append(det)
 
@@ -105,7 +188,17 @@ class JointDetector:
         gold_centroids: list[tuple[int, int]],
         inflection_pts: list[tuple[float, float]],
         width_minima: list[tuple[float, float]],
+        marker_centroids: Optional[list[tuple[float, float]]] = None,
     ) -> JointDetection:
+        # 0. Marker match (PRIMARY — highest confidence)
+        if marker_centroids:
+            best_marker, marker_dist = self._nearest(fk_pos, marker_centroids)
+            if best_marker is not None and marker_dist <= self.marker_search_radius:
+                conf = max(0.7, 1.0 - marker_dist / self.marker_search_radius * 0.3)
+                # Remove used marker to prevent double-assignment
+                marker_centroids.remove(best_marker)
+                return JointDetection(joint_idx, best_marker, conf, DetectionSource.MARKER)
+
         # 1. Gold centroid match
         best_gold, gold_dist = self._nearest(fk_pos, gold_centroids)
         if best_gold is not None and gold_dist <= self.gold_search_radius:

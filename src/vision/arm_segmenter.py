@@ -13,9 +13,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-# Enable OpenCL GPU acceleration if available (e.g. RX 580 eGPU)
-if cv2.ocl.haveOpenCL():
-    cv2.ocl.setUseOpenCL(True)
+from .gpu_preprocess import to_hsv
 
 logger = logging.getLogger("th3cl4w.vision.arm_segmenter")
 
@@ -32,14 +30,15 @@ class ArmSegmentation:
     gold_centroids: list[tuple[int, int]]  # (x, y) centers of gold segments
     contour: Optional[np.ndarray] = None  # largest contour
     bounding_box: Optional[tuple[int, int, int, int]] = None  # (x, y, w, h)
+    marker_centroids: list[tuple[float, float]] = field(default_factory=list)  # detected neon markers
 
 
 class ArmSegmenter:
     """Detect and segment the D1 robotic arm in camera frames.
 
-    The arm is matte-black (hard to segment by color alone), so we rely on
-    background subtraction via frame differencing. Gold accents at joints
-    provide additional landmarks via HSV filtering.
+    Primary mode: neon marker-based segmentation (connects detected marker
+    positions to form arm skeleton/mask).
+    Fallback: background subtraction + gold accent detection.
     """
 
     def __init__(
@@ -51,6 +50,9 @@ class ArmSegmenter:
         min_contour_area: float = 500.0,
         blur_kernel: int = 5,
         gold_min_area: float = 50.0,
+        marker_colors: Optional[dict[str, tuple[np.ndarray, np.ndarray]]] = None,
+        marker_min_area: float = 30.0,
+        marker_link_thickness: int = 20,
     ):
         self.use_gpu = cv2.ocl.haveOpenCL()
         logger.info("ArmSegmenter initialized — GPU acceleration: %s", self.use_gpu)
@@ -62,6 +64,12 @@ class ArmSegmenter:
         self.min_contour_area = min_contour_area
         self.blur_kernel = blur_kernel
         self.gold_min_area = gold_min_area
+        self.marker_min_area = marker_min_area
+        self.marker_link_thickness = marker_link_thickness
+
+        # Import here to avoid circular dependency
+        from .joint_detector import DEFAULT_MARKER_COLORS
+        self.marker_colors = marker_colors if marker_colors is not None else dict(DEFAULT_MARKER_COLORS)
 
         self._background: Optional[np.ndarray] = None  # float64 running average
         self._roi: Optional[tuple[int, int, int, int]] = None  # (x, y, w, h)
@@ -132,7 +140,7 @@ class ArmSegmenter:
         """
         frame_gpu = cv2.UMat(frame)
         blurred = cv2.GaussianBlur(frame_gpu, (self.blur_kernel, self.blur_kernel), 0)
-        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+        hsv = to_hsv(blurred)
         mask_gpu = cv2.inRange(hsv, GOLD_HSV_LOWER, GOLD_HSV_UPPER)
 
         # Cleanup on GPU
@@ -157,13 +165,94 @@ class ArmSegmenter:
 
         return centroids
 
+    # ── Marker-based detection ────────────────────────────────────────
+
+    def detect_markers(self, frame: np.ndarray) -> list[tuple[float, float]]:
+        """Detect neon colored markers via HSV thresholding.
+
+        Returns list of (x, y) centroids sorted left-to-right.
+        """
+        blurred = cv2.GaussianBlur(frame, (self.blur_kernel, self.blur_kernel), 0)
+        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+
+        centroids: list[tuple[float, float]] = []
+        for color_name, (lower, upper) in self.marker_colors.items():
+            mask = cv2.inRange(hsv, lower, upper)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._morph_kernel, iterations=1)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._morph_kernel, iterations=1)
+
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area < self.marker_min_area:
+                    continue
+                M = cv2.moments(contour)
+                if M["m00"] == 0:
+                    continue
+                cx = M["m10"] / M["m00"]
+                cy = M["m01"] / M["m00"]
+                centroids.append((cx, cy))
+
+        # Sort by x coordinate (left to right, roughly base to end-effector)
+        centroids.sort(key=lambda p: p[0])
+        return centroids
+
+    def segment_arm_by_markers(
+        self, frame: np.ndarray, marker_centroids: list[tuple[float, float]]
+    ) -> np.ndarray:
+        """Create arm silhouette mask by connecting marker positions with thick lines.
+
+        This creates a synthetic arm mask by drawing thick lines between
+        consecutive detected markers, approximating the arm shape.
+        """
+        h, w = frame.shape[:2]
+        mask = np.zeros((h, w), dtype=np.uint8)
+        if len(marker_centroids) < 2:
+            # Single marker: just draw a circle
+            if marker_centroids:
+                cx, cy = int(marker_centroids[0][0]), int(marker_centroids[0][1])
+                cv2.circle(mask, (cx, cy), self.marker_link_thickness, 255, -1)
+            return mask
+
+        # Draw thick lines between consecutive markers
+        for i in range(len(marker_centroids) - 1):
+            pt1 = (int(marker_centroids[i][0]), int(marker_centroids[i][1]))
+            pt2 = (int(marker_centroids[i + 1][0]), int(marker_centroids[i + 1][1]))
+            cv2.line(mask, pt1, pt2, 255, self.marker_link_thickness)
+
+        # Draw circles at each marker position
+        for cx, cy in marker_centroids:
+            cv2.circle(mask, (int(cx), int(cy)), self.marker_link_thickness // 2, 255, -1)
+
+        return mask
+
     # ── Combined segmentation ─────────────────────────────────────────
 
     def segment_arm(self, frame: np.ndarray) -> ArmSegmentation:
-        """Full arm segmentation combining background subtraction and gold detection.
+        """Full arm segmentation — marker-based (primary) with bg-sub fallback.
 
         Works independently per camera view.
         """
+        # Try marker detection first (PRIMARY mode)
+        marker_centroids = self.detect_markers(frame)
+        if len(marker_centroids) >= 2:
+            logger.debug("Marker-based segmentation: %d markers detected", len(marker_centroids))
+            marker_mask = self.segment_arm_by_markers(frame, marker_centroids)
+            gold_centroids = self.detect_gold_segments(frame)
+            contours, _ = cv2.findContours(marker_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            best_contour = max(contours, key=cv2.contourArea) if contours else None
+            bbox = cv2.boundingRect(best_contour) if best_contour is not None else None
+            return ArmSegmentation(
+                silhouette_mask=marker_mask,
+                gold_centroids=gold_centroids,
+                contour=best_contour,
+                bounding_box=bbox,
+                marker_centroids=marker_centroids,
+            )
+
+        # Fallback: background subtraction
+        logger.debug("Marker detection found %d markers, falling back to bg-sub", len(marker_centroids))
+
         # Apply ROI if set
         roi_offset_x, roi_offset_y = 0, 0
         proc_frame = frame
@@ -229,6 +318,7 @@ class ArmSegmenter:
             gold_centroids=gold_centroids,
             contour=out_contour,
             bounding_box=bbox,
+            marker_centroids=marker_centroids,
         )
 
     # ── ROI optimization ──────────────────────────────────────────────

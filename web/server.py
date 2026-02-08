@@ -2807,45 +2807,75 @@ async def ws_arm3d(ws: WebSocket):
 
 try:
     from src.calibration.calibration_runner import CalibrationRunner, CalibrationSession
+    from src.calibration.pipeline import LLMCalibrationPipeline
 
     _HAS_CALIBRATION = True
 except ImportError:
     _HAS_CALIBRATION = False
 
 _calibration_runner: Optional[CalibrationRunner] = None
+_calibration_pipeline: Optional[LLMCalibrationPipeline] = None
 _calibration_task: Optional[asyncio.Task] = None
 _calibration_session: Optional[CalibrationSession] = None
 _calibration_error: Optional[str] = None
+_calibration_report = None  # ComparisonReport from pipeline
 
 
 @app.post("/api/calibration/start")
 async def calibration_start():
-    """Kick off the 20-pose calibration sequence."""
-    global _calibration_runner, _calibration_task, _calibration_session, _calibration_error
+    """Kick off the 20-pose calibration sequence with CV+LLM detection."""
+    global _calibration_runner, _calibration_pipeline, _calibration_task
+    global _calibration_session, _calibration_error, _calibration_report
     if not _HAS_CALIBRATION:
         return JSONResponse({"ok": False, "error": "Calibration module not available"}, status_code=501)
     if _calibration_task and not _calibration_task.done():
         return JSONResponse({"ok": False, "error": "Calibration already running"}, status_code=409)
 
-    _calibration_runner = CalibrationRunner()
     _calibration_session = None
     _calibration_error = None
+    _calibration_report = None
+
+    # Create pipeline with LLM detection
+    import os as _os_mod
+    gemini_key = _os_mod.environ.get("GEMINI_API_KEY")
+    _calibration_pipeline = LLMCalibrationPipeline(gemini_api_key=gemini_key)
+    _calibration_runner = _calibration_pipeline.runner
 
     # Pre-generate session_id so it's available in the response
     import time as _time_mod
     _calibration_runner._session_id = f"cal_{int(_time_mod.time())}"
 
     async def _run():
-        global _calibration_session, _calibration_error
+        global _calibration_session, _calibration_error, _calibration_report
         try:
+            # Run calibration (arm movement + frame capture)
             _calibration_session = await _calibration_runner.run_full_calibration()
-            action_log.add("CALIBRATION", f"Complete: {len(_calibration_session.captures)} poses", "info")
+            action_log.add("CALIBRATION", f"Poses complete: {len(_calibration_session.captures)}", "info")
+
+            # Run CV + LLM detection on captured frames
+            _calibration_report = await _calibration_pipeline.run_detection_only(_calibration_session)
+            action_log.add("CALIBRATION", f"Detection complete. LLM tokens: {_calibration_report.total_llm_tokens}", "info")
+
+            # Auto-save results to disk
+            results_dir = str(Path(__file__).parent.parent / "calibration_results")
+            save_path = _calibration_pipeline.save_results(
+                _calibration_session, _calibration_report, results_dir
+            )
+            action_log.add("CALIBRATION", f"Results saved to {save_path}", "info")
+
+            # Store report for API access
+            session_id = _calibration_runner._session_id
+            if session_id:
+                _calib_comparison_reports[session_id] = _calibration_report
+
         except Exception as e:
             _calibration_error = str(e)
             action_log.add("CALIBRATION", f"Failed: {e}", "error")
+            import traceback
+            logger.error(f"Calibration error: {traceback.format_exc()}")
 
     _calibration_task = asyncio.create_task(_run())
-    action_log.add("CALIBRATION", "Started", "info")
+    action_log.add("CALIBRATION", "Started with CV+LLM pipeline", "info")
     return {"ok": True, "session_id": _calibration_runner._session_id}
 
 
