@@ -99,10 +99,47 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 3px; }
 
+/* Debug Panel */
+.debug-panel { background: #111827; border-top: 2px solid #4a90d9; font-family: var(--mono); font-size: 11px; padding: 8px 12px; overflow-y: auto; max-height: 340px; }
+.debug-section { margin-bottom: 10px; }
+.debug-title { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; }
+.debug-pipeline { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.pipe-stage { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 8px; border: 1px solid #333; border-radius: 4px; min-width: 54px; background: #0d1525; }
+.pipe-stage.active { border-color: var(--success); }
+.pipe-stage.active .pipe-dot { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.pipe-stage.error { border-color: var(--danger); }
+.pipe-stage.error .pipe-dot { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+.pipe-dot { width: 6px; height: 6px; border-radius: 50%; background: #444; }
+.pipe-label { font-size: 9px; color: var(--text-dim); }
+.pipe-latency { font-size: 8px; color: #555; }
+.pipe-arrow { color: #444; font-size: 14px; }
+.debug-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.stat-group { background: #0d1525; border: 1px solid #333; border-radius: 4px; padding: 6px 8px; }
+.stat-header { font-size: 9px; color: var(--info); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.stat-row { display: flex; justify-content: space-between; gap: 6px; padding: 1px 0; }
+.stat-row span:first-child { color: var(--text-dim); font-size: 9px; }
+.stat-row span:last-child { color: var(--text); font-size: 10px; }
+.debug-events { background: #0d1525; border: 1px solid #333; border-radius: 4px; padding: 4px 8px; max-height: 140px; overflow-y: auto; font-size: 10px; line-height: 1.6; }
+.debug-evt { white-space: nowrap; }
+.debug-evt .de-ts { color: #555; margin-right: 4px; }
+.debug-evt .de-type { font-weight: 600; margin-right: 4px; }
+.debug-evt .de-cid { color: #666; margin-right: 4px; }
+.debug-evt .de-pay { color: var(--text-dim); }
+.de-CMD_SENT { color: #4a90d9; }
+.de-DDS_PUBLISH { color: #9b59b6; }
+.de-DDS_RECEIVE { color: #53d769; }
+.de-CMD_ACK { color: #7fff00; }
+.de-CMD_EXEC { color: #2e8b57; }
+.de-STATE_UPDATE { color: #f0ad4e; }
+.de-WS_SEND { color: #87ceeb; }
+.de-ERROR { color: #e94560; }
+.de-CAM_FRAME { color: #888; }
+
 @media (max-width: 800px) {
   .main { flex-direction: column; }
   .panel-left { min-height: 220px; border-right: none; border-bottom: 1px solid var(--card-border); }
   .panel-right { width: 100%; flex: 1; }
+  .debug-stats { grid-template-columns: repeat(2, 1fr); }
 }
 </style>
 </head>
@@ -113,6 +150,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="conn-dot" id="connDot"></div>
   <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">DISCONNECTED</span>
   <span class="conn-quality" id="connQuality"></span>
+  <button class="btn" id="btnDebug" style="font-size:10px;padding:3px 8px">🔧 DEBUG</button>
   <div class="topbar-spacer"></div>
   <div class="badge" id="badgePower">PWR OFF</div>
   <div class="badge" id="badgeEnabled">DISABLED</div>
@@ -183,6 +221,40 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 <div class="log-panel">
   <div class="log-title">Action Log</div>
   <div class="log-scroll" id="logScroll"></div>
+</div>
+
+<div class="debug-panel" id="debugPanel" style="display:none">
+  <div class="debug-section">
+    <div class="debug-title">Pipeline</div>
+    <div class="debug-pipeline" id="debugPipeline">
+      <div class="pipe-stage" data-stage="CMD_SENT"><div class="pipe-dot"></div><div class="pipe-label">CMD</div><div class="pipe-latency" id="plCmd">—</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="DDS_PUBLISH"><div class="pipe-dot"></div><div class="pipe-label">DDS TX</div><div class="pipe-latency" id="plDdsTx">—</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="DDS_RECEIVE"><div class="pipe-dot"></div><div class="pipe-label">ARM RX</div><div class="pipe-latency" id="plArmRx">—</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="CMD_EXEC"><div class="pipe-dot"></div><div class="pipe-label">EXEC</div><div class="pipe-latency" id="plExec">—</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="STATE_UPDATE"><div class="pipe-dot"></div><div class="pipe-label">STATE</div><div class="pipe-latency" id="plState">—</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="WS_SEND"><div class="pipe-dot"></div><div class="pipe-label">WS TX</div><div class="pipe-latency" id="plWsTx">—</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-stage" data-stage="UI"><div class="pipe-dot"></div><div class="pipe-label">UI</div><div class="pipe-latency" id="plUi">—</div></div>
+    </div>
+  </div>
+  <div class="debug-section">
+    <div class="debug-title">Stats</div>
+    <div class="debug-stats" id="debugStats">
+      <div class="stat-group"><div class="stat-header">DDS</div><div class="stat-row"><span>TX rate</span><span id="dsTxRate">N/A</span></div><div class="stat-row"><span>RX rate</span><span id="dsRxRate">N/A</span></div><div class="stat-row"><span>Last RX age</span><span id="dsRxAge">N/A</span></div></div>
+      <div class="stat-group"><div class="stat-header">Cameras</div><div class="stat-row"><span>C0 FPS</span><span id="dsC0Fps">N/A</span></div><div class="stat-row"><span>C1 FPS</span><span id="dsC1Fps">N/A</span></div><div class="stat-row"><span>Motion</span><span id="dsMotion">N/A</span></div></div>
+      <div class="stat-group"><div class="stat-header">WebSocket</div><div class="stat-row"><span>Send rate</span><span id="dsWsSend">N/A</span></div><div class="stat-row"><span>Latency</span><span id="dsWsLat">N/A</span></div><div class="stat-row"><span>RX interval</span><span id="dsWsRxInt">N/A</span></div></div>
+      <div class="stat-group"><div class="stat-header">Latency</div><div class="stat-row"><span>Cmd→Ack</span><span id="dsLatCmdAck">N/A</span></div><div class="stat-row"><span>Ack→Exec</span><span id="dsLatAckExec">N/A</span></div><div class="stat-row"><span>End-to-end</span><span id="dsLatE2e">N/A</span></div></div>
+    </div>
+  </div>
+  <div class="debug-section">
+    <div class="debug-title">Event Stream</div>
+    <div class="debug-events" id="debugEvents"></div>
+  </div>
 </div>
 
 <script>
@@ -639,6 +711,115 @@ document.getElementById('btnCamToggle').addEventListener('click', () => {
   });
   setTimeout(resizeCanvas, 50);
 });
+
+// ---- Debug Telemetry ----
+let debugOn = false;
+let debugInterval = null;
+let wsLastMsgTs = 0;
+let wsRxIntervalMs = 0;
+
+// Track WS message timing for debug
+const origOnMessage = null;
+function hookWsDebug() {
+  if (!ws) return;
+  const origHandler = ws.onmessage;
+  ws.onmessage = (e) => {
+    const now = Date.now();
+    if (wsLastMsgTs > 0) wsRxIntervalMs = now - wsLastMsgTs;
+    wsLastMsgTs = now;
+    origHandler(e);
+  };
+}
+
+document.getElementById('btnDebug').addEventListener('click', async () => {
+  debugOn = !debugOn;
+  const btn = document.getElementById('btnDebug');
+  const panel = document.getElementById('debugPanel');
+  btn.className = 'btn' + (debugOn ? ' on' : '');
+  panel.style.display = debugOn ? 'block' : 'none';
+  try { await fetch(`/api/debug/${debugOn ? 'enable' : 'disable'}`, { method: 'POST' }); } catch(e) {}
+  if (debugOn) {
+    hookWsDebug();
+    debugInterval = setInterval(pollDebug, 1000);
+    pollDebug();
+  } else {
+    if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
+  }
+});
+
+async function pollDebug() {
+  if (!debugOn) return;
+  try {
+    const [statsResp, telResp] = await Promise.allSettled([
+      fetch('/api/debug/stats'),
+      fetch('/api/debug/telemetry?limit=30')
+    ]);
+    if (statsResp.status === 'fulfilled' && statsResp.value.ok) {
+      const stats = await statsResp.value.json();
+      updateDebugStats(stats);
+    }
+    if (telResp.status === 'fulfilled' && telResp.value.ok) {
+      const tel = await telResp.value.json();
+      updateDebugPipeline(tel.events || tel);
+      renderDebugEvents(tel.events || tel);
+    }
+  } catch(e) { /* endpoints may not exist */ }
+  // Always update client-side WS timing
+  document.getElementById('dsWsRxInt').textContent = wsRxIntervalMs > 0 ? wsRxIntervalMs + 'ms' : 'N/A';
+  // UI stage always active when debug is on
+  const uiStage = document.querySelector('.pipe-stage[data-stage="UI"]');
+  if (uiStage) { uiStage.className = 'pipe-stage active'; }
+}
+
+function updateDebugStats(s) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? 'N/A'; };
+  set('dsTxRate', s.dds_tx_rate != null ? s.dds_tx_rate + '/s' : 'N/A');
+  set('dsRxRate', s.dds_rx_rate != null ? s.dds_rx_rate + '/s' : 'N/A');
+  set('dsRxAge', s.dds_last_rx_age_ms != null ? s.dds_last_rx_age_ms + 'ms' : 'N/A');
+  set('dsC0Fps', s.cam0_fps != null ? s.cam0_fps.toFixed(1) : 'N/A');
+  set('dsC1Fps', s.cam1_fps != null ? s.cam1_fps.toFixed(1) : 'N/A');
+  set('dsMotion', s.motion_score != null ? s.motion_score.toFixed(2) : 'N/A');
+  set('dsWsSend', s.ws_send_rate != null ? s.ws_send_rate + '/s' : 'N/A');
+  set('dsWsLat', s.ws_latency_ms != null ? s.ws_latency_ms + 'ms' : 'N/A');
+  set('dsLatCmdAck', s.latency_cmd_ack_ms != null ? s.latency_cmd_ack_ms + 'ms' : 'N/A');
+  set('dsLatAckExec', s.latency_ack_exec_ms != null ? s.latency_ack_exec_ms + 'ms' : 'N/A');
+  set('dsLatE2e', s.latency_e2e_ms != null ? s.latency_e2e_ms + 'ms' : 'N/A');
+}
+
+function updateDebugPipeline(events) {
+  const now = Date.now();
+  const recentTypes = new Set();
+  const errorTypes = new Set();
+  if (Array.isArray(events)) {
+    events.forEach(ev => {
+      const age = ev.timestamp ? now - new Date(ev.timestamp).getTime() : 9999;
+      if (age < 3000) {
+        if (ev.event_type === 'ERROR') errorTypes.add('ERROR');
+        else recentTypes.add(ev.event_type);
+      }
+    });
+  }
+  document.querySelectorAll('.pipe-stage').forEach(el => {
+    const stage = el.dataset.stage;
+    if (stage === 'UI') return; // handled separately
+    if (errorTypes.has(stage)) el.className = 'pipe-stage error';
+    else if (recentTypes.has(stage)) el.className = 'pipe-stage active';
+    else el.className = 'pipe-stage';
+  });
+}
+
+function renderDebugEvents(events) {
+  const container = document.getElementById('debugEvents');
+  if (!Array.isArray(events) || events.length === 0) { container.innerHTML = '<div style="color:#555">No events</div>'; return; }
+  container.innerHTML = events.map(ev => {
+    const ts = ev.timestamp ? new Date(ev.timestamp).toTimeString().slice(0,8) : '??:??:??';
+    const cid = ev.correlation_id ? ev.correlation_id.slice(0,8) : '';
+    const payload = ev.payload ? JSON.stringify(ev.payload).slice(0,80) : '';
+    const typeCls = 'de-' + (ev.event_type || 'CMD_SENT');
+    return `<div class="debug-evt"><span class="de-ts">${esc(ts)}</span><span class="de-type ${typeCls}">${esc(ev.event_type||'?')}</span><span class="de-cid">${esc(cid)}</span><span class="de-pay">${esc(payload)}</span></div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
 
 // Start
 connectWS();

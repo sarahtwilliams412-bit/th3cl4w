@@ -7,13 +7,24 @@ Runs standalone on port 8081 alongside the main web server.
 
 import argparse
 import logging
+import sys
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
 from typing import Optional
 
 import cv2
 import numpy as np
+
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+try:
+    from src.telemetry.camera_monitor import CameraHealthMonitor
+    _HAS_MONITOR = True
+except ImportError:
+    _HAS_MONITOR = False
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("th3cl4w.camera")
@@ -36,6 +47,10 @@ class CameraThread:
         self._connected = False
         self._thread: Optional[threading.Thread] = None
         self._no_signal_frame = self._make_no_signal_frame()
+        self._frame_count = 0
+        self._health: Optional['CameraHealthMonitor'] = None
+        if _HAS_MONITOR:
+            self._health = CameraHealthMonitor(camera_id=str(device_id), target_fps=float(fps))
 
     def _make_no_signal_frame(self) -> bytes:
         """Generate a 'NO SIGNAL' placeholder frame."""
@@ -94,6 +109,9 @@ class CameraThread:
             ret, frame = cap.read()
             if not ret:
                 logger.warning("Camera /dev/video%d read failed, reconnecting", self.device_id)
+                if self._health:
+                    self._health.on_drop()
+                    self._health.on_frame(resolution=(self.width, self.height), connected=False)
                 cap.release()
                 cap = None
                 with self._lock:
@@ -103,6 +121,14 @@ class CameraThread:
             _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             with self._lock:
                 self._frame = buf.tobytes()
+
+            if self._health:
+                h, w = frame.shape[:2]
+                self._health.on_frame(resolution=(w, h), connected=True)
+                self._frame_count += 1
+                if self._frame_count % 5 == 0:
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    self._health.compute_motion(gray)
 
             time.sleep(1.0 / self.fps)
 
@@ -197,13 +223,16 @@ class CameraHandler(BaseHTTPRequestHandler):
         import json
         status = {}
         for idx, cam in cameras.items():
-            status[str(idx)] = {
+            cam_status = {
                 "connected": cam.connected,
                 "device_id": cam.device_id,
                 "width": cam.width,
                 "height": cam.height,
                 "fps": cam.fps,
             }
+            if cam._health:
+                cam_status["health"] = cam._health.stats
+            status[str(idx)] = cam_status
         body = json.dumps(status).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')

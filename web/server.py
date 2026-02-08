@@ -22,6 +22,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+try:
+    from src.telemetry import get_collector, EventType
+    _HAS_TELEMETRY = True
+except ImportError:
+    _HAS_TELEMETRY = False
+
 # ---------------------------------------------------------------------------
 # CLI args (parsed early so lifespan can access them)
 # ---------------------------------------------------------------------------
@@ -123,38 +129,38 @@ class SimulatedArm:
             "error_status": self._error,
         }
 
-    def power_on(self):
+    def power_on(self, **kwargs):
         self._powered = True
         return True
 
-    def power_off(self):
+    def power_off(self, **kwargs):
         self._enabled = False
         self._powered = False
         return True
 
-    def enable_motors(self):
+    def enable_motors(self, **kwargs):
         if not self._powered:
             return False
         self._enabled = True
         return True
 
-    def disable_motors(self):
+    def disable_motors(self, **kwargs):
         self._enabled = False
         return True
 
-    def reset_to_zero(self):
+    def reset_to_zero(self, **kwargs):
         self._target_angles = [0.0] * 6
         self._target_gripper = 0.0
         return True
 
-    def set_joint(self, joint_id: int, angle_deg: float, delay_ms: int = 0):
+    def set_joint(self, joint_id: int, angle_deg: float, delay_ms: int = 0, **kwargs):
         lo, hi = JOINT_LIMITS_DEG.get(joint_id, (-135, 135))
         if not (0 <= joint_id <= 5):
             return False
         self._target_angles[joint_id] = max(lo, min(hi, angle_deg))
         return True
 
-    def set_all_joints(self, angles_deg: list, mode: int = 0):
+    def set_all_joints(self, angles_deg: list, mode: int = 0, **kwargs):
         if len(angles_deg) != 6:
             return False
         for i, a in enumerate(angles_deg):
@@ -162,7 +168,7 @@ class SimulatedArm:
             self._target_angles[i] = max(lo, min(hi, a))
         return True
 
-    def set_gripper(self, position_mm: float):
+    def set_gripper(self, position_mm: float, **kwargs):
         self._target_gripper = max(GRIPPER_RANGE[0], min(GRIPPER_RANGE[1], position_mm))
         return True
 
@@ -291,14 +297,32 @@ def get_arm_state() -> Dict[str, Any]:
     return state
 
 
-def cmd_response(success: bool, action: str, extra: str = "") -> JSONResponse:
+def cmd_response(success: bool, action: str, extra: str = "", correlation_id: str | None = None) -> JSONResponse:
     state = get_arm_state()
     level = "info" if success else "error"
     detail = f"{'OK' if success else 'FAILED'}"
     if extra:
         detail += f" — {extra}"
     action_log.add(action, detail, level)
-    return JSONResponse({"ok": success, "action": action, "state": state})
+    resp_data: Dict[str, Any] = {"ok": success, "action": action, "state": state}
+    if correlation_id is not None:
+        resp_data["correlation_id"] = correlation_id
+    return JSONResponse(resp_data)
+
+
+def _telem_cmd_sent(endpoint: str, params: Dict[str, Any], correlation_id: str) -> None:
+    """Emit CMD_SENT if telemetry is available and enabled."""
+    if _HAS_TELEMETRY:
+        tc = get_collector()
+        if tc.enabled:
+            tc.emit("web", EventType.CMD_SENT, {"endpoint": endpoint, "params": params}, correlation_id)
+
+
+def _new_cid() -> str | None:
+    """Generate a correlation_id if telemetry is available."""
+    if _HAS_TELEMETRY:
+        return get_collector().new_correlation_id()
+    return None
 
 
 async def broadcast_ack(action: str, success: bool):
@@ -338,88 +362,115 @@ async def api_log():
 
 @app.post("/api/command/enable")
 async def cmd_enable():
+    cid = _new_cid()
+    _telem_cmd_sent("enable", {}, cid)
     if arm is None:
-        return cmd_response(False, "ENABLE", "No arm connected")
+        return cmd_response(False, "ENABLE", "No arm connected", cid)
     state = arm.get_status() or {}
     if not state.get("power_status"):
         action_log.add("ENABLE", "REJECTED — power is off, power on first", "error")
-        return JSONResponse({"ok": False, "action": "ENABLE", "error": "Power must be on before enabling", "state": get_arm_state()})
-    ok = arm.enable_motors()
-    resp = cmd_response(ok, "ENABLE")
+        resp_data: Dict[str, Any] = {"ok": False, "action": "ENABLE", "error": "Power must be on before enabling", "state": get_arm_state()}
+        if cid:
+            resp_data["correlation_id"] = cid
+        return JSONResponse(resp_data)
+    ok = arm.enable_motors(_correlation_id=cid)
+    resp = cmd_response(ok, "ENABLE", correlation_id=cid)
     await broadcast_ack("ENABLE", ok)
     return resp
 
 @app.post("/api/command/disable")
 async def cmd_disable():
-    ok = arm.disable_motors() if arm else False
-    resp = cmd_response(ok, "DISABLE")
+    cid = _new_cid()
+    _telem_cmd_sent("disable", {}, cid)
+    ok = arm.disable_motors(_correlation_id=cid) if arm else False
+    resp = cmd_response(ok, "DISABLE", correlation_id=cid)
     await broadcast_ack("DISABLE", ok)
     return resp
 
 @app.post("/api/command/power-on")
 async def cmd_power_on():
-    ok = arm.power_on() if arm else False
-    resp = cmd_response(ok, "POWER_ON")
+    cid = _new_cid()
+    _telem_cmd_sent("power-on", {}, cid)
+    ok = arm.power_on(_correlation_id=cid) if arm else False
+    resp = cmd_response(ok, "POWER_ON", correlation_id=cid)
     await broadcast_ack("POWER_ON", ok)
     return resp
 
 @app.post("/api/command/power-off")
 async def cmd_power_off():
-    ok = arm.power_off() if arm else False
-    resp = cmd_response(ok, "POWER_OFF")
+    cid = _new_cid()
+    _telem_cmd_sent("power-off", {}, cid)
+    ok = arm.power_off(_correlation_id=cid) if arm else False
+    resp = cmd_response(ok, "POWER_OFF", correlation_id=cid)
     await broadcast_ack("POWER_OFF", ok)
     return resp
 
 @app.post("/api/command/reset")
 async def cmd_reset():
-    ok = arm.reset_to_zero() if arm else False
-    resp = cmd_response(ok, "RESET")
+    cid = _new_cid()
+    _telem_cmd_sent("reset", {}, cid)
+    ok = arm.reset_to_zero(_correlation_id=cid) if arm else False
+    resp = cmd_response(ok, "RESET", correlation_id=cid)
     await broadcast_ack("RESET", ok)
     return resp
 
 @app.post("/api/command/set-joint")
 async def cmd_set_joint(req: SetJointRequest):
+    cid = _new_cid()
+    _telem_cmd_sent("set-joint", {"id": req.id, "angle": req.angle}, cid)
     action_log.add("SET_JOINT", f"Request: J{req.id} -> {req.angle}°", "info")
     lo, hi = JOINT_LIMITS_DEG.get(req.id, (-135, 135))
     if not (lo <= req.angle <= hi):
         action_log.add("SET_JOINT", f"REJECTED — J{req.id} angle {req.angle}° outside [{lo}, {hi}]", "error")
-        return JSONResponse({"ok": False, "action": "SET_JOINT", "error": f"Angle {req.angle} out of range [{lo}, {hi}]", "state": get_arm_state()}, status_code=400)
-    ok = arm.set_joint(req.id, req.angle) if arm else False
-    resp = cmd_response(ok, "SET_JOINT", f"J{req.id} = {req.angle}°")
+        resp_data: Dict[str, Any] = {"ok": False, "action": "SET_JOINT", "error": f"Angle {req.angle} out of range [{lo}, {hi}]", "state": get_arm_state()}
+        if cid:
+            resp_data["correlation_id"] = cid
+        return JSONResponse(resp_data, status_code=400)
+    ok = arm.set_joint(req.id, req.angle, _correlation_id=cid) if arm else False
+    resp = cmd_response(ok, "SET_JOINT", f"J{req.id} = {req.angle}°", cid)
     await broadcast_ack("SET_JOINT", ok)
     return resp
 
 @app.post("/api/command/set-all-joints")
 async def cmd_set_all_joints(req: SetAllJointsRequest):
+    cid = _new_cid()
+    _telem_cmd_sent("set-all-joints", {"angles": req.angles}, cid)
     action_log.add("SET_ALL_JOINTS", f"Request: {[round(a,1) for a in req.angles]}", "info")
     for i, a in enumerate(req.angles):
         lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
         if not (lo <= a <= hi):
             action_log.add("SET_ALL_JOINTS", f"REJECTED — J{i} angle {a}° outside [{lo}, {hi}]", "error")
-            return JSONResponse({"ok": False, "action": "SET_ALL_JOINTS", "error": f"J{i} angle {a} out of range [{lo}, {hi}]", "state": get_arm_state()}, status_code=400)
-    ok = arm.set_all_joints(req.angles) if arm else False
-    resp = cmd_response(ok, "SET_ALL_JOINTS")
+            resp_data2: Dict[str, Any] = {"ok": False, "action": "SET_ALL_JOINTS", "error": f"J{i} angle {a} out of range [{lo}, {hi}]", "state": get_arm_state()}
+            if cid:
+                resp_data2["correlation_id"] = cid
+            return JSONResponse(resp_data2, status_code=400)
+    ok = arm.set_all_joints(req.angles, _correlation_id=cid) if arm else False
+    resp = cmd_response(ok, "SET_ALL_JOINTS", correlation_id=cid)
     await broadcast_ack("SET_ALL_JOINTS", ok)
     return resp
 
 @app.post("/api/command/set-gripper")
 async def cmd_set_gripper(req: SetGripperRequest):
+    cid = _new_cid()
+    _telem_cmd_sent("set-gripper", {"position": req.position}, cid)
     action_log.add("SET_GRIPPER", f"Request: {req.position} mm", "info")
     ok = False
     if arm and hasattr(arm, "set_gripper"):
-        ok = arm.set_gripper(req.position)
-    resp = cmd_response(ok, "SET_GRIPPER", f"{req.position} mm")
+        ok = arm.set_gripper(req.position, _correlation_id=cid)
+    resp = cmd_response(ok, "SET_GRIPPER", f"{req.position} mm", cid)
     await broadcast_ack("SET_GRIPPER", ok)
     return resp
 
 @app.post("/api/command/stop")
 async def cmd_stop():
     """Emergency stop: disable motors AND power off."""
+    cid = _new_cid()
+    _telem_cmd_sent("stop", {}, cid)
     action_log.add("EMERGENCY_STOP", "⚠ TRIGGERED", "error")
-    ok1 = arm.disable_motors() if arm else False
-    ok2 = arm.power_off() if arm else False
+    ok1 = arm.disable_motors(_correlation_id=cid) if arm else False
+    ok2 = arm.power_off(_correlation_id=cid) if arm else False
     ok = ok1 and ok2
-    resp = cmd_response(ok, "EMERGENCY_STOP", f"disable={'OK' if ok1 else 'FAIL'} power_off={'OK' if ok2 else 'FAIL'}")
+    resp = cmd_response(ok, "EMERGENCY_STOP", f"disable={'OK' if ok1 else 'FAIL'} power_off={'OK' if ok2 else 'FAIL'}", cid)
     await broadcast_ack("EMERGENCY_STOP", ok)
     return resp
 
@@ -437,6 +488,13 @@ async def ws_state(ws: WebSocket):
             state = get_arm_state()
             state["log"] = action_log.last(30)
             await ws.send_json(state)
+            if _HAS_TELEMETRY:
+                tc = get_collector()
+                if tc.enabled:
+                    tc.emit("web", EventType.WS_SEND, {
+                        "client_count": len(ws_clients),
+                        "state_timestamp": state.get("timestamp"),
+                    })
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
         action_log.add("WS", "Client disconnected", "info")
@@ -445,6 +503,68 @@ async def ws_state(ws: WebSocket):
     finally:
         if ws in ws_clients:
             ws_clients.remove(ws)
+
+# ---------------------------------------------------------------------------
+# Debug / telemetry endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/debug/telemetry")
+async def debug_telemetry(limit: int = 100, event_type: str | None = None, source: str | None = None):
+    if not _HAS_TELEMETRY:
+        return JSONResponse({"error": "telemetry not available"}, status_code=501)
+    tc = get_collector()
+    et = None
+    if event_type:
+        try:
+            et = EventType(event_type)
+        except ValueError:
+            return JSONResponse({"error": f"unknown event_type: {event_type}"}, status_code=400)
+    events = tc.get_events(limit=limit, event_type=et, source=source)
+    return [{
+        "timestamp_ms": e.timestamp_ms,
+        "wall_time_ms": e.wall_time_ms,
+        "source": e.source,
+        "event_type": e.event_type.value,
+        "payload": e.payload,
+        "correlation_id": e.correlation_id,
+    } for e in events]
+
+@app.get("/api/debug/stats")
+async def debug_stats():
+    if not _HAS_TELEMETRY:
+        return JSONResponse({"error": "telemetry not available"}, status_code=501)
+    return get_collector().get_stats()
+
+@app.post("/api/debug/enable")
+async def debug_enable():
+    if not _HAS_TELEMETRY:
+        return JSONResponse({"error": "telemetry not available"}, status_code=501)
+    get_collector().enable()
+    return {"enabled": True}
+
+@app.post("/api/debug/disable")
+async def debug_disable():
+    if not _HAS_TELEMETRY:
+        return JSONResponse({"error": "telemetry not available"}, status_code=501)
+    get_collector().disable()
+    return {"enabled": False}
+
+@app.get("/api/debug/pipeline/{correlation_id}")
+async def debug_pipeline(correlation_id: str):
+    if not _HAS_TELEMETRY:
+        return JSONResponse({"error": "telemetry not available"}, status_code=501)
+    pipeline = get_collector().get_pipeline(correlation_id)
+    return [{
+        "event": {
+            "timestamp_ms": entry["event"].timestamp_ms,
+            "wall_time_ms": entry["event"].wall_time_ms,
+            "source": entry["event"].source,
+            "event_type": entry["event"].event_type.value,
+            "payload": entry["event"].payload,
+            "correlation_id": entry["event"].correlation_id,
+        },
+        "latency_ms": entry["latency_ms"],
+    } for entry in pipeline]
 
 # ---------------------------------------------------------------------------
 # Static files
