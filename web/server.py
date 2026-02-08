@@ -2038,6 +2038,68 @@ def _get_fk_position_mm() -> Optional[list[float]]:
 
 
 # ---------------------------------------------------------------------------
+# Viz Calibration endpoints
+# ---------------------------------------------------------------------------
+
+try:
+    from src.vision.viz_calibrator import (
+        run_calibration as _run_viz_calibration,
+        load_calibration as _load_viz_calibration,
+        OUTPUT_PATH as _VIZ_CALIB_PATH,
+    )
+    _HAS_VIZ_CALIB = True
+except ImportError:
+    _HAS_VIZ_CALIB = False
+
+_viz_calib_running = False
+
+
+@app.get("/api/viz/calibration")
+async def get_viz_calibration():
+    """Return saved visualization calibration data."""
+    if not _HAS_VIZ_CALIB:
+        return JSONResponse({"ok": False, "error": "Viz calibrator not available"}, status_code=501)
+    data = _load_viz_calibration()
+    if data is None:
+        return JSONResponse({"ok": False, "error": "No calibration data found"}, status_code=404)
+    return {"ok": True, **data}
+
+
+@app.post("/api/viz/calibrate")
+async def run_viz_calibration():
+    """Run camera-based visualization calibration (moves the arm!)."""
+    global _viz_calib_running
+    if not _HAS_VIZ_CALIB:
+        return JSONResponse({"ok": False, "error": "Viz calibrator not available"}, status_code=501)
+    if _viz_calib_running:
+        return JSONResponse({"ok": False, "error": "Calibration already in progress"}, status_code=409)
+    if not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
+
+    _viz_calib_running = True
+    try:
+        result = await _run_viz_calibration()
+        action_log.add(
+            "VIZ_CALIB",
+            f"{'OK' if result.success else 'FAILED'} — {result.n_observations} obs, residual={result.residual}",
+            "info" if result.success else "error",
+        )
+        return {
+            "ok": result.success,
+            "links_mm": result.links_mm,
+            "joint_viz_offsets": result.joint_viz_offsets,
+            "residual": result.residual,
+            "n_observations": result.n_observations,
+            "message": result.message,
+        }
+    except Exception as e:
+        action_log.add("VIZ_CALIB", f"Error: {e}", "error")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    finally:
+        _viz_calib_running = False
+
+
+# ---------------------------------------------------------------------------
 # Telemetry viewer page route
 # ---------------------------------------------------------------------------
 
