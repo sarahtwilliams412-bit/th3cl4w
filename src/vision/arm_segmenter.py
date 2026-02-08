@@ -13,6 +13,10 @@ from typing import Optional
 import cv2
 import numpy as np
 
+# Enable OpenCL GPU acceleration if available (e.g. RX 580 eGPU)
+if cv2.ocl.haveOpenCL():
+    cv2.ocl.setUseOpenCL(True)
+
 logger = logging.getLogger("th3cl4w.vision.arm_segmenter")
 
 # Gold accent HSV range (BGR→HSV)
@@ -48,6 +52,9 @@ class ArmSegmenter:
         blur_kernel: int = 5,
         gold_min_area: float = 50.0,
     ):
+        self.use_gpu = cv2.ocl.haveOpenCL()
+        logger.info("ArmSegmenter initialized — GPU acceleration: %s", self.use_gpu)
+
         self.bg_threshold = bg_threshold
         self.morph_kernel_size = morph_kernel_size
         self.morph_open_iter = morph_open_iter
@@ -90,23 +97,31 @@ class ArmSegmenter:
             h, w = frame.shape[:2]
             return np.zeros((h, w), dtype=np.uint8)
 
-        diff = cv2.absdiff(frame.astype(np.float64), self._background)
-        # Convert to grayscale difference magnitude
+        # Compute difference on GPU via UMat when available
+        frame_f = frame.astype(np.float64)
+        frame_gpu = cv2.UMat(frame_f)
+        bg_gpu = cv2.UMat(self._background)
+
+        diff_gpu = cv2.absdiff(frame_gpu, bg_gpu)
+
+        # Convert to grayscale difference magnitude (max channel diff)
+        diff = diff_gpu.get()
         if len(diff.shape) == 3:
-            diff_gray = np.max(diff, axis=2)  # max channel difference
+            diff_gray = np.max(diff, axis=2)
         else:
             diff_gray = diff
 
         mask = (diff_gray > self.bg_threshold).astype(np.uint8) * 255
 
-        # Morphological cleanup: open (remove noise) then close (fill gaps)
-        mask = cv2.morphologyEx(
-            mask, cv2.MORPH_OPEN, self._morph_kernel, iterations=self.morph_open_iter
+        # Morphological cleanup on GPU
+        mask_gpu = cv2.UMat(mask)
+        mask_gpu = cv2.morphologyEx(
+            mask_gpu, cv2.MORPH_OPEN, self._morph_kernel, iterations=self.morph_open_iter
         )
-        mask = cv2.morphologyEx(
-            mask, cv2.MORPH_CLOSE, self._morph_kernel, iterations=self.morph_close_iter
+        mask_gpu = cv2.morphologyEx(
+            mask_gpu, cv2.MORPH_CLOSE, self._morph_kernel, iterations=self.morph_close_iter
         )
-        return mask
+        return mask_gpu.get()
 
     # ── Gold segment detection ────────────────────────────────────────
 
@@ -115,14 +130,17 @@ class ArmSegmenter:
 
         Returns list of (x, y) centroids of gold-colored regions.
         """
-        blurred = cv2.GaussianBlur(frame, (self.blur_kernel, self.blur_kernel), 0)
+        frame_gpu = cv2.UMat(frame)
+        blurred = cv2.GaussianBlur(frame_gpu, (self.blur_kernel, self.blur_kernel), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, GOLD_HSV_LOWER, GOLD_HSV_UPPER)
+        mask_gpu = cv2.inRange(hsv, GOLD_HSV_LOWER, GOLD_HSV_UPPER)
 
-        # Cleanup
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._morph_kernel, iterations=1)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._morph_kernel, iterations=1)
+        # Cleanup on GPU
+        mask_gpu = cv2.morphologyEx(mask_gpu, cv2.MORPH_OPEN, self._morph_kernel, iterations=1)
+        mask_gpu = cv2.morphologyEx(mask_gpu, cv2.MORPH_CLOSE, self._morph_kernel, iterations=1)
 
+        # findContours needs numpy
+        mask = mask_gpu.get()
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         centroids: list[tuple[int, int]] = []
@@ -231,3 +249,11 @@ class ArmSegmenter:
     @property
     def has_background(self) -> bool:
         return self._background is not None
+
+    def get_status(self) -> dict:
+        """Return current segmenter status."""
+        return {
+            "gpu": self.use_gpu,
+            "background_set": self.has_background,
+            "roi": self._roi,
+        }
