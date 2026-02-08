@@ -11,8 +11,13 @@ import argparse
 import asyncio
 import json
 import logging
+import os
+import signal
 import sys
 import time
+
+# Hint OpenCV to prefer GPU device for OpenCL acceleration (RX 580 eGPU)
+os.environ.setdefault("OPENCV_OPENCL_DEVICE", ":GPU:0")
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -95,6 +100,16 @@ except ImportError:
     _HAS_COLLISION = False
 
 try:
+    from src.vision.pose_fusion import PoseFusion, CameraCalib, FusionSource
+    from src.vision.fk_engine import fk_positions as fk_positions_fn
+    from src.vision.arm_segmenter import ArmSegmenter
+    from src.vision.joint_detector import JointDetector
+
+    _HAS_POSE_FUSION = True
+except ImportError:
+    _HAS_POSE_FUSION = False
+
+try:
     from src.vision.ascii_converter import (
         AsciiConverter,
         CHARSET_STANDARD,
@@ -106,6 +121,13 @@ try:
     _HAS_ASCII = True
 except ImportError:
     _HAS_ASCII = False
+
+try:
+    from src.vision.gpu_preprocess import decode_jpeg_gpu, gpu_status as _gpu_status
+
+    _HAS_GPU_PREPROCESS = True
+except ImportError:
+    _HAS_GPU_PREPROCESS = False
 
 _web_dir = str(Path(__file__).resolve().parent)
 if _web_dir not in sys.path:
@@ -288,6 +310,9 @@ claw_predictor: Any = None  # ClawPositionPredictor for visual claw tracking
 collision_detector: Any = None  # CollisionDetector for stall detection
 collision_analyzer: Any = None  # CollisionAnalyzer for camera + vision analysis
 collision_events: list = []  # Recent collision events for API
+pose_fusion: Any = None  # PoseFusion engine
+arm3d_segmenters: dict = {}  # Per-camera ArmSegmenter instances
+arm3d_detector: Any = None  # JointDetector for arm3d pipeline
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -297,6 +322,23 @@ collision_events: list = []  # Recent collision events for API
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global arm, smoother, task_planner
+
+    # Initialize OpenCL GPU acceleration for OpenCV
+    try:
+        import cv2
+        if cv2.ocl.haveOpenCL():
+            cv2.ocl.setUseOpenCL(True)
+            # Log device info
+            dev = cv2.ocl.Device.getDefault()
+            if dev is not None and dev.available():
+                logger.info("OpenCL GPU acceleration enabled: %s (%s)", dev.name(), dev.vendorName())
+            else:
+                logger.info("OpenCL available but no device detected; falling back to CPU")
+        else:
+            logger.info("OpenCL not available; OpenCV will use CPU")
+    except Exception as e:
+        logger.warning("OpenCL init failed (%s); OpenCV will use CPU", e)
+
     # Start telemetry collector
     if _HAS_TELEMETRY:
         tc = get_collector()
@@ -381,6 +423,14 @@ async def lifespan(app: FastAPI):
         action_log.add(
             "SYSTEM", "Claw position predictor initialized (disabled by default)", "info"
         )
+
+    # Initialize pose fusion pipeline
+    global pose_fusion, arm3d_segmenters, arm3d_detector
+    if _HAS_POSE_FUSION:
+        pose_fusion = PoseFusion()
+        arm3d_segmenters = {0: ArmSegmenter(), 1: ArmSegmenter()}
+        arm3d_detector = JointDetector()
+        action_log.add("SYSTEM", "Pose fusion pipeline initialized", "info")
 
     # Initialize collision detector + analyzer
     global collision_detector, collision_analyzer
@@ -528,9 +578,12 @@ def get_arm_state() -> Dict[str, Any]:
     if smoother and not smoother.synced:
         smoother.sync_from_feedback(angles, gripper)
 
-    # NOTE: smoother arm_enabled is ONLY changed by explicit command handlers
-    # (enable, disable, power-off, e-stop, reset). DO NOT sync from feedback here
-    # — the arm takes time to process enable commands, so feedback would race.
+    # Auto-sync enable state from DDS feedback on server restart:
+    # If DDS reports enabled but smoother doesn't know, sync it.
+    # This handles the case where server restarts while arm is already enabled.
+    if smoother and not smoother._arm_enabled and state["enabled"] and state["power"]:
+        smoother.set_arm_enabled(True)
+        action_log.add("STATE", "Auto-synced enable state from DDS feedback", "warning")
 
     # Log state transitions
     if _prev_state:
@@ -2317,6 +2370,18 @@ _ASCII_CHARSETS = {
 }
 
 
+@app.get("/api/gpu/status")
+async def gpu_status_endpoint():
+    """Return GPU compute (OpenCL) availability and status."""
+    if _HAS_GPU_PREPROCESS:
+        return JSONResponse(_gpu_status())
+    return JSONResponse({
+        "opencl_available": False,
+        "opencl_enabled": False,
+        "device": None,
+    })
+
+
 @app.get("/ascii")
 async def ascii_page():
     from fastapi.responses import FileResponse
@@ -2404,7 +2469,15 @@ async def ws_ascii(ws: WebSocket):
 
             # Convert to ASCII
             try:
-                if color:
+                if _HAS_GPU_PREPROCESS:
+                    gpu_frame = decode_jpeg_gpu(jpeg_bytes)
+                    if color:
+                        result = converter.frame_to_color_data(gpu_frame)
+                        await ws.send_json({"type": "frame", **result})
+                    else:
+                        text = converter.frame_to_ascii(gpu_frame)
+                        lines = text.split("\n")
+                elif color:
                     result = converter.decode_jpeg_to_color_data(jpeg_bytes)
                     await ws.send_json({"type": "frame", **result})
                 else:
@@ -2428,6 +2501,476 @@ async def ws_ascii(ws: WebSocket):
 
 
 # ---------------------------------------------------------------------------
+# Real World 3D — Visual hull voxel reconstruction from dual cameras
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws/realworld3d")
+async def ws_realworld3d(ws: WebSocket):
+    """Stream voxel reconstruction data from dual camera visual hull carving.
+
+    Fetches frames from cam0 (front→X-Y) and cam1 (overhead→X-Z),
+    segments foreground via edge detection / frame differencing,
+    intersects silhouettes to carve a 3D voxel grid, and sends
+    non-empty voxels as JSON to the client.
+    """
+    await ws.accept()
+    import httpx
+
+    GRID_W, GRID_H, GRID_D = 64, 32, 64  # width, height, depth
+    bg_frame0 = None  # background reference for cam0
+    bg_frame1 = None  # background reference for cam1
+    frame_count = 0
+
+    try:
+        while True:
+            # Check for client messages (settings, bg capture commands)
+            try:
+                msg = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
+                data = json.loads(msg)
+                if data.get("type") == "capture_bg":
+                    bg_frame0 = None
+                    bg_frame1 = None
+                    frame_count = 0
+                    await ws.send_json({"type": "status", "message": "Background reset, will capture on next frame"})
+            except asyncio.TimeoutError:
+                pass
+            except Exception:
+                pass
+
+            # Fetch snapshots from both cameras
+            frame0_bytes = None
+            frame1_bytes = None
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    r0, r1 = await asyncio.gather(
+                        client.get("http://localhost:8081/snap/0"),
+                        client.get("http://localhost:8081/snap/1"),
+                        return_exceptions=True,
+                    )
+                    if not isinstance(r0, Exception) and r0.status_code == 200:
+                        frame0_bytes = r0.content
+                    if not isinstance(r1, Exception) and r1.status_code == 200:
+                        frame1_bytes = r1.content
+            except Exception:
+                pass
+
+            if frame0_bytes is None and frame1_bytes is None:
+                await ws.send_json({"type": "status", "message": "Waiting for cameras..."})
+                await asyncio.sleep(1.0)
+                continue
+
+            # Decode frames
+            import cv2
+            f0 = cv2.imdecode(np.frombuffer(frame0_bytes, np.uint8), cv2.IMREAD_COLOR) if frame0_bytes else None
+            f1 = cv2.imdecode(np.frombuffer(frame1_bytes, np.uint8), cv2.IMREAD_COLOR) if frame1_bytes else None
+
+            if f0 is None and f1 is None:
+                await ws.send_json({"type": "status", "message": "Failed to decode frames"})
+                await asyncio.sleep(0.5)
+                continue
+
+            # Wrap frames as UMat for GPU-accelerated OpenCV (OpenCL)
+            if f0 is not None:
+                f0 = cv2.UMat(f0)
+            if f1 is not None:
+                f1 = cv2.UMat(f1)
+
+            # Capture background on first frames (stored as UMat for GPU ops)
+            if bg_frame0 is None and f0 is not None:
+                bg_frame0 = cv2.GaussianBlur(cv2.cvtColor(f0, cv2.COLOR_BGR2GRAY), (21, 21), 0)
+            if bg_frame1 is None and f1 is not None:
+                bg_frame1 = cv2.GaussianBlur(cv2.cvtColor(f1, cv2.COLOR_BGR2GRAY), (21, 21), 0)
+
+            frame_count += 1
+
+            # --- Segmentation via frame differencing + edge detection ---
+            def segment_foreground(frame, bg_gray, threshold=30):
+                """Returns binary mask of foreground pixels."""
+                gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (21, 21), 0)
+                if bg_gray is not None:
+                    diff = cv2.absdiff(gray, bg_gray)
+                    _, mask = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)
+                else:
+                    # Fallback: use edges
+                    edges = cv2.Canny(gray, 50, 150)
+                    mask = cv2.dilate(edges, None, iterations=3)
+                # Clean up
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+                return mask
+
+            # Build silhouette masks
+            mask0 = segment_foreground(f0, bg_frame0) if f0 is not None else None  # front: X-Y
+            mask1 = segment_foreground(f1, bg_frame1) if f1 is not None else None  # top: X-Z
+
+            # Resize masks to grid dimensions (still on GPU as UMat)
+            if mask0 is not None:
+                sil_front = cv2.resize(mask0, (GRID_W, GRID_H), interpolation=cv2.INTER_AREA)
+            else:
+                sil_front = np.ones((GRID_H, GRID_W), dtype=np.uint8) * 255
+            if mask1 is not None:
+                sil_top = cv2.resize(mask1, (GRID_W, GRID_D), interpolation=cv2.INTER_AREA)
+            else:
+                sil_top = np.ones((GRID_D, GRID_W), dtype=np.uint8) * 255
+
+            # Also resize color frames on GPU before transferring to CPU
+            f0_small_u = cv2.resize(f0, (GRID_W, GRID_H), interpolation=cv2.INTER_AREA) if f0 is not None else None
+            f1_small_u = cv2.resize(f1, (GRID_W, GRID_D), interpolation=cv2.INTER_AREA) if f1 is not None else None
+
+            # Transfer results from GPU to CPU for voxel carving (array indexing)
+            if isinstance(sil_front, cv2.UMat):
+                sil_front = sil_front.get()
+            if isinstance(sil_top, cv2.UMat):
+                sil_top = sil_top.get()
+
+            # Threshold to binary
+            sil_front = (sil_front > 127).astype(np.uint8)
+            sil_top = (sil_top > 127).astype(np.uint8)
+
+            # --- Visual hull intersection ---
+            # front view (cam0): column x → voxel X, row y → voxel Y (flipped)
+            # top view (cam1): column x → voxel X, row z → voxel Z
+            # A voxel (x, y, z) is occupied if sil_front[GRID_H-1-y, x] AND sil_top[z, x]
+
+            voxels = []
+            f0_small = f0_small_u.get() if f0_small_u is not None else None
+            f1_small = f1_small_u.get() if f1_small_u is not None else None
+
+            for x in range(GRID_W):
+                for y in range(GRID_H):
+                    if not sil_front[GRID_H - 1 - y, x]:
+                        continue
+                    for z in range(GRID_D):
+                        if sil_top[z, x]:
+                            # Get color: blend front and top camera colors
+                            r, g, b = 128, 128, 128
+                            if f0_small is not None:
+                                bgr = f0_small[GRID_H - 1 - y, x]
+                                r, g, b = int(bgr[2]), int(bgr[1]), int(bgr[0])
+                            if f1_small is not None:
+                                bgr1 = f1_small[z, x]
+                                r = (r + int(bgr1[2])) >> 1
+                                g = (g + int(bgr1[1])) >> 1
+                                b = (b + int(bgr1[0])) >> 1
+                            voxels.append([x, y, z, r, g, b])
+
+            # Cap voxel count for performance
+            if len(voxels) > 8000:
+                # Subsample — keep every Nth
+                step = len(voxels) // 8000 + 1
+                voxels = voxels[::step]
+
+            await ws.send_json({
+                "type": "voxels",
+                "voxels": voxels,  # [[x,y,z,r,g,b], ...]
+                "gridW": GRID_W,
+                "gridH": GRID_H,
+                "gridD": GRID_D,
+                "frame": frame_count,
+                "cam0": f0 is not None,
+                "cam1": f1 is not None,
+            })
+
+            await asyncio.sleep(0.75)  # ~1.3 fps reconstruction rate
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.warning("RealWorld3D WS error: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Arm 3D Pose Fusion — WebSocket + REST endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/arm3d/status")
+async def arm3d_status():
+    """Pipeline health, per-camera status, fusion quality."""
+    if not _HAS_POSE_FUSION or pose_fusion is None:
+        return {"available": False, "error": "Pose fusion module not available"}
+
+    # Check cameras
+    import httpx
+    cam_status = {}
+    for cam_id in [0, 1]:
+        try:
+            async with httpx.AsyncClient(timeout=1.0) as client:
+                resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+                cam_status[f"cam{cam_id}"] = {"online": resp.status_code == 200}
+        except Exception:
+            cam_status[f"cam{cam_id}"] = {"online": False}
+
+    quality = pose_fusion.get_tracking_quality()
+    return {
+        "available": True,
+        "cameras": cam_status,
+        "fusion_quality": quality,
+        "arm_connected": arm is not None and arm.is_connected,
+    }
+
+
+@app.websocket("/ws/arm3d")
+async def ws_arm3d(ws: WebSocket):
+    """Stream fused 3D arm positions at ~10Hz.
+
+    Uses FK engine + optional visual joint detection from dual cameras.
+    Gracefully degrades to FK-only when cameras are unavailable.
+    """
+    await ws.accept()
+
+    if not _HAS_POSE_FUSION or pose_fusion is None:
+        await ws.send_json({"type": "error", "message": "Pose fusion not available"})
+        await ws.close()
+        return
+
+    import httpx
+
+    try:
+        while True:
+            # 1. Get joint angles from arm state
+            state = get_arm_state()
+            joints_deg = state.get("joints", [0.0] * 6)
+
+            # 2. Compute FK 3D positions
+            fk_pos = fk_positions_fn(joints_deg)
+
+            # 3. Try to get camera frames and run visual detection
+            cam0_dets = None
+            cam1_dets = None
+
+            try:
+                async with httpx.AsyncClient(timeout=0.5) as client:
+                    results = await asyncio.gather(
+                        client.get("http://localhost:8081/snap/0"),
+                        client.get("http://localhost:8081/snap/1"),
+                        return_exceptions=True,
+                    )
+
+                import cv2
+                for cam_id, resp in enumerate(results):
+                    if isinstance(resp, Exception) or resp.status_code != 200:
+                        continue
+                    frame = cv2.imdecode(
+                        np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR
+                    )
+                    if frame is None:
+                        continue
+
+                    segmenter = arm3d_segmenters.get(cam_id)
+                    if segmenter is None:
+                        continue
+
+                    seg = segmenter.segment_arm(frame)
+
+                    # Project FK to pixels for this camera (simplified — use pinhole at identity)
+                    # In production, use actual camera calibration
+                    fk_pixels = [(float(p[0] * 500 + 320), float(p[1] * 500 + 240)) for p in fk_pos]
+
+                    dets = arm3d_detector.detect_joints(seg, fk_pixels)
+                    if cam_id == 0:
+                        cam0_dets = dets
+                    else:
+                        cam1_dets = dets
+            except Exception:
+                pass  # Cameras unavailable — FK-only mode
+
+            # 4. Fuse
+            result = pose_fusion.fuse(
+                fk_pos,
+                cam0_detections=cam0_dets,
+                cam1_detections=cam1_dets,
+                # Note: calibrations would come from saved config in production
+            )
+
+            # 5. Send
+            await ws.send_json({
+                "type": "arm3d",
+                "positions": [[round(c, 4) for c in p] for p in result.positions],
+                "confidence": [round(c, 3) for c in result.confidence],
+                "source": result.source.value,
+            })
+
+            await asyncio.sleep(0.1)  # ~10Hz
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.warning("Arm3D WS error: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Calibration endpoints
+# ---------------------------------------------------------------------------
+
+try:
+    from src.calibration.calibration_runner import CalibrationRunner, CalibrationSession
+
+    _HAS_CALIBRATION = True
+except ImportError:
+    _HAS_CALIBRATION = False
+
+_calibration_runner: Optional[CalibrationRunner] = None
+_calibration_task: Optional[asyncio.Task] = None
+_calibration_session: Optional[CalibrationSession] = None
+_calibration_error: Optional[str] = None
+
+
+@app.post("/api/calibration/start")
+async def calibration_start():
+    """Kick off the 20-pose calibration sequence."""
+    global _calibration_runner, _calibration_task, _calibration_session, _calibration_error
+    if not _HAS_CALIBRATION:
+        return JSONResponse({"ok": False, "error": "Calibration module not available"}, status_code=501)
+    if _calibration_task and not _calibration_task.done():
+        return JSONResponse({"ok": False, "error": "Calibration already running"}, status_code=409)
+
+    _calibration_runner = CalibrationRunner()
+    _calibration_session = None
+    _calibration_error = None
+
+    # Pre-generate session_id so it's available in the response
+    import time as _time_mod
+    _calibration_runner._session_id = f"cal_{int(_time_mod.time())}"
+
+    async def _run():
+        global _calibration_session, _calibration_error
+        try:
+            _calibration_session = await _calibration_runner.run_full_calibration()
+            action_log.add("CALIBRATION", f"Complete: {len(_calibration_session.captures)} poses", "info")
+        except Exception as e:
+            _calibration_error = str(e)
+            action_log.add("CALIBRATION", f"Failed: {e}", "error")
+
+    _calibration_task = asyncio.create_task(_run())
+    action_log.add("CALIBRATION", "Started", "info")
+    return {"ok": True, "session_id": _calibration_runner._session_id}
+
+
+@app.get("/api/calibration/status")
+async def calibration_status():
+    """Return calibration progress."""
+    if not _HAS_CALIBRATION or _calibration_runner is None:
+        return {"running": False, "current_pose": -1, "total_poses": 0}
+    progress = _calibration_runner.progress
+    if _calibration_error:
+        progress["error"] = _calibration_error
+    if _calibration_task:
+        progress["done"] = _calibration_task.done()
+    return progress
+
+
+@app.post("/api/calibration/stop")
+async def calibration_stop():
+    """Abort running calibration."""
+    if not _HAS_CALIBRATION or _calibration_runner is None:
+        return {"ok": False, "error": "No calibration running"}
+    _calibration_runner.abort()
+    action_log.add("CALIBRATION", "Abort requested", "warning")
+    return {"ok": True}
+
+
+@app.get("/api/calibration/results/{session_id}")
+async def calibration_results(session_id: str):
+    """Get calibration results (without raw images)."""
+    if not _HAS_CALIBRATION or _calibration_session is None:
+        return JSONResponse({"ok": False, "error": "No results available"}, status_code=404)
+    if _calibration_runner and _calibration_runner._session_id != session_id:
+        return JSONResponse({"ok": False, "error": "Session not found"}, status_code=404)
+    return {
+        "ok": True,
+        "start_time": _calibration_session.start_time,
+        "end_time": _calibration_session.end_time,
+        "total_poses": _calibration_session.total_poses,
+        "captures": [
+            {
+                "pose_index": c.pose_index,
+                "commanded_angles": list(c.commanded_angles),
+                "actual_angles": c.actual_angles,
+                "timestamp": c.timestamp,
+                "has_cam0": len(c.cam0_jpeg) > 0,
+                "has_cam1": len(c.cam1_jpeg) > 0,
+            }
+            for c in _calibration_session.captures
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Calibration Comparison Report endpoints
+# ---------------------------------------------------------------------------
+
+try:
+    from src.calibration.results_reporter import CalibrationReporter as _CalibReporter
+    _HAS_CALIB_REPORTER = True
+except ImportError:
+    _HAS_CALIB_REPORTER = False
+
+_calib_reporter_instance = _CalibReporter() if _HAS_CALIB_REPORTER else None
+_calib_comparison_reports: dict = {}  # session_id -> ComparisonReport
+
+
+@app.get("/api/calibration/report/{session_id}")
+async def calibration_report_md(session_id: str):
+    """Return markdown comparison report for a calibration session."""
+    if not _HAS_CALIB_REPORTER:
+        return JSONResponse({"ok": False, "error": "Reporter module not available"}, status_code=501)
+    report = _calib_comparison_reports.get(session_id)
+    if not report:
+        return JSONResponse({"ok": False, "error": "Report not found"}, status_code=404)
+    md = _calib_reporter_instance.generate_markdown(report)
+    return JSONResponse({"ok": True, "markdown": md})
+
+
+@app.get("/api/calibration/report/{session_id}/json")
+async def calibration_report_json(session_id: str):
+    """Return JSON comparison report for a calibration session."""
+    if not _HAS_CALIB_REPORTER:
+        return JSONResponse({"ok": False, "error": "Reporter module not available"}, status_code=501)
+    report = _calib_comparison_reports.get(session_id)
+    if not report:
+        return JSONResponse({"ok": False, "error": "Report not found"}, status_code=404)
+    return _calib_reporter_instance.generate_json(report)
+
+
+# ---------------------------------------------------------------------------
+# Camera Extrinsics endpoint
+# ---------------------------------------------------------------------------
+
+@app.get("/api/calibration/extrinsics")
+async def get_calibration_extrinsics():
+    """Return current camera extrinsics (from saved calibration file)."""
+    try:
+        from src.calibration.extrinsics_solver import load_extrinsics
+        extrinsics_path = str(Path(__file__).parent.parent / "calibration_results" / "camera_extrinsics.json")
+        data = load_extrinsics(extrinsics_path)
+        if data is None:
+            return JSONResponse({"ok": False, "error": "No extrinsics calibration found"}, status_code=404)
+        return {"ok": True, **data}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/calibration/frames/{session_id}/{pose_index}/{camera_id}")
+async def get_calibration_frame(session_id: str, pose_index: int, camera_id: str):
+    """Return a raw JPEG frame from a calibration session."""
+    if not _HAS_CALIBRATION or _calibration_session is None:
+        return JSONResponse({"ok": False, "error": "No session available"}, status_code=404)
+    if _calibration_runner and _calibration_runner._session_id != session_id:
+        return JSONResponse({"ok": False, "error": "Session not found"}, status_code=404)
+    if pose_index < 0 or pose_index >= len(_calibration_session.captures):
+        return JSONResponse({"ok": False, "error": "Pose index out of range"}, status_code=404)
+    cap = _calibration_session.captures[pose_index]
+    jpeg = cap.cam0_jpeg if camera_id == "cam0" else cap.cam1_jpeg
+    if not jpeg:
+        return JSONResponse({"ok": False, "error": f"No frame for {camera_id}"}, status_code=404)
+    from starlette.responses import Response
+    return Response(content=jpeg, media_type="image/jpeg")
+
+
+# ---------------------------------------------------------------------------
 # Static files — versioned UIs all pointing to the same server
 # /v1/ → V1 stable base, /v2/ → V2 Cartesian controls, / → V1 (default)
 # ---------------------------------------------------------------------------
@@ -2444,14 +2987,47 @@ if v2_dir.is_dir():
     app.mount("/v2", StaticFiles(directory=str(v2_dir), html=True), name="static-v2")
 if v3_dir.is_dir():
     app.mount("/v3", StaticFiles(directory=str(v3_dir), html=True), name="static-v3")
-app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+app.mount("/ui", StaticFiles(directory=str(static_dir), html=True), name="static")
+
+
+@app.get("/")
+async def serve_root():
+    """Redirect root to /ui/."""
+    from starlette.responses import RedirectResponse
+    return RedirectResponse(url="/ui/")
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+def _write_pidfile():
+    """Write PID file for reliable process management."""
+    pidfile = Path("/tmp/th3cl4w-server.pid")
+    pidfile.write_text(str(os.getpid()))
+
+def _remove_pidfile():
+    """Remove PID file on shutdown."""
+    pidfile = Path("/tmp/th3cl4w-server.pid")
+    try:
+        pidfile.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+def _handle_sigterm(signum, frame):
+    """Graceful shutdown on SIGTERM — lets uvicorn clean up."""
+    logger.info("Received SIGTERM, initiating graceful shutdown...")
+    _remove_pidfile()
+    # Raise SystemExit so uvicorn's shutdown hooks run (lifespan cleanup)
+    raise SystemExit(0)
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+    _write_pidfile()
     logger.info(
-        "Starting th3cl4w web panel on %s:%d (simulate=%s)", args.host, args.port, args.simulate
+        "Starting th3cl4w web panel on %s:%d (simulate=%s, pid=%d)",
+        args.host, args.port, args.simulate, os.getpid(),
     )
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    try:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    finally:
+        _remove_pidfile()

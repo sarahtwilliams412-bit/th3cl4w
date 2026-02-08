@@ -58,6 +58,8 @@ class _FeedbackCache:
     status: Optional[Dict[str, int]] = None  # enable_status, power_status, error_status
     last_seq: int = 0
     last_update: float = 0.0
+    # Per-joint freshness: timestamp of last non-zero reading per joint
+    joint_freshness: Dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +406,31 @@ class D1DDSConnection:
     # State reading
     # ------------------------------------------------------------------
 
+    def get_joint_freshness(self) -> Dict[int, float]:
+        """Return per-joint freshness as {joint_id: seconds_since_last_nonzero}.
+
+        Useful for detecting stale DDS feedback where joints report 0.0
+        despite having moved. Returns empty dict if no feedback received.
+        """
+        with self._cache.lock:
+            now = time.monotonic()
+            result = {}
+            for i in range(NUM_JOINTS):
+                key = f"angle{i}"
+                last = self._cache.joint_freshness.get(key)
+                if last is not None:
+                    result[i] = round(now - last, 3)
+                else:
+                    result[i] = float("inf")  # Never seen non-zero
+            return result
+
+    def is_feedback_fresh(self, max_age_s: float = 2.0) -> bool:
+        """Check if feedback data is recent enough to be trusted."""
+        with self._cache.lock:
+            if self._cache.last_update == 0.0:
+                return False
+            return (time.monotonic() - self._cache.last_update) < max_age_s
+
     def get_joint_angles(self) -> Optional[np.ndarray]:
         """Return the latest joint angles as a (7,) numpy array in degrees,
         or None if no feedback has been received yet."""
@@ -533,6 +560,11 @@ class D1DDSConnection:
             if funcode == 1:
                 # Joint angle feedback
                 self._cache.joint_angles = data
+                # Track per-joint freshness (last time each joint had a non-zero value)
+                if isinstance(data, dict):
+                    for key, val in data.items():
+                        if key.startswith("angle") and val != 0.0:
+                            self._cache.joint_freshness[key] = now
                 # Detect changes for telemetry
                 if tc is not None and isinstance(data, dict):
                     if self._prev_angles is not None:
