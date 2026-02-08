@@ -10,6 +10,7 @@ matplotlib>=3.7.0
 # Communication
 pyzmq>=25.0
 pyyaml>=6.0
+requests>=2.28.0
 # unitree-sdk2-python  # Install from Unitree repo
 
 # Optional: ROS2 integration
