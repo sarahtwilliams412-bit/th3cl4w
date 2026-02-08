@@ -2,6 +2,14 @@
 # Watchdog for th3cl4w web + camera servers — auto-restarts on crash
 cd "$(dirname "$0")/.."
 
+# Prevent duplicate watchdogs
+WATCHDOG_LOCK="/tmp/th3cl4w-watchdog.lock"
+exec 200>"$WATCHDOG_LOCK"
+if ! flock -n 200; then
+    echo "[$(date)] Another watchdog is already running. Exiting."
+    exit 1
+fi
+
 PIDFILE="/tmp/th3cl4w-server.pid"
 CAM_PIDFILE="/tmp/th3cl4w-cam.pid"
 
