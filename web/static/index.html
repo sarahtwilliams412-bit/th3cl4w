@@ -170,7 +170,11 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .ascii-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #666; }
 .ascii-status-dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
 .ascii-status-dot.err { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
-.ascii-viewport { flex: 1; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 8px; }
+.ascii-viewport { flex: 1; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 8px; gap: 12px; }
+.ascii-pane { flex: 1; display: flex; flex-direction: column; align-items: center; overflow: hidden; min-width: 0; }
+.ascii-pane-label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 4px; flex-shrink: 0; }
+.ascii-pane pre { white-space: pre; line-height: 1.1; letter-spacing: 0.5px; color: #88cc88; text-align: center; user-select: text; font-family: var(--mono); }
+.ascii-divider { width: 1px; background: var(--card-border); flex-shrink: 0; align-self: stretch; }
 #asciiOutput { white-space: pre; line-height: 1.1; letter-spacing: 0.5px; color: #88cc88; text-align: center; user-select: text; font-family: var(--mono); }
 #asciiOutput.color-mode { color: unset; }
 
@@ -302,25 +306,32 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 <div class="tab-content" id="tabAscii">
 <div class="ascii-tab-wrap">
   <div class="ascii-controls-bar">
-    <label>CAM</label>
-    <button class="ascii-toggle on" id="ascCam0" data-cam="0">0</button>
-    <button class="ascii-toggle" id="ascCam1" data-cam="1">1</button>
     <label>CHARS</label>
     <select id="ascCharset"><option value="standard">Standard</option><option value="detailed">Detailed</option><option value="blocks">Blocks</option><option value="minimal">Minimal</option></select>
-    <label>W</label><input type="number" id="ascWidth" value="120" min="20" max="300" step="10">
-    <label>H</label><input type="number" id="ascHeight" value="40" min="10" max="120" step="5">
+    <label>W</label><input type="number" id="ascWidth" value="80" min="20" max="200" step="10">
+    <label>H</label><input type="number" id="ascHeight" value="35" min="10" max="80" step="5">
     <button class="ascii-toggle" id="ascColor">COLOR</button>
     <button class="ascii-toggle on" id="ascInvert">INVERT</button>
     <button class="ascii-toggle" id="ascPause">PAUSE</button>
   </div>
   <div class="ascii-status-bar">
-    <span class="ascii-status-dot" id="ascDot"></span>
-    <span id="ascStatusText">Idle</span>
+    <span class="ascii-status-dot" id="ascDot0"></span>
+    <span>CAM0</span>
+    <span class="ascii-status-dot" id="ascDot1" style="margin-left:8px"></span>
+    <span>CAM1</span>
     <span style="flex:1"></span>
     <span id="ascFps">-- fps</span>
   </div>
   <div class="ascii-viewport" id="asciiViewport">
-    <pre id="asciiOutput">Switch to this tab to start ASCII stream</pre>
+    <div class="ascii-pane">
+      <div class="ascii-pane-label">📷 CAM 0 — Front</div>
+      <pre id="asciiOutput0">Waiting for stream...</pre>
+    </div>
+    <div class="ascii-divider"></div>
+    <div class="ascii-pane">
+      <div class="ascii-pane-label">📷 CAM 1 — Overhead</div>
+      <pre id="asciiOutput1">Waiting for stream...</pre>
+    </div>
   </div>
 </div>
 </div><!-- /tabAscii -->
@@ -1312,144 +1323,151 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 // ============================================================
-//  ASCII VIDEO TAB
+//  ASCII VIDEO TAB — Dual Camera
 // ============================================================
 
 (function() {
-  let ascWs = null;
+  const ascWs = [null, null]; // two WebSocket connections
+  const ascReconnectTimers = [null, null];
   let ascPaused = false;
   let ascColorMode = false;
   let ascInvertMode = true;
-  let ascCam = 0;
   let ascFrameCount = 0;
   let ascLastFpsTime = performance.now();
-  let ascReconnectTimer = null;
 
-  const ascOutput = document.getElementById('asciiOutput');
-  const ascDot = document.getElementById('ascDot');
-  const ascStatusText = document.getElementById('ascStatusText');
-  const ascFps = document.getElementById('ascFps');
+  const ascOutputs = [document.getElementById('asciiOutput0'), document.getElementById('asciiOutput1')];
+  const ascDots = [document.getElementById('ascDot0'), document.getElementById('ascDot1')];
+  const ascFpsEl = document.getElementById('ascFps');
 
-  function ascSettings() {
+  function ascSettings(camId) {
     return {
       type: 'settings',
-      cam: ascCam,
+      cam: camId,
       charset: document.getElementById('ascCharset').value,
-      width: parseInt(document.getElementById('ascWidth').value) || 120,
-      height: parseInt(document.getElementById('ascHeight').value) || 40,
+      width: parseInt(document.getElementById('ascWidth').value) || 80,
+      height: parseInt(document.getElementById('ascHeight').value) || 35,
       color: ascColorMode,
       invert: ascInvertMode
     };
   }
 
-  function ascSendSettings() {
-    if (ascWs && ascWs.readyState === 1) ascWs.send(JSON.stringify(ascSettings()));
+  function ascSendSettings(camId) {
+    if (ascWs[camId] && ascWs[camId].readyState === 1) {
+      ascWs[camId].send(JSON.stringify(ascSettings(camId)));
+    }
   }
 
-  window.asciiConnect = function() {
-    if (ascWs && ascWs.readyState <= 1) return; // already connected
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ascWs = new WebSocket(`${proto}//${location.host}/ws/ascii`);
-    ascDot.className = 'ascii-status-dot';
-    ascStatusText.textContent = 'Connecting...';
+  function ascSendAllSettings() {
+    ascSendSettings(0);
+    ascSendSettings(1);
+  }
 
-    ascWs.onopen = () => {
-      ascDot.className = 'ascii-status-dot on';
-      ascStatusText.textContent = 'Connected';
-      ascWs.send(JSON.stringify(ascSettings()));
+  function renderFrame(camId, data) {
+    const out = ascOutputs[camId];
+    if (data.colors && ascColorMode) {
+      out.classList.add('color-mode');
+      out.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      for (let y = 0; y < data.lines.length; y++) {
+        const line = data.lines[y], rowC = data.colors[y];
+        for (let x = 0; x < line.length; x++) {
+          const sp = document.createElement('span');
+          const c = rowC[x];
+          sp.style.color = `rgb(${c[0]},${c[1]},${c[2]})`;
+          sp.textContent = line[x];
+          frag.appendChild(sp);
+        }
+        frag.appendChild(document.createTextNode('\n'));
+      }
+      out.appendChild(frag);
+    } else {
+      out.classList.remove('color-mode');
+      out.textContent = data.lines.join('\n');
+    }
+  }
+
+  function connectCam(camId) {
+    if (ascWs[camId] && ascWs[camId].readyState <= 1) return;
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ascWs[camId] = new WebSocket(`${proto}//${location.host}/ws/ascii`);
+    ascDots[camId].className = 'ascii-status-dot';
+
+    ascWs[camId].onopen = () => {
+      ascDots[camId].className = 'ascii-status-dot on';
+      ascWs[camId].send(JSON.stringify(ascSettings(camId)));
     };
-    ascWs.onclose = () => {
-      ascDot.className = 'ascii-status-dot';
-      ascStatusText.textContent = 'Disconnected';
-      ascWs = null;
-      // Only reconnect if tab is still active
+    ascWs[camId].onclose = () => {
+      ascDots[camId].className = 'ascii-status-dot';
+      ascWs[camId] = null;
       if (document.getElementById('tabAscii').classList.contains('active')) {
-        ascReconnectTimer = setTimeout(window.asciiConnect, 2000);
+        ascReconnectTimers[camId] = setTimeout(() => connectCam(camId), 2000);
       }
     };
-    ascWs.onerror = () => {
-      ascDot.className = 'ascii-status-dot err';
-      ascStatusText.textContent = 'Error';
+    ascWs[camId].onerror = () => {
+      ascDots[camId].className = 'ascii-status-dot err';
     };
-    ascWs.onmessage = (evt) => {
+    ascWs[camId].onmessage = (evt) => {
       if (ascPaused) return;
       const data = JSON.parse(evt.data);
       if (data.type === 'frame') {
-        if (data.colors && ascColorMode) {
-          ascOutput.classList.add('color-mode');
-          ascOutput.innerHTML = '';
-          const frag = document.createDocumentFragment();
-          for (let y = 0; y < data.lines.length; y++) {
-            const line = data.lines[y], rowC = data.colors[y];
-            for (let x = 0; x < line.length; x++) {
-              const sp = document.createElement('span');
-              const c = rowC[x];
-              sp.style.color = `rgb(${c[0]},${c[1]},${c[2]})`;
-              sp.textContent = line[x];
-              frag.appendChild(sp);
-            }
-            frag.appendChild(document.createTextNode('\n'));
-          }
-          ascOutput.appendChild(frag);
-        } else {
-          ascOutput.classList.remove('color-mode');
-          ascOutput.textContent = data.lines.join('\n');
-        }
+        renderFrame(camId, data);
         ascFrameCount++;
         const now = performance.now();
         if (now - ascLastFpsTime >= 1000) {
-          ascFps.textContent = (ascFrameCount / ((now - ascLastFpsTime) / 1000)).toFixed(1) + ' fps';
+          ascFpsEl.textContent = (ascFrameCount / ((now - ascLastFpsTime) / 1000)).toFixed(1) + ' fps';
           ascFrameCount = 0;
           ascLastFpsTime = now;
         }
       }
     };
+  }
+
+  function disconnectCam(camId) {
+    if (ascReconnectTimers[camId]) { clearTimeout(ascReconnectTimers[camId]); ascReconnectTimers[camId] = null; }
+    if (ascWs[camId]) { ascWs[camId].onclose = null; ascWs[camId].close(); ascWs[camId] = null; }
+    ascDots[camId].className = 'ascii-status-dot';
+  }
+
+  window.asciiConnect = function() {
+    connectCam(0);
+    connectCam(1);
     ascFitFont();
   };
 
   window.asciiDisconnect = function() {
-    if (ascReconnectTimer) { clearTimeout(ascReconnectTimer); ascReconnectTimer = null; }
-    if (ascWs) { ascWs.onclose = null; ascWs.close(); ascWs = null; }
-    ascDot.className = 'ascii-status-dot';
-    ascStatusText.textContent = 'Idle';
-    ascFps.textContent = '-- fps';
+    disconnectCam(0);
+    disconnectCam(1);
+    ascFpsEl.textContent = '-- fps';
   };
 
   function ascFitFont() {
     const vp = document.getElementById('asciiViewport');
     if (!vp) return;
-    const w = parseInt(document.getElementById('ascWidth').value) || 120;
-    const h = parseInt(document.getElementById('ascHeight').value) || 40;
-    const maxW = vp.clientWidth - 16;
-    const maxH = vp.clientHeight - 16;
+    const w = parseInt(document.getElementById('ascWidth').value) || 80;
+    const h = parseInt(document.getElementById('ascHeight').value) || 35;
+    // Each pane gets half the viewport width (minus divider + gaps)
+    const maxW = (vp.clientWidth - 40) / 2;
+    const maxH = vp.clientHeight - 40;
     const sizeByW = maxW / (w * 0.62);
     const sizeByH = maxH / (h * 1.15);
-    ascOutput.style.fontSize = Math.max(4, Math.min(20, Math.floor(Math.min(sizeByW, sizeByH)))) + 'px';
+    const sz = Math.max(4, Math.min(16, Math.floor(Math.min(sizeByW, sizeByH)))) + 'px';
+    ascOutputs[0].style.fontSize = sz;
+    ascOutputs[1].style.fontSize = sz;
   }
 
-  // Camera buttons
-  document.querySelectorAll('#ascCam0, #ascCam1').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.getElementById('ascCam0').classList.toggle('on', btn.dataset.cam === '0');
-      document.getElementById('ascCam1').classList.toggle('on', btn.dataset.cam === '1');
-      ascCam = parseInt(btn.dataset.cam);
-      ascSendSettings();
-    });
-  });
-
-  document.getElementById('ascCharset').addEventListener('change', ascSendSettings);
-  document.getElementById('ascWidth').addEventListener('change', () => { ascFitFont(); ascSendSettings(); });
-  document.getElementById('ascHeight').addEventListener('change', () => { ascFitFont(); ascSendSettings(); });
+  document.getElementById('ascCharset').addEventListener('change', ascSendAllSettings);
+  document.getElementById('ascWidth').addEventListener('change', () => { ascFitFont(); ascSendAllSettings(); });
+  document.getElementById('ascHeight').addEventListener('change', () => { ascFitFont(); ascSendAllSettings(); });
 
   document.getElementById('ascColor').addEventListener('click', function() {
     ascColorMode = !ascColorMode;
     this.classList.toggle('on', ascColorMode);
-    ascSendSettings();
+    ascSendAllSettings();
   });
   document.getElementById('ascInvert').addEventListener('click', function() {
     ascInvertMode = !ascInvertMode;
     this.classList.toggle('on', ascInvertMode);
-    ascSendSettings();
+    ascSendAllSettings();
   });
   document.getElementById('ascPause').addEventListener('click', function() {
     ascPaused = !ascPaused;
