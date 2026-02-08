@@ -9,6 +9,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Any
@@ -29,6 +30,8 @@ JOINT_LIMITS_SAFE = {
 
 MAX_INCREMENT_DEG = 10.0
 MAX_TRACKING_ERROR_DEG = 20.0
+POSE_REACHED_TOLERANCE_DEG = 2.0
+POSE_REACHED_TIMEOUT_S = 15.0
 
 CALIBRATION_POSES = [
     (0, 0, 0, 0, 0, 0),           # home
@@ -133,6 +136,53 @@ class CalibrationRunner:
             data = resp.json()
             return data.get("ok", False)
 
+    async def wait_for_pose_reached(
+        self,
+        target_angles: tuple,
+        tolerance_deg: float = POSE_REACHED_TOLERANCE_DEG,
+        timeout_s: float = POSE_REACHED_TIMEOUT_S,
+    ) -> list[float]:
+        """
+        Poll joint feedback until ALL joints are within tolerance of target.
+
+        Verifies feedback freshness by requiring two consecutive reads that
+        both satisfy the tolerance (guards against stale DDS data).
+
+        Returns the final actual angles. Raises CalibrationError on timeout.
+        """
+        deadline = time.monotonic() + timeout_s
+        consecutive_ok = 0
+        last_angles = None
+
+        while time.monotonic() < deadline:
+            angles = await self.get_joint_angles()
+            errors = [abs(angles[j] - float(target_angles[j])) for j in range(6)]
+            max_error = max(errors)
+
+            if max_error <= tolerance_deg:
+                consecutive_ok += 1
+                last_angles = angles
+                if consecutive_ok >= 2:
+                    # Two consecutive reads within tolerance = fresh & settled
+                    return last_angles
+            else:
+                consecutive_ok = 0
+                last_angles = angles
+
+            await asyncio.sleep(0.3)
+
+        # Timeout — log details
+        if last_angles is not None:
+            error_str = ", ".join(
+                f"J{j}={last_angles[j]:.1f}° (target {target_angles[j]}°, err {abs(last_angles[j] - float(target_angles[j])):.1f}°)"
+                for j in range(6)
+            )
+        else:
+            error_str = "no feedback received"
+        raise CalibrationError(
+            f"Pose not reached within {timeout_s}s (tolerance ±{tolerance_deg}°): {error_str}"
+        )
+
     async def capture_frames(self) -> tuple[bytes, bytes]:
         """Capture JPEG frames from both cameras."""
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -206,21 +256,36 @@ class CalibrationRunner:
     async def run_single_pose(
         self, pose_index: int, angles: tuple, comparator=None
     ) -> PoseCapture:
-        """Run a single calibration pose: move, settle, capture."""
-        logger.info(f"Pose {pose_index + 1}/{self._total_poses}: {angles}")
+        """Run a single calibration pose: move, wait for arrival, settle, capture."""
+        logger.info(f"Pose {pose_index + 1}/{self._total_poses}: commanding {angles}")
         self._current_pose = pose_index
 
         # 1. Command arm to pose
         await self.command_pose(angles)
 
-        # 2. Wait for settling
+        # 2. Wait for all joints to reach target (±2°), with freshness check
+        actual = await self.wait_for_pose_reached(angles)
+        logger.info(
+            f"Pose {pose_index + 1}: joints reached target. "
+            f"Errors: {[f'J{j}={abs(actual[j] - float(angles[j])):.1f}°' for j in range(6)]}"
+        )
+
+        # 3. Additional settle time for vibration/oscillation to damp
         await asyncio.sleep(self.settle_time)
 
-        # 3. Read actual joint angles
+        # 4. Re-read actual angles right before capture (freshest data)
         actual = await self.get_joint_angles()
+        logger.info(
+            f"Pose {pose_index + 1} at capture: "
+            f"commanded={list(angles)}, actual=[{', '.join(f'{a:.1f}' for a in actual)}]"
+        )
 
-        # 4. Capture frames
+        # 5. Capture frames from BOTH cameras
         cam0, cam1 = await self.capture_frames()
+        if not cam0:
+            logger.warning(f"Pose {pose_index + 1}: cam0 (/snap/0) returned empty frame!")
+        if not cam1:
+            logger.warning(f"Pose {pose_index + 1}: cam1 (/snap/1) returned empty frame!")
 
         capture = PoseCapture(
             pose_index=pose_index,
@@ -245,22 +310,34 @@ class CalibrationRunner:
 
         return capture
 
-    async def run_full_calibration(self, comparator=None) -> CalibrationSession:
+    async def run_full_calibration(
+        self, comparator=None, output_dir: Optional[str] = None,
+    ) -> CalibrationSession:
         """
         Run the full 20-pose calibration sequence.
-        
+
         For each pose:
         1. Command arm via set_joint (funcode 1, ≤10° increments)
-        2. Wait settle_time
-        3. Read actual angles, capture frames
-        4. Optionally run CV+LLM comparison
-        
+        2. Wait for all joints to reach target within ±2°
+        3. Wait additional settle_time for vibration damping
+        4. Verify feedback freshness, read actual angles, capture BOTH cameras
+        5. Optionally run CV+LLM comparison
+
+        Args:
+            comparator: Optional comparison pipeline.
+            output_dir: If set, save per-pose frame JPEGs here.
+
         Returns CalibrationSession with all captures.
         """
         self._running = True
         self._abort = False
         if self._session_id is None:
             self._session_id = f"cal_{int(time.time())}"
+
+        # Default output dir based on session id
+        if output_dir is None:
+            output_dir = f"calibration_results/{self._session_id}"
+
         session = CalibrationSession(
             start_time=time.time(),
             total_poses=len(CALIBRATION_POSES),
@@ -282,11 +359,37 @@ class CalibrationRunner:
             session.end_time = time.time()
             self._running = False
 
+        # Save individual frame files
+        try:
+            self.save_frames(session, output_dir)
+        except Exception as e:
+            logger.warning(f"Failed to save frames: {e}")
+
         logger.info(
             f"Calibration complete: {len(session.captures)}/{session.total_poses} poses "
             f"in {session.end_time - session.start_time:.1f}s"
         )
         return session
+
+    def save_frames(self, session: CalibrationSession, output_dir: str) -> None:
+        """Save individual frame JPEGs to output_dir/pose{NN}_cam{0,1}.jpg."""
+        frames_dir = os.path.join(output_dir, "frames")
+        os.makedirs(frames_dir, exist_ok=True)
+
+        for cap in session.captures:
+            for cam_idx, jpeg_data in [(0, cap.cam0_jpeg), (1, cap.cam1_jpeg)]:
+                if jpeg_data:
+                    fname = f"pose{cap.pose_index:02d}_cam{cam_idx}.jpg"
+                    fpath = os.path.join(frames_dir, fname)
+                    with open(fpath, 'wb') as f:
+                        f.write(jpeg_data)
+                    logger.debug(f"Saved {fpath} ({len(jpeg_data)} bytes)")
+                else:
+                    logger.warning(
+                        f"Skipping pose{cap.pose_index:02d}_cam{cam_idx}.jpg — no data"
+                    )
+
+        logger.info(f"Frames saved to {frames_dir}")
 
     def save_session(self, session: CalibrationSession, path: str) -> None:
         """Save calibration session to JSON file (images as base64)."""

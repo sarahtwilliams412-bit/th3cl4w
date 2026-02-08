@@ -13,6 +13,7 @@ from src.calibration.calibration_runner import (
     CALIBRATION_POSES,
     JOINT_LIMITS_SAFE,
     MAX_INCREMENT_DEG,
+    POSE_REACHED_TOLERANCE_DEG,
     _compute_increments,
 )
 
@@ -83,9 +84,7 @@ class TestCommandPose:
         runner.get_joint_angles = AsyncMock(return_value=[0.0]*6)
 
         with pytest.raises(CalibrationError, match="outside safe limits"):
-            asyncio.get_event_loop().run_until_complete(
-                runner.command_pose((0, 0, 0, 0, 0, 200))  # J5=200 exceeds ±130
-            )
+            asyncio.run(runner.command_pose((0, 0, 0, 0, 0, 200)))  # J5=200 exceeds ±130
 
     def test_abort_during_move(self):
         runner = _make_runner()
@@ -94,9 +93,73 @@ class TestCommandPose:
         runner._abort = True
 
         with pytest.raises(CalibrationError, match="aborted"):
-            asyncio.get_event_loop().run_until_complete(
-                runner.command_pose((60, 0, 0, 0, 0, 0))
-            )
+            asyncio.run(runner.command_pose((60, 0, 0, 0, 0, 0)))
+
+
+class TestWaitForPoseReached:
+    def test_succeeds_when_joints_converge(self):
+        runner = _make_runner()
+        target = (30, 0, 0, 0, 0, 0)
+        runner.get_joint_angles = AsyncMock(side_effect=[
+            [10.0, 0, 0, 0, 0, 0],   # too far
+            [29.5, 0.1, -0.2, 0, 0.3, 0],  # within 2°
+            [30.1, -0.1, 0.1, 0, -0.2, 0],  # within 2° (consecutive)
+        ])
+        result = asyncio.run(runner.wait_for_pose_reached(target, timeout_s=5.0))
+        assert abs(result[0] - 30.0) < 2.0
+
+    def test_timeout_raises(self):
+        runner = _make_runner()
+        target = (30, 0, 0, 0, 0, 0)
+        runner.get_joint_angles = AsyncMock(return_value=[0.0]*6)
+        with pytest.raises(CalibrationError, match="Pose not reached"):
+            asyncio.run(runner.wait_for_pose_reached(target, timeout_s=1.0))
+
+    def test_requires_two_consecutive(self):
+        runner = _make_runner()
+        target = (0, 0, 0, 0, 0, 0)
+        runner.get_joint_angles = AsyncMock(side_effect=[
+            [0.1]*6,    # ok
+            [15.0]*6,   # bad — resets consecutive count
+            [0.2]*6,    # ok
+            [-0.1]*6,   # ok (consecutive)
+        ])
+        result = asyncio.run(runner.wait_for_pose_reached(target, timeout_s=5.0))
+        assert runner.get_joint_angles.call_count == 4
+
+
+class TestSaveFrames:
+    def test_saves_individual_jpegs(self, tmp_path):
+        runner = _make_runner()
+        session = CalibrationSession(start_time=1000.0, end_time=1100.0, total_poses=2)
+        session.captures.append(PoseCapture(
+            pose_index=0, commanded_angles=(0,)*6,
+            actual_angles=[0.0]*6, cam0_jpeg=b"\xff\xd8cam0",
+            cam1_jpeg=b"\xff\xd8cam1", timestamp=1050.0,
+        ))
+        session.captures.append(PoseCapture(
+            pose_index=1, commanded_angles=(30, 0, 0, 0, 0, 0),
+            actual_angles=[30.0, 0, 0, 0, 0, 0], cam0_jpeg=b"\xff\xd8cam0b",
+            cam1_jpeg=b"\xff\xd8cam1b", timestamp=1060.0,
+        ))
+        runner.save_frames(session, str(tmp_path))
+
+        assert (tmp_path / "frames" / "pose00_cam0.jpg").read_bytes() == b"\xff\xd8cam0"
+        assert (tmp_path / "frames" / "pose00_cam1.jpg").read_bytes() == b"\xff\xd8cam1"
+        assert (tmp_path / "frames" / "pose01_cam0.jpg").read_bytes() == b"\xff\xd8cam0b"
+        assert (tmp_path / "frames" / "pose01_cam1.jpg").read_bytes() == b"\xff\xd8cam1b"
+
+    def test_handles_empty_frames(self, tmp_path):
+        runner = _make_runner()
+        session = CalibrationSession(start_time=1000.0, end_time=1100.0, total_poses=1)
+        session.captures.append(PoseCapture(
+            pose_index=0, commanded_angles=(0,)*6,
+            actual_angles=[0.0]*6, cam0_jpeg=b"data", cam1_jpeg=b"",
+            timestamp=1050.0,
+        ))
+        runner.save_frames(session, str(tmp_path))
+        assert (tmp_path / "frames" / "pose00_cam0.jpg").exists()
+        assert not (tmp_path / "frames" / "pose00_cam1.jpg").exists()
 
 
 class TestSaveLoad:
