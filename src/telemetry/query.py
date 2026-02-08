@@ -111,7 +111,7 @@ class TelemetryQuery:
                 f"AND ts BETWEEN ? AND ? ORDER BY ABS(ts - ?) LIMIT 1",
                 (fb_ts - 1.0, fb_ts + 1.0, fb_ts),
             )
-            if fb:
+            if fb and fb[0]["angle"] is not None:
                 err = abs(cmd["target_value"] - fb[0]["angle"])
                 errors.append(
                     {
