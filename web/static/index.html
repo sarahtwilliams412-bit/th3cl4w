@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>th3cl4w — D1 Arm Control</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --card: #16213e;
+  --card-border: #1a2744;
+  --primary: #0f3460;
+  --danger: #e94560;
+  --success: #53d769;
+  --warning: #f0ad4e;
+  --info: #4a90d9;
+  --text: #e0e0e0;
+  --text-dim: #8892a4;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--card); border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+.logo { font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 2px; color: var(--danger); }
+.conn-dot { width: 10px; height: 10px; border-radius: 50%; background: #666; flex-shrink: 0; }
+.conn-dot.on { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.conn-dot.off { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+.badge { font-size: 10px; font-family: var(--mono); padding: 2px 8px; border-radius: 3px; background: #1a2744; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+.badge.active { background: #0a3d20; color: var(--success); }
+.badge.error { background: #3d0a0a; color: var(--danger); }
+.conn-quality { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+.topbar-spacer { flex: 1; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+.panel-left { flex: 1; min-width: 300px; display: flex; flex-direction: column; border-right: 1px solid var(--card-border); }
+.panel-right { width: 400px; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; }
+
+.viz-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; }
+.viz-container canvas { max-width: 100%; max-height: 100%; }
+
+.controls { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.section-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 2px; }
+
+.joint-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.joint-label { font-family: var(--mono); font-size: 11px; width: 22px; color: var(--text-dim); text-align: right; }
+.joint-slider { flex: 1; -webkit-appearance: none; appearance: none; height: 5px; background: #1a2744; border-radius: 3px; outline: none; }
+.joint-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--primary); cursor: pointer; border: 2px solid #4a90d9; }
+.joint-slider::-webkit-slider-thumb:hover { background: #4a90d9; }
+.joint-slider::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--primary); cursor: pointer; border: 2px solid #4a90d9; }
+.joint-value { font-family: var(--mono); font-size: 11px; width: 58px; text-align: right; color: var(--text); }
+.joint-range { font-family: var(--mono); font-size: 9px; color: #555; width: 40px; text-align: center; }
+
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { font-family: var(--mono); font-size: 11px; padding: 6px 12px; border: 1px solid var(--card-border); border-radius: 4px; cursor: pointer; background: var(--card); color: var(--text); transition: all 0.15s; text-transform: uppercase; letter-spacing: 1px; }
+.btn:hover:not(:disabled) { background: var(--primary); border-color: #4a90d9; }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn.on { background: #0a3d20; border-color: var(--success); color: var(--success); }
+.btn.danger-active { background: #3d1a1a; border-color: var(--danger); color: var(--danger); }
+
+.estop { width: 100%; padding: 14px; font-size: 15px; font-weight: 700; background: var(--danger); color: #fff; border: 2px solid #ff6b81; border-radius: 6px; cursor: pointer; letter-spacing: 3px; text-transform: uppercase; font-family: var(--mono); transition: all 0.15s; }
+.estop:hover { background: #ff2244; box-shadow: 0 0 20px rgba(233,69,96,0.5); }
+.estop:active { transform: scale(0.98); }
+.estop.flash { animation: estop-flash 0.8s infinite; }
+@keyframes estop-flash { 0%,100% { box-shadow: 0 0 5px rgba(233,69,96,0.3); } 50% { box-shadow: 0 0 25px rgba(233,69,96,0.8); border-color: #fff; } }
+
+.raw-cmd { display: flex; gap: 6px; margin-top: 4px; }
+.raw-cmd input { flex: 1; font-family: var(--mono); font-size: 11px; padding: 6px 8px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; color: var(--text); outline: none; }
+.raw-cmd input:focus { border-color: var(--info); }
+
+.log-panel { height: 150px; flex-shrink: 0; border-top: 1px solid var(--card-border); display: flex; flex-direction: column; }
+.log-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); padding: 6px 12px 2px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
+.log-scroll { flex: 1; overflow-y: auto; padding: 0 12px 6px; font-family: var(--mono); font-size: 10px; line-height: 1.5; }
+.log-entry { white-space: nowrap; }
+.log-entry .ts { color: #444; margin-right: 6px; }
+.log-entry .act { margin-right: 6px; font-weight: 600; }
+.log-entry.info .act { color: var(--info); }
+.log-entry.error .act { color: var(--danger); }
+.log-entry.warning .act { color: var(--warning); }
+.log-entry.info .detail { color: var(--text-dim); }
+.log-entry.error .detail { color: #d9534f; }
+.log-entry.warning .detail { color: #c09853; }
+
+.camera-panel { border-top: 1px solid var(--card-border); flex-shrink: 0; }
+.camera-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; }
+.cam-toggle { font-size: 10px !important; padding: 3px 8px !important; }
+.camera-feeds { display: flex; gap: 8px; padding: 0 12px 8px; }
+.camera-feeds.hidden { display: none; }
+.cam-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.cam-label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+.cam-live { color: var(--danger); font-size: 9px; animation: cam-blink 2s infinite; }
+@keyframes cam-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+.cam-img { width: 100%; aspect-ratio: 4/3; object-fit: contain; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; }
+.cam-snap { font-size: 9px !important; padding: 2px 6px !important; align-self: flex-start; }
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 3px; }
+
+@media (max-width: 800px) {
+  .main { flex-direction: column; }
+  .panel-left { min-height: 220px; border-right: none; border-bottom: 1px solid var(--card-border); }
+  .panel-right { width: 100%; flex: 1; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">th3cl4w</div>
+  <div class="conn-dot" id="connDot"></div>
+  <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">DISCONNECTED</span>
+  <span class="conn-quality" id="connQuality"></span>
+  <div class="topbar-spacer"></div>
+  <div class="badge" id="badgePower">PWR OFF</div>
+  <div class="badge" id="badgeEnabled">DISABLED</div>
+  <div class="badge" id="badgeError">NO ERR</div>
+</div>
+
+<div class="main">
+  <div class="panel-left">
+    <div class="viz-container">
+      <canvas id="armCanvas" width="600" height="500"></canvas>
+    </div>
+    <div class="camera-panel" id="cameraPanel">
+      <div class="camera-header">
+        <span class="section-title" style="margin:0">Cameras</span>
+        <button class="btn cam-toggle" id="btnCamToggle" title="Toggle cameras">👁 HIDE</button>
+      </div>
+      <div class="camera-feeds" id="cameraFeeds">
+        <div class="cam-feed">
+          <div class="cam-label"><span class="cam-live">● LIVE</span> Camera 1 (Left)</div>
+          <img class="cam-img" id="camImg0" src="http://localhost:8081/cam/0" alt="Camera 1">
+          <button class="btn cam-snap" onclick="window.open('http://localhost:8081/snap/0','_blank')">📷 Snap</button>
+        </div>
+        <div class="cam-feed">
+          <div class="cam-label"><span class="cam-live">● LIVE</span> Camera 2 (Right)</div>
+          <img class="cam-img" id="camImg1" src="http://localhost:8081/cam/1" alt="Camera 2">
+          <button class="btn cam-snap" onclick="window.open('http://localhost:8081/snap/1','_blank')">📷 Snap</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-right">
+    <div class="controls">
+      <div class="section-title">Joint Control (6 DOF)</div>
+      <div id="jointSliders"></div>
+
+      <div style="margin-top:4px">
+        <div class="section-title">Gripper</div>
+        <div class="joint-row">
+          <span class="joint-label">G</span>
+          <input type="range" class="joint-slider" id="gripperSlider" min="0" max="65" step="0.5" value="0">
+          <span class="joint-value" id="gripperValue">0.0 mm</span>
+        </div>
+      </div>
+
+      <div style="margin-top:6px">
+        <div class="section-title">Commands</div>
+        <div class="btn-row">
+          <button class="btn" id="btnPowerOn">Power On</button>
+          <button class="btn" id="btnPowerOff">Power Off</button>
+          <button class="btn" id="btnEnable">Enable</button>
+          <button class="btn" id="btnDisable">Disable</button>
+          <button class="btn" id="btnHome">Home</button>
+        </div>
+      </div>
+
+      <button class="estop" id="btnEstop">⚠ EMERGENCY STOP</button>
+
+      <div class="section-title">Raw Command</div>
+      <div class="raw-cmd">
+        <input type="text" id="rawInput" placeholder='{"action":"set-joint","id":0,"angle":45}'>
+        <button class="btn" id="btnRawSend">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="log-panel">
+  <div class="log-title">Action Log</div>
+  <div class="log-scroll" id="logScroll"></div>
+</div>
+
+<script>
+'use strict';
+
+// ---- D1 specs ----
+const JOINT_SPECS = [
+  { name: 'J0', min: -135, max: 135, label: 'Base Yaw',    type: 'yaw'   },
+  { name: 'J1', min: -90,  max: 90,  label: 'Shoulder',    type: 'pitch' },
+  { name: 'J2', min: -90,  max: 90,  label: 'Elbow',       type: 'pitch' },
+  { name: 'J3', min: -135, max: 135, label: 'Wrist Roll',  type: 'roll'  },
+  { name: 'J4', min: -90,  max: 90,  label: 'Wrist Pitch', type: 'pitch' },
+  { name: 'J5', min: -135, max: 135, label: 'Wrist Roll',  type: 'roll'  },
+];
+
+// D1 link lengths in mm for side-view FK
+const LINKS_MM = {
+  base: 80, shoulder: 170, elbow: 170, wrist1: 60, wrist2: 60, end: 50
+};
+
+// ---- State ----
+let ws = null;
+let armState = { connected: false, joints: [0,0,0,0,0,0], gripper: 0, power: false, enabled: false, error: 0, log: [] };
+let lastStateTs = 0;
+let userDragging = -1; // -1=none, 0-5=joint, 6=gripper
+let animFrameId = null;
+let localLog = []; // client-side log entries
+
+function logLocal(action, details, level) {
+  const now = new Date();
+  const ts_str = now.toTimeString().slice(0,8) + '.' + String(now.getMilliseconds()).padStart(3,'0');
+  localLog.push({ ts_str, action, details, level });
+  if (localLog.length > 100) localLog.shift();
+}
+
+// ---- Build sliders ----
+const slidersDiv = document.getElementById('jointSliders');
+for (let i = 0; i < 6; i++) {
+  const spec = JOINT_SPECS[i];
+  const row = document.createElement('div');
+  row.className = 'joint-row';
+  row.innerHTML = `
+    <span class="joint-label">${spec.name}</span>
+    <input type="range" class="joint-slider" id="js${i}" min="${spec.min}" max="${spec.max}" step="0.5" value="0">
+    <span class="joint-value" id="jv${i}">0.0°</span>
+  `;
+  slidersDiv.appendChild(row);
+
+  const slider = row.querySelector('input');
+  slider.addEventListener('mousedown', () => userDragging = i);
+  slider.addEventListener('touchstart', () => userDragging = i);
+  slider.addEventListener('input', () => {
+    document.getElementById(`jv${i}`).textContent = parseFloat(slider.value).toFixed(1) + '°';
+  });
+  const release = () => { if (userDragging === i) { sendJoint(i, parseFloat(slider.value)); userDragging = -1; } };
+  slider.addEventListener('mouseup', release);
+  slider.addEventListener('touchend', release);
+  slider.addEventListener('change', release);
+}
+
+// Gripper
+const gripSlider = document.getElementById('gripperSlider');
+gripSlider.addEventListener('mousedown', () => userDragging = 6);
+gripSlider.addEventListener('touchstart', () => userDragging = 6);
+gripSlider.addEventListener('input', () => {
+  document.getElementById('gripperValue').textContent = parseFloat(gripSlider.value).toFixed(1) + ' mm';
+});
+const gripRelease = () => { if (userDragging === 6) { sendGripper(parseFloat(gripSlider.value)); userDragging = -1; } };
+gripSlider.addEventListener('mouseup', gripRelease);
+gripSlider.addEventListener('touchend', gripRelease);
+gripSlider.addEventListener('change', gripRelease);
+
+// ---- Commands ----
+async function cmd(action) {
+  logLocal(action.toUpperCase(), `Sending POST /api/command/${action}`, 'info');
+  try {
+    const resp = await fetch(`/api/command/${action}`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      logLocal(action.toUpperCase(), `✓ Success`, 'info');
+    } else {
+      logLocal(action.toUpperCase(), `✗ Failed: ${data.error || 'unknown'}`, 'error');
+    }
+    if (data.state) armState = { ...armState, ...data.state };
+    updateUI();
+  } catch(e) {
+    logLocal(action.toUpperCase(), `✗ Network error: ${e.message}`, 'error');
+  }
+}
+
+async function sendJoint(id, angle) {
+  const body = { id, angle };
+  logLocal('SET_JOINT', `J${id} -> ${angle.toFixed(1)}°`, 'info');
+  try {
+    const resp = await fetch('/api/command/set-joint', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+    if (!data.ok) logLocal('SET_JOINT', `✗ ${data.error || 'failed'}`, 'error');
+  } catch(e) { logLocal('SET_JOINT', `✗ ${e.message}`, 'error'); }
+}
+
+async function sendGripper(pos) {
+  logLocal('SET_GRIPPER', `${pos.toFixed(1)} mm`, 'info');
+  try {
+    const resp = await fetch('/api/command/set-gripper', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: pos })
+    });
+    const data = await resp.json();
+    if (!data.ok) logLocal('SET_GRIPPER', `✗ ${data.error || 'failed'}`, 'error');
+  } catch(e) { logLocal('SET_GRIPPER', `✗ ${e.message}`, 'error'); }
+}
+
+// Button wiring
+document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
+document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
+document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
+document.getElementById('btnDisable').addEventListener('click', () => cmd('disable'));
+document.getElementById('btnHome').addEventListener('click', () => cmd('reset'));
+document.getElementById('btnEstop').addEventListener('click', () => cmd('stop'));
+
+// Raw command
+document.getElementById('btnRawSend').addEventListener('click', async () => {
+  const raw = document.getElementById('rawInput').value.trim();
+  if (!raw) return;
+  logLocal('RAW', `Sending: ${raw}`, 'warning');
+  try {
+    const parsed = JSON.parse(raw);
+    const action = parsed.action || 'set-joint';
+    delete parsed.action;
+    const resp = await fetch(`/api/command/${action}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parsed)
+    });
+    const data = await resp.json();
+    logLocal('RAW', `Response: ${JSON.stringify(data).slice(0,120)}`, data.ok ? 'info' : 'error');
+  } catch(e) { logLocal('RAW', `Error: ${e.message}`, 'error'); }
+});
+document.getElementById('rawInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnRawSend').click(); });
+
+// ---- WebSocket ----
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/state`);
+  ws.onopen = () => { updateConn(true); logLocal('WS', 'Connected', 'info'); };
+  ws.onclose = () => { updateConn(false); setTimeout(connectWS, 2000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'ack') {
+        logLocal('ACK', `${data.action}: ${data.ok ? 'OK' : 'FAIL'}`, data.ok ? 'info' : 'error');
+        return;
+      }
+      armState = data;
+      lastStateTs = Date.now();
+    } catch(err) {}
+  };
+}
+
+function updateConn(on) {
+  document.getElementById('connDot').className = 'conn-dot ' + (on ? 'on' : 'off');
+  document.getElementById('connLabel').textContent = on ? 'CONNECTED' : 'DISCONNECTED';
+}
+
+// ---- UI Update ----
+function updateUI() {
+  // Badges
+  const bp = document.getElementById('badgePower');
+  bp.textContent = armState.power ? 'PWR ON' : 'PWR OFF';
+  bp.className = 'badge' + (armState.power ? ' active' : '');
+
+  const be = document.getElementById('badgeEnabled');
+  be.textContent = armState.enabled ? 'ENABLED' : 'DISABLED';
+  be.className = 'badge' + (armState.enabled ? ' active' : '');
+
+  const berr = document.getElementById('badgeError');
+  if (armState.error) { berr.textContent = 'ERR ' + armState.error; berr.className = 'badge error'; }
+  else { berr.textContent = 'NO ERR'; berr.className = 'badge'; }
+
+  // Connection quality
+  if (lastStateTs > 0) {
+    const age = Date.now() - lastStateTs;
+    const q = document.getElementById('connQuality');
+    if (age < 500) q.textContent = '● live';
+    else if (age < 2000) q.textContent = `● ${(age/1000).toFixed(1)}s ago`;
+    else q.textContent = `⚠ ${(age/1000).toFixed(0)}s stale`;
+    q.style.color = age < 500 ? 'var(--success)' : age < 2000 ? 'var(--warning)' : 'var(--danger)';
+  }
+
+  // Button states
+  document.getElementById('btnPowerOn').disabled = armState.power;
+  document.getElementById('btnPowerOn').className = 'btn' + (armState.power ? ' on' : '');
+  document.getElementById('btnPowerOff').disabled = !armState.power;
+  document.getElementById('btnEnable').disabled = !armState.power || armState.enabled;
+  document.getElementById('btnEnable').className = 'btn' + (armState.enabled ? ' on' : '');
+  document.getElementById('btnDisable').disabled = !armState.enabled;
+
+  // E-stop flash when enabled
+  document.getElementById('btnEstop').className = armState.enabled ? 'estop flash' : 'estop';
+
+  // Joint sliders
+  const joints = armState.joints || [0,0,0,0,0,0];
+  for (let i = 0; i < 6; i++) {
+    if (userDragging !== i) {
+      const val = joints[i] || 0;
+      document.getElementById(`js${i}`).value = val;
+      document.getElementById(`jv${i}`).textContent = val.toFixed(1) + '°';
+    }
+  }
+
+  // Gripper
+  if (userDragging !== 6) {
+    const gv = armState.gripper || 0;
+    gripSlider.value = gv;
+    document.getElementById('gripperValue').textContent = gv.toFixed(1) + ' mm';
+  }
+
+  renderLog();
+}
+
+// ---- Log rendering ----
+let lastLogHash = '';
+function renderLog() {
+  // Merge server log + local log, sort by time string
+  const serverEntries = (armState.log || []).map(e => ({
+    ts_str: e.ts_str, action: e.action, details: e.details, level: e.level, src: 's'
+  }));
+  const all = [...serverEntries, ...localLog.map(e => ({ ...e, src: 'c' }))];
+  all.sort((a, b) => a.ts_str.localeCompare(b.ts_str));
+  const last40 = all.slice(-40);
+
+  const hash = last40.map(e => e.ts_str + e.action).join('|');
+  if (hash === lastLogHash) return;
+  lastLogHash = hash;
+
+  const el = document.getElementById('logScroll');
+  el.innerHTML = last40.map(e =>
+    `<div class="log-entry ${e.level}"><span class="ts">${esc(e.ts_str)}</span><span class="act">${esc(e.action)}</span><span class="detail">${esc(e.details)}</span></div>`
+  ).join('');
+  el.scrollTop = el.scrollHeight;
+}
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ---- Arm Visualization ----
+const canvas = document.getElementById('armCanvas');
+const ctx = canvas.getContext('2d');
+
+function drawArm() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const joints = armState.joints || [0,0,0,0,0,0];
+  const deg2rad = Math.PI / 180;
+
+  // --- Grid ---
+  ctx.strokeStyle = 'rgba(42,74,124,0.12)';
+  ctx.lineWidth = 1;
+  for (let y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+
+  // --- Side view FK (using J1, J2, J4 as pitch joints) ---
+  // Scale: convert mm to pixels. Canvas ~500px tall, arm reach ~590mm. Use 0.65 px/mm
+  const scale = Math.min(W, H) / 900;
+  const baseX = W * 0.35, baseY = H * 0.85;
+
+  // Base platform
+  ctx.fillStyle = '#1a2744';
+  ctx.strokeStyle = '#2a4a7c';
+  ctx.lineWidth = 1;
+  const bw = 60 * scale, bh = 15 * scale;
+  ctx.fillRect(baseX - bw, baseY, bw * 2, bh);
+  ctx.strokeRect(baseX - bw, baseY, bw * 2, bh);
+
+  // FK chain: base(80mm up) -> shoulder(170mm, J1 pitch) -> elbow(170mm, J2 pitch) -> wrist1(60mm, J4 pitch) -> wrist2(60mm) -> end(50mm)
+  // Pitch angles: positive = forward/down from vertical start
+  const linkLengths = [LINKS_MM.base, LINKS_MM.shoulder, LINKS_MM.elbow, LINKS_MM.wrist1, LINKS_MM.wrist2, LINKS_MM.end];
+  // Which joint angle controls each segment's pitch:
+  // segment 0 (base): straight up, no joint
+  // segment 1 (shoulder): J1
+  // segment 2 (elbow): J2
+  // segment 3 (wrist1): no pitch joint (J3 is roll), carry forward
+  // segment 4 (wrist2): J4
+  // segment 5 (end): no pitch joint (J5 is roll), carry forward
+
+  let cumAngle = -Math.PI / 2; // start pointing up
+  let pts = [{ x: baseX, y: baseY }];
+
+  // Segment 0: base (straight up)
+  pts.push({ x: baseX, y: baseY - linkLengths[0] * scale });
+  // cumAngle stays -PI/2
+
+  // Segment 1: shoulder — J1 pitch
+  cumAngle += joints[1] * deg2rad;
+  let px = pts[1].x + Math.cos(cumAngle) * linkLengths[1] * scale;
+  let py = pts[1].y + Math.sin(cumAngle) * linkLengths[1] * scale;
+  pts.push({ x: px, y: py });
+
+  // Segment 2: elbow — J2 pitch
+  cumAngle += joints[2] * deg2rad;
+  px = pts[2].x + Math.cos(cumAngle) * linkLengths[2] * scale;
+  py = pts[2].y + Math.sin(cumAngle) * linkLengths[2] * scale;
+  pts.push({ x: px, y: py });
+
+  // Segment 3: wrist1 — J3 is roll, no pitch change
+  px = pts[3].x + Math.cos(cumAngle) * linkLengths[3] * scale;
+  py = pts[3].y + Math.sin(cumAngle) * linkLengths[3] * scale;
+  pts.push({ x: px, y: py });
+
+  // Segment 4: wrist2 — J4 pitch
+  cumAngle += joints[4] * deg2rad;
+  px = pts[4].x + Math.cos(cumAngle) * linkLengths[4] * scale;
+  py = pts[4].y + Math.sin(cumAngle) * linkLengths[4] * scale;
+  pts.push({ x: px, y: py });
+
+  // Segment 5: end — J5 is roll, no pitch change
+  px = pts[5].x + Math.cos(cumAngle) * linkLengths[5] * scale;
+  py = pts[5].y + Math.sin(cumAngle) * linkLengths[5] * scale;
+  pts.push({ x: px, y: py });
+
+  // Draw links
+  const linkColors = ['#2a4a7c', '#4a90d9', '#4a90d9', '#3a7abd', '#3a7abd', '#2a6aad'];
+  const linkWidths = [10, 8, 8, 5, 5, 4];
+  ctx.lineCap = 'round';
+  for (let i = 0; i < pts.length - 1; i++) {
+    ctx.strokeStyle = linkColors[i] || '#4a90d9';
+    ctx.lineWidth = linkWidths[i] * scale * 1.2;
+    ctx.beginPath();
+    ctx.moveTo(pts[i].x, pts[i].y);
+    ctx.lineTo(pts[i+1].x, pts[i+1].y);
+    ctx.stroke();
+  }
+
+  // Draw joints
+  const jointMapping = [-1, 1, 2, 3, 4, 5]; // which joint index corresponds to each point (after base)
+  for (let i = 0; i < pts.length; i++) {
+    const r = (i === 0 ? 10 : i === pts.length - 1 ? 5 : 7) * scale;
+
+    // Glow
+    ctx.beginPath();
+    ctx.arc(pts[i].x, pts[i].y, r + 3 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(15,52,96,0.3)';
+    ctx.fill();
+
+    // Joint circle
+    ctx.beginPath();
+    ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#16213e';
+    ctx.fill();
+    ctx.strokeStyle = '#4a90d9';
+    ctx.lineWidth = 2 * scale;
+    ctx.stroke();
+  }
+
+  // --- Rotation indicators for J0, J3, J5 ---
+  function drawRotationIndicator(cx, cy, radius, angleDeg, label) {
+    const a = angleDeg * deg2rad;
+    const r = radius * scale;
+    // Arc background
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(74,144,217,0.2)';
+    ctx.lineWidth = 2 * scale;
+    ctx.stroke();
+    // Arc showing angle
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0);
+    ctx.strokeStyle = Math.abs(angleDeg) > 100 ? '#e94560' : '#53d769';
+    ctx.lineWidth = 3 * scale;
+    ctx.stroke();
+    // Tick at end
+    const ex = cx + Math.cos(-Math.PI / 2 + a) * r;
+    const ey = cy + Math.sin(-Math.PI / 2 + a) * r;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 3 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = Math.abs(angleDeg) > 100 ? '#e94560' : '#53d769';
+    ctx.fill();
+    // Label
+    ctx.font = `${9 * scale}px JetBrains Mono, monospace`;
+    ctx.fillStyle = 'rgba(136,146,164,0.8)';
+    ctx.fillText(label + ' ' + angleDeg.toFixed(0) + '°', cx + r + 4 * scale, cy + 3 * scale);
+  }
+
+  // J0 indicator at base
+  drawRotationIndicator(pts[0].x, pts[0].y, 18, joints[0] || 0, 'J0');
+  // J3 indicator at wrist1 joint (pt index 3)
+  drawRotationIndicator(pts[3].x, pts[3].y, 14, joints[3] || 0, 'J3');
+  // J5 indicator at end-effector area (pt index 5)
+  drawRotationIndicator(pts[5].x, pts[5].y, 12, joints[5] || 0, 'J5');
+
+  // --- Joint angle labels for pitch joints ---
+  ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = 'rgba(200,210,230,0.7)';
+  // J1 at shoulder (pt 2 is end of shoulder link, label at pt 1)
+  ctx.fillText(`J1 ${(joints[1]||0).toFixed(1)}°`, pts[1].x - 50 * scale, pts[1].y - 12 * scale);
+  // J2 at elbow
+  ctx.fillText(`J2 ${(joints[2]||0).toFixed(1)}°`, pts[2].x + 12 * scale, pts[2].y - 8 * scale);
+  // J4 at wrist
+  ctx.fillText(`J4 ${(joints[4]||0).toFixed(1)}°`, pts[4].x + 12 * scale, pts[4].y - 8 * scale);
+
+  // --- Gripper at end ---
+  const tip = pts[pts.length - 1];
+  const gAngle = cumAngle;
+  const gripMM = armState.gripper || 0;
+  const gOpen = (gripMM / 65) * 10 * scale;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(tip.x, tip.y);
+    ctx.lineTo(
+      tip.x + Math.cos(gAngle) * 18 * scale + Math.cos(gAngle + Math.PI/2) * side * gOpen,
+      tip.y + Math.sin(gAngle) * 18 * scale + Math.sin(gAngle + Math.PI/2) * side * gOpen
+    );
+    ctx.strokeStyle = '#e94560';
+    ctx.lineWidth = 3 * scale;
+    ctx.stroke();
+  }
+  // Gripper readout
+  ctx.font = `${9 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = '#e94560';
+  ctx.fillText(`G ${gripMM.toFixed(1)}mm`, tip.x + 14 * scale, tip.y + 14 * scale);
+
+  // --- Title ---
+  ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
+  ctx.fillStyle = 'rgba(136,146,164,0.5)';
+  ctx.fillText('D1 Side View (J1/J2/J4 pitch)', 8, 16 * scale);
+}
+
+// Animation loop
+function animLoop() {
+  updateUI();
+  drawArm();
+  animFrameId = requestAnimationFrame(animLoop);
+}
+
+function resizeCanvas() {
+  const cont = canvas.parentElement;
+  const w = cont.clientWidth - 16;
+  const h = cont.clientHeight - 16;
+  canvas.width = Math.max(w, 300);
+  canvas.height = Math.max(h, 250);
+}
+window.addEventListener('resize', resizeCanvas);
+
+// Camera toggle
+document.getElementById('btnCamToggle').addEventListener('click', () => {
+  const feeds = document.getElementById('cameraFeeds');
+  const btn = document.getElementById('btnCamToggle');
+  const hidden = feeds.classList.toggle('hidden');
+  btn.textContent = hidden ? '👁 SHOW' : '👁 HIDE';
+  // Stop/start streams to save bandwidth
+  const imgs = feeds.querySelectorAll('.cam-img');
+  imgs.forEach((img, i) => {
+    if (hidden) { img.dataset.src = img.src; img.src = ''; }
+    else { img.src = img.dataset.src || `http://localhost:8081/cam/${i}`; }
+  });
+  setTimeout(resizeCanvas, 50);
+});
+
+// Start
+connectWS();
+setTimeout(() => { resizeCanvas(); animLoop(); }, 50);
+</script>
+</body>
+</html>

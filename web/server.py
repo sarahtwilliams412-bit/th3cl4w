@@ -1,339 +1,463 @@
+#!/usr/bin/env python3.12
 """
-th3cl4w Web Control Server
-
-FastAPI backend for controlling the Unitree D1 robotic arm.
-Provides REST API + WebSocket for real-time state streaming.
-
-Usage:
-    python web/server.py                  # Connect to real hardware
-    python web/server.py --simulate       # Simulated arm (no hardware)
-    python web/server.py --simulate --port 8080
+th3cl4w — Web Control Panel for Unitree D1 Arm
+FastAPI backend with WebSocket state streaming and REST command API.
 """
 
 import argparse
 import asyncio
 import json
 import logging
-import math
 import sys
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
-import numpy as np
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-# Add project root to path for imports
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+# ---------------------------------------------------------------------------
+# CLI args (parsed early so lifespan can access them)
+# ---------------------------------------------------------------------------
 
-from src.interface.d1_connection import D1Command, D1Connection, D1State, NUM_JOINTS
+parser = argparse.ArgumentParser(description="th3cl4w D1 Arm Web Control Panel")
+parser.add_argument("--simulate", action="store_true", help="Run with simulated arm state")
+parser.add_argument("--interface", default="eno1", help="Network interface for DDS (default: eno1)")
+parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
+parser.add_argument("--port", type=int, default=8080, help="Bind port (default: 8080)")
 
+# Only parse if running as main (not under test)
+if "pytest" not in sys.modules:
+    args = parser.parse_args()
+else:
+    args = parser.parse_args(["--simulate"])
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("th3cl4w.web")
 
 # ---------------------------------------------------------------------------
-# Simulated arm
+# D1 Joint specs
 # ---------------------------------------------------------------------------
 
-class SimulatedD1:
-    """Simulated D1 arm for development without hardware."""
+JOINT_LIMITS_DEG = {
+    0: (-135.0, 135.0),   # J0 base yaw
+    1: (-90.0, 90.0),     # J1 shoulder pitch
+    2: (-90.0, 90.0),     # J2 elbow pitch
+    3: (-135.0, 135.0),   # J3 wrist roll
+    4: (-90.0, 90.0),     # J4 wrist pitch
+    5: (-135.0, 135.0),   # J5 wrist roll
+}
+
+GRIPPER_RANGE = (0.0, 65.0)  # mm
+
+# ---------------------------------------------------------------------------
+# Structured action log
+# ---------------------------------------------------------------------------
+
+class ActionLog:
+    """Thread-safe circular log of action entries."""
+
+    def __init__(self, maxlen: int = 200):
+        self._entries: deque = deque(maxlen=maxlen)
+
+    def add(self, action: str, details: str, level: str = "info"):
+        ts = time.time()
+        d = time.localtime(ts)
+        ms = int((ts % 1) * 1000)
+        ts_str = f"{d.tm_hour:02d}:{d.tm_min:02d}:{d.tm_sec:02d}.{ms:03d}"
+        entry = {"ts": ts, "ts_str": ts_str, "action": action, "details": details, "level": level}
+        self._entries.append(entry)
+        logger.log(
+            {"info": logging.INFO, "error": logging.ERROR, "warning": logging.WARNING}.get(level, logging.INFO),
+            "%s | %s | %s", ts_str, action, details,
+        )
+
+    def last(self, n: int = 50) -> List[Dict]:
+        items = list(self._entries)
+        return items[-n:]
+
+action_log = ActionLog()
+
+# ---------------------------------------------------------------------------
+# Simulated arm for --simulate mode
+# ---------------------------------------------------------------------------
+
+class SimulatedArm:
+    """Fake arm that holds state in memory with proper power→enable ordering."""
 
     def __init__(self):
-        self.joint_positions = np.zeros(NUM_JOINTS)
-        self.joint_velocities = np.zeros(NUM_JOINTS)
-        self.joint_torques = np.zeros(NUM_JOINTS)
-        self.gripper_position = 0.0
-        self.mode = 0
-        self._target_positions = np.zeros(NUM_JOINTS)
+        self._angles = [0.0] * 6
+        self._target_angles = [0.0] * 6
+        self._gripper = 0.0
         self._target_gripper = 0.0
+        self._powered = False
+        self._enabled = False
+        self._error = 0
         self._connected = True
-        self._start_time = time.time()
 
     @property
     def is_connected(self) -> bool:
         return self._connected
 
-    def connect(self) -> bool:
-        self._connected = True
+    def get_joint_angles(self):
+        import numpy as np
+        for i in range(6):
+            diff = self._target_angles[i] - self._angles[i]
+            self._angles[i] += diff * 0.15
+        self._gripper += (self._target_gripper - self._gripper) * 0.15
+        return np.array(self._angles)
+
+    def get_gripper_position(self) -> float:
+        return round(self._gripper, 2)
+
+    def get_status(self):
+        return {
+            "power_status": 1 if self._powered else 0,
+            "enable_status": 1 if self._enabled else 0,
+            "error_status": self._error,
+        }
+
+    def power_on(self):
+        self._powered = True
+        return True
+
+    def power_off(self):
+        self._enabled = False
+        self._powered = False
+        return True
+
+    def enable_motors(self):
+        if not self._powered:
+            return False
+        self._enabled = True
+        return True
+
+    def disable_motors(self):
+        self._enabled = False
+        return True
+
+    def reset_to_zero(self):
+        self._target_angles = [0.0] * 6
+        self._target_gripper = 0.0
+        return True
+
+    def set_joint(self, joint_id: int, angle_deg: float, delay_ms: int = 0):
+        lo, hi = JOINT_LIMITS_DEG.get(joint_id, (-135, 135))
+        if not (0 <= joint_id <= 5):
+            return False
+        self._target_angles[joint_id] = max(lo, min(hi, angle_deg))
+        return True
+
+    def set_all_joints(self, angles_deg: list, mode: int = 0):
+        if len(angles_deg) != 6:
+            return False
+        for i, a in enumerate(angles_deg):
+            lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
+            self._target_angles[i] = max(lo, min(hi, a))
+        return True
+
+    def set_gripper(self, position_mm: float):
+        self._target_gripper = max(GRIPPER_RANGE[0], min(GRIPPER_RANGE[1], position_mm))
         return True
 
     def disconnect(self):
         self._connected = False
 
-    def get_state(self) -> D1State:
-        # Simulate smooth motion toward targets
-        dt = 0.05
-        speed = 2.0  # rad/s
-        for i in range(NUM_JOINTS):
-            diff = self._target_positions[i] - self.joint_positions[i]
-            step = np.clip(diff, -speed * dt, speed * dt)
-            self.joint_positions[i] += step
-            self.joint_velocities[i] = step / dt if abs(step) > 1e-6 else 0.0
-            self.joint_torques[i] = diff * 10.0  # fake spring torque
-
-        gdiff = self._target_gripper - self.gripper_position
-        self.gripper_position += np.clip(gdiff, -speed * dt, speed * dt)
-
-        # Add tiny noise for realism
-        noise = np.random.normal(0, 0.0005, NUM_JOINTS)
-
-        return D1State(
-            joint_positions=self.joint_positions.copy() + noise,
-            joint_velocities=self.joint_velocities.copy(),
-            joint_torques=self.joint_torques.copy(),
-            gripper_position=float(self.gripper_position),
-            timestamp=time.time() - self._start_time,
-        )
-
-    def send_command(self, cmd: D1Command) -> bool:
-        self.mode = cmd.mode
-        if cmd.joint_positions is not None:
-            self._target_positions = np.array(cmd.joint_positions, dtype=np.float64)
-        if cmd.gripper_position is not None:
-            self._target_gripper = float(cmd.gripper_position)
-        return True
-
-    def stop(self):
-        self.mode = 0
-        self._target_positions = self.joint_positions.copy()
-        self._target_gripper = self.gripper_position
-
-    def home(self):
-        self._target_positions = np.zeros(NUM_JOINTS)
-        self._target_gripper = 0.0
-
 
 # ---------------------------------------------------------------------------
-# Global state
+# Global arm reference
 # ---------------------------------------------------------------------------
 
-arm = None  # D1Connection or SimulatedD1
-simulate_mode = False
-ws_clients: set[WebSocket] = set()
-
+arm: Any = None
 
 # ---------------------------------------------------------------------------
-# API models
-# ---------------------------------------------------------------------------
-
-class CommandRequest(BaseModel):
-    mode: int = 0
-    joint_positions: Optional[list[float]] = None
-    joint_velocities: Optional[list[float]] = None
-    joint_torques: Optional[list[float]] = None
-    gripper_position: Optional[float] = None
-
-
-class StateResponse(BaseModel):
-    connected: bool
-    mode: int
-    joint_positions: list[float]
-    joint_velocities: list[float]
-    joint_torques: list[float]
-    gripper_position: float
-    timestamp: float
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def get_state_dict() -> dict:
-    """Get current arm state as a dict."""
-    if arm is None:
-        return {"connected": False, "mode": 0, "joint_positions": [0]*7,
-                "joint_velocities": [0]*7, "joint_torques": [0]*7,
-                "gripper_position": 0.0, "timestamp": 0.0}
-
-    state = arm.get_state() if simulate_mode else arm.get_state()
-    if state is None:
-        return {"connected": arm.is_connected, "mode": getattr(arm, 'mode', 0),
-                "joint_positions": [0]*7, "joint_velocities": [0]*7,
-                "joint_torques": [0]*7, "gripper_position": 0.0, "timestamp": 0.0}
-
-    return {
-        "connected": arm.is_connected,
-        "mode": getattr(arm, 'mode', 0),
-        "joint_positions": [round(float(x), 6) for x in state.joint_positions],
-        "joint_velocities": [round(float(x), 6) for x in state.joint_velocities],
-        "joint_torques": [round(float(x), 6) for x in state.joint_torques],
-        "gripper_position": round(float(state.gripper_position), 6),
-        "timestamp": round(float(state.timestamp), 4),
-    }
-
-
-async def broadcast_state():
-    """Background task: stream state to all WebSocket clients at ~20Hz."""
-    while True:
-        if ws_clients:
-            data = json.dumps(get_state_dict())
-            dead = set()
-            for ws in ws_clients:
-                try:
-                    await ws.send_text(data)
-                except Exception:
-                    dead.add(ws)
-            ws_clients -= dead
-        await asyncio.sleep(0.05)
-
-
-# ---------------------------------------------------------------------------
-# App lifecycle
+# Lifespan
 # ---------------------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global arm
-    if simulate_mode:
-        arm = SimulatedD1()
-        logger.info("Running in SIMULATE mode — no hardware")
+    if args.simulate:
+        arm = SimulatedArm()
+        action_log.add("SYSTEM", "Simulated arm initialized", "info")
+        logger.info("Running in SIMULATION mode")
     else:
-        arm = D1Connection()
-        if not arm.connect():
-            logger.error("Failed to connect to D1 arm! Starting in disconnected state.")
-    # Start broadcast task
-    task = asyncio.create_task(broadcast_state())
-    yield
-    task.cancel()
-    if arm:
-        arm.disconnect()
+        try:
+            project_root = str(Path(__file__).resolve().parent.parent)
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            from src.interface.d1_dds_connection import D1DDSConnection
+            arm = D1DDSConnection()
+            if arm.connect(interface_name=args.interface):
+                action_log.add("SYSTEM", f"DDS connected on {args.interface}", "info")
+            else:
+                action_log.add("SYSTEM", f"DDS connection FAILED on {args.interface}", "error")
+        except Exception as e:
+            action_log.add("SYSTEM", f"DDS init error: {e}", "error")
+            logger.exception("Failed to initialize DDS connection")
+            arm = None
 
+    yield
+
+    if arm is not None:
+        try:
+            arm.disconnect()
+        except Exception:
+            pass
 
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="th3cl4w", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="th3cl4w", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Serve static files
-STATIC_DIR = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+# ---------------------------------------------------------------------------
+# Connected WebSocket clients for command acks
+# ---------------------------------------------------------------------------
+ws_clients: list[WebSocket] = []
+
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
+
+class SetJointRequest(BaseModel):
+    id: int = Field(ge=0, le=5)
+    angle: float
+
+class SetAllJointsRequest(BaseModel):
+    angles: List[float] = Field(min_length=6, max_length=6)
+
+class SetGripperRequest(BaseModel):
+    position: float = Field(ge=0.0, le=65.0)
+
+class RawCommandRequest(BaseModel):
+    payload: dict
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_prev_state: Dict[str, Any] = {}
+
+def get_arm_state() -> Dict[str, Any]:
+    global _prev_state
+    if arm is None:
+        return {"connected": False, "joints": [0.0]*6, "gripper": 0.0, "power": False, "enabled": False, "error": 0, "timestamp": time.time()}
+
+    angles_raw = arm.get_joint_angles()
+    angles = [round(float(a), 2) for a in angles_raw] if angles_raw is not None else [0.0]*6
+    # Ensure exactly 6 joints
+    angles = angles[:6] if len(angles) >= 6 else angles + [0.0] * (6 - len(angles))
+
+    gripper = 0.0
+    if hasattr(arm, "get_gripper_position"):
+        gripper = round(float(arm.get_gripper_position()), 2)
+
+    status = arm.get_status() or {}
+
+    state = {
+        "connected": arm.is_connected,
+        "joints": angles,
+        "gripper": gripper,
+        "power": bool(status.get("power_status", 0)),
+        "enabled": bool(status.get("enable_status", 0)),
+        "error": status.get("error_status", 0),
+        "timestamp": time.time(),
+    }
+
+    # Log state transitions
+    if _prev_state:
+        if _prev_state.get("power") != state["power"]:
+            action_log.add("STATE", f"Power: {'ON' if state['power'] else 'OFF'}", "warning")
+        if _prev_state.get("enabled") != state["enabled"]:
+            action_log.add("STATE", f"Motors: {'ENABLED' if state['enabled'] else 'DISABLED'}", "warning")
+        if _prev_state.get("error") != state["error"] and state["error"]:
+            action_log.add("STATE", f"Error changed: {state['error']}", "error")
+    _prev_state = state.copy()
+
+    return state
 
 
-@app.get("/")
-async def index():
-    return FileResponse(str(STATIC_DIR / "index.html"))
+def cmd_response(success: bool, action: str, extra: str = "") -> JSONResponse:
+    state = get_arm_state()
+    level = "info" if success else "error"
+    detail = f"{'OK' if success else 'FAILED'}"
+    if extra:
+        detail += f" — {extra}"
+    action_log.add(action, detail, level)
+    return JSONResponse({"ok": success, "action": action, "state": state})
 
+
+async def broadcast_ack(action: str, success: bool):
+    """Send command acknowledgment to all connected WS clients."""
+    msg = {"type": "ack", "action": action, "ok": success, "timestamp": time.time()}
+    dead = []
+    for ws in ws_clients:
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        ws_clients.remove(ws)
+
+# ---------------------------------------------------------------------------
+# REST endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/cameras")
+async def api_cameras():
+    """Proxy camera status from the camera server."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get("http://localhost:8081/status")
+            return resp.json()
+    except Exception:
+        return {"error": "Camera server unavailable", "0": {"connected": False}, "1": {"connected": False}}
 
 @app.get("/api/state")
 async def api_state():
-    return get_state_dict()
+    return get_arm_state()
 
+@app.get("/api/log")
+async def api_log():
+    return {"entries": action_log.last(50)}
 
-@app.post("/api/command")
-async def api_command(cmd: CommandRequest):
+@app.post("/api/command/enable")
+async def cmd_enable():
     if arm is None:
-        return {"ok": False, "error": "Not connected"}
+        return cmd_response(False, "ENABLE", "No arm connected")
+    state = arm.get_status() or {}
+    if not state.get("power_status"):
+        action_log.add("ENABLE", "REJECTED — power is off, power on first", "error")
+        return JSONResponse({"ok": False, "action": "ENABLE", "error": "Power must be on before enabling", "state": get_arm_state()})
+    ok = arm.enable_motors()
+    resp = cmd_response(ok, "ENABLE")
+    await broadcast_ack("ENABLE", ok)
+    return resp
 
-    d1cmd = D1Command(
-        mode=cmd.mode,
-        joint_positions=np.array(cmd.joint_positions) if cmd.joint_positions else None,
-        joint_velocities=np.array(cmd.joint_velocities) if cmd.joint_velocities else None,
-        joint_torques=np.array(cmd.joint_torques) if cmd.joint_torques else None,
-        gripper_position=cmd.gripper_position,
-    )
+@app.post("/api/command/disable")
+async def cmd_disable():
+    ok = arm.disable_motors() if arm else False
+    resp = cmd_response(ok, "DISABLE")
+    await broadcast_ack("DISABLE", ok)
+    return resp
 
-    if simulate_mode:
-        ok = arm.send_command(d1cmd)
-    else:
-        ok = arm.send_command(d1cmd)
+@app.post("/api/command/power-on")
+async def cmd_power_on():
+    ok = arm.power_on() if arm else False
+    resp = cmd_response(ok, "POWER_ON")
+    await broadcast_ack("POWER_ON", ok)
+    return resp
 
-    return {"ok": ok}
+@app.post("/api/command/power-off")
+async def cmd_power_off():
+    ok = arm.power_off() if arm else False
+    resp = cmd_response(ok, "POWER_OFF")
+    await broadcast_ack("POWER_OFF", ok)
+    return resp
 
+@app.post("/api/command/reset")
+async def cmd_reset():
+    ok = arm.reset_to_zero() if arm else False
+    resp = cmd_response(ok, "RESET")
+    await broadcast_ack("RESET", ok)
+    return resp
 
-@app.post("/api/stop")
-async def api_stop():
-    if arm is None:
-        return {"ok": False, "error": "Not connected"}
+@app.post("/api/command/set-joint")
+async def cmd_set_joint(req: SetJointRequest):
+    action_log.add("SET_JOINT", f"Request: J{req.id} -> {req.angle}°", "info")
+    lo, hi = JOINT_LIMITS_DEG.get(req.id, (-135, 135))
+    if not (lo <= req.angle <= hi):
+        action_log.add("SET_JOINT", f"REJECTED — J{req.id} angle {req.angle}° outside [{lo}, {hi}]", "error")
+        return JSONResponse({"ok": False, "action": "SET_JOINT", "error": f"Angle {req.angle} out of range [{lo}, {hi}]", "state": get_arm_state()}, status_code=400)
+    ok = arm.set_joint(req.id, req.angle) if arm else False
+    resp = cmd_response(ok, "SET_JOINT", f"J{req.id} = {req.angle}°")
+    await broadcast_ack("SET_JOINT", ok)
+    return resp
 
-    if simulate_mode:
-        arm.stop()
-        return {"ok": True}
-    else:
-        # Send idle command
-        cmd = D1Command(mode=0)
-        return {"ok": arm.send_command(cmd)}
+@app.post("/api/command/set-all-joints")
+async def cmd_set_all_joints(req: SetAllJointsRequest):
+    action_log.add("SET_ALL_JOINTS", f"Request: {[round(a,1) for a in req.angles]}", "info")
+    for i, a in enumerate(req.angles):
+        lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
+        if not (lo <= a <= hi):
+            action_log.add("SET_ALL_JOINTS", f"REJECTED — J{i} angle {a}° outside [{lo}, {hi}]", "error")
+            return JSONResponse({"ok": False, "action": "SET_ALL_JOINTS", "error": f"J{i} angle {a} out of range [{lo}, {hi}]", "state": get_arm_state()}, status_code=400)
+    ok = arm.set_all_joints(req.angles) if arm else False
+    resp = cmd_response(ok, "SET_ALL_JOINTS")
+    await broadcast_ack("SET_ALL_JOINTS", ok)
+    return resp
 
+@app.post("/api/command/set-gripper")
+async def cmd_set_gripper(req: SetGripperRequest):
+    action_log.add("SET_GRIPPER", f"Request: {req.position} mm", "info")
+    ok = False
+    if arm and hasattr(arm, "set_gripper"):
+        ok = arm.set_gripper(req.position)
+    resp = cmd_response(ok, "SET_GRIPPER", f"{req.position} mm")
+    await broadcast_ack("SET_GRIPPER", ok)
+    return resp
 
-@app.post("/api/home")
-async def api_home():
-    if arm is None:
-        return {"ok": False, "error": "Not connected"}
+@app.post("/api/command/stop")
+async def cmd_stop():
+    """Emergency stop: disable motors AND power off."""
+    action_log.add("EMERGENCY_STOP", "⚠ TRIGGERED", "error")
+    ok1 = arm.disable_motors() if arm else False
+    ok2 = arm.power_off() if arm else False
+    ok = ok1 and ok2
+    resp = cmd_response(ok, "EMERGENCY_STOP", f"disable={'OK' if ok1 else 'FAIL'} power_off={'OK' if ok2 else 'FAIL'}")
+    await broadcast_ack("EMERGENCY_STOP", ok)
+    return resp
 
-    if simulate_mode:
-        arm.home()
-        arm.mode = 1
-        return {"ok": True}
-    else:
-        cmd = D1Command(
-            mode=1,
-            joint_positions=np.zeros(NUM_JOINTS),
-            gripper_position=0.0,
-        )
-        return {"ok": arm.send_command(cmd)}
-
+# ---------------------------------------------------------------------------
+# WebSocket — stream state at 10Hz
+# ---------------------------------------------------------------------------
 
 @app.websocket("/ws/state")
-async def ws_state(websocket: WebSocket):
-    await websocket.accept()
-    ws_clients.add(websocket)
+async def ws_state(ws: WebSocket):
+    await ws.accept()
+    ws_clients.append(ws)
+    action_log.add("WS", "Client connected", "info")
     try:
         while True:
-            # Keep connection alive; handle incoming messages (e.g. commands)
-            data = await websocket.receive_text()
-            try:
-                msg = json.loads(data)
-                if msg.get("type") == "command":
-                    cmd = CommandRequest(**msg.get("data", {}))
-                    d1cmd = D1Command(
-                        mode=cmd.mode,
-                        joint_positions=np.array(cmd.joint_positions) if cmd.joint_positions else None,
-                        joint_velocities=np.array(cmd.joint_velocities) if cmd.joint_velocities else None,
-                        joint_torques=np.array(cmd.joint_torques) if cmd.joint_torques else None,
-                        gripper_position=cmd.gripper_position,
-                    )
-                    arm.send_command(d1cmd)
-            except Exception:
-                pass
+            state = get_arm_state()
+            state["log"] = action_log.last(30)
+            await ws.send_json(state)
+            await asyncio.sleep(0.1)
     except WebSocketDisconnect:
+        action_log.add("WS", "Client disconnected", "info")
+    except Exception:
         pass
     finally:
-        ws_clients.discard(websocket)
+        if ws in ws_clients:
+            ws_clients.remove(ws)
 
+# ---------------------------------------------------------------------------
+# Static files
+# ---------------------------------------------------------------------------
+
+static_dir = Path(__file__).parent / "static"
+static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    global simulate_mode
-    parser = argparse.ArgumentParser(description="th3cl4w Web Control Server")
-    parser.add_argument("--simulate", action="store_true", help="Run without hardware")
-    parser.add_argument("--host", default="0.0.0.0", help="Bind host")
-    parser.add_argument("--port", type=int, default=7777, help="Bind port")
-    args = parser.parse_args()
-
-    simulate_mode = args.simulate
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    logger.info("Starting th3cl4w web server on %s:%d (simulate=%s)", args.host, args.port, args.simulate)
-
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
-
-
 if __name__ == "__main__":
-    main()
+    logger.info("Starting th3cl4w web panel on %s:%d (simulate=%s)", args.host, args.port, args.simulate)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
