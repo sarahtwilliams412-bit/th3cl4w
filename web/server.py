@@ -11,8 +11,12 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
+
+# Hint OpenCV to prefer GPU device for OpenCL acceleration (RX 580 eGPU)
+os.environ.setdefault("OPENCV_OPENCL_DEVICE", ":GPU:0")
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -116,6 +120,13 @@ try:
     _HAS_ASCII = True
 except ImportError:
     _HAS_ASCII = False
+
+try:
+    from src.vision.gpu_preprocess import decode_jpeg_gpu, gpu_status as _gpu_status
+
+    _HAS_GPU_PREPROCESS = True
+except ImportError:
+    _HAS_GPU_PREPROCESS = False
 
 _web_dir = str(Path(__file__).resolve().parent)
 if _web_dir not in sys.path:
@@ -310,6 +321,23 @@ arm3d_detector: Any = None  # JointDetector for arm3d pipeline
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global arm, smoother, task_planner
+
+    # Initialize OpenCL GPU acceleration for OpenCV
+    try:
+        import cv2
+        if cv2.ocl.haveOpenCL():
+            cv2.ocl.setUseOpenCL(True)
+            # Log device info
+            dev = cv2.ocl.Device.getDefault()
+            if dev is not None and dev.available():
+                logger.info("OpenCL GPU acceleration enabled: %s (%s)", dev.name(), dev.vendorName())
+            else:
+                logger.info("OpenCL available but no device detected; falling back to CPU")
+        else:
+            logger.info("OpenCL not available; OpenCV will use CPU")
+    except Exception as e:
+        logger.warning("OpenCL init failed (%s); OpenCV will use CPU", e)
+
     # Start telemetry collector
     if _HAS_TELEMETRY:
         tc = get_collector()
@@ -2425,7 +2453,15 @@ async def ws_ascii(ws: WebSocket):
 
             # Convert to ASCII
             try:
-                if color:
+                if _HAS_GPU_PREPROCESS:
+                    gpu_frame = decode_jpeg_gpu(jpeg_bytes)
+                    if color:
+                        result = converter.frame_to_color_data(gpu_frame)
+                        await ws.send_json({"type": "frame", **result})
+                    else:
+                        text = converter.frame_to_ascii(gpu_frame)
+                        lines = text.split("\n")
+                elif color:
                     result = converter.decode_jpeg_to_color_data(jpeg_bytes)
                     await ws.send_json({"type": "frame", **result})
                 else:
@@ -2517,7 +2553,13 @@ async def ws_realworld3d(ws: WebSocket):
                 await asyncio.sleep(0.5)
                 continue
 
-            # Capture background on first frames
+            # Wrap frames as UMat for GPU-accelerated OpenCV (OpenCL)
+            if f0 is not None:
+                f0 = cv2.UMat(f0)
+            if f1 is not None:
+                f1 = cv2.UMat(f1)
+
+            # Capture background on first frames (stored as UMat for GPU ops)
             if bg_frame0 is None and f0 is not None:
                 bg_frame0 = cv2.GaussianBlur(cv2.cvtColor(f0, cv2.COLOR_BGR2GRAY), (21, 21), 0)
             if bg_frame1 is None and f1 is not None:
@@ -2546,7 +2588,7 @@ async def ws_realworld3d(ws: WebSocket):
             mask0 = segment_foreground(f0, bg_frame0) if f0 is not None else None  # front: X-Y
             mask1 = segment_foreground(f1, bg_frame1) if f1 is not None else None  # top: X-Z
 
-            # Resize masks to grid dimensions
+            # Resize masks to grid dimensions (still on GPU as UMat)
             if mask0 is not None:
                 sil_front = cv2.resize(mask0, (GRID_W, GRID_H), interpolation=cv2.INTER_AREA)
             else:
@@ -2555,6 +2597,16 @@ async def ws_realworld3d(ws: WebSocket):
                 sil_top = cv2.resize(mask1, (GRID_W, GRID_D), interpolation=cv2.INTER_AREA)
             else:
                 sil_top = np.ones((GRID_D, GRID_W), dtype=np.uint8) * 255
+
+            # Also resize color frames on GPU before transferring to CPU
+            f0_small_u = cv2.resize(f0, (GRID_W, GRID_H), interpolation=cv2.INTER_AREA) if f0 is not None else None
+            f1_small_u = cv2.resize(f1, (GRID_W, GRID_D), interpolation=cv2.INTER_AREA) if f1 is not None else None
+
+            # Transfer results from GPU to CPU for voxel carving (array indexing)
+            if isinstance(sil_front, cv2.UMat):
+                sil_front = sil_front.get()
+            if isinstance(sil_top, cv2.UMat):
+                sil_top = sil_top.get()
 
             # Threshold to binary
             sil_front = (sil_front > 127).astype(np.uint8)
@@ -2566,9 +2618,8 @@ async def ws_realworld3d(ws: WebSocket):
             # A voxel (x, y, z) is occupied if sil_front[GRID_H-1-y, x] AND sil_top[z, x]
 
             voxels = []
-            # Also sample color from camera frames
-            f0_small = cv2.resize(f0, (GRID_W, GRID_H), interpolation=cv2.INTER_AREA) if f0 is not None else None
-            f1_small = cv2.resize(f1, (GRID_W, GRID_D), interpolation=cv2.INTER_AREA) if f1 is not None else None
+            f0_small = f0_small_u.get() if f0_small_u is not None else None
+            f1_small = f1_small_u.get() if f1_small_u is not None else None
 
             for x in range(GRID_W):
                 for y in range(GRID_H):
