@@ -100,17 +100,25 @@ class DualCameraArmTracker:
             ColorRange("redbull", np.array([160, 120, 80]), np.array([180, 255, 255])),
         ]
         self._detectors["redbull"] = ObjectDetector(
-            color_ranges=redbull_colors, min_area=800, max_area=150000, morph_iterations=2,
+            color_ranges=redbull_colors,
+            min_area=800,
+            max_area=150000,
+            morph_iterations=2,
         )
         self._detectors["red"] = ObjectDetector(
             color_ranges=[COLOR_PRESETS["red_low"], COLOR_PRESETS["red_high"]],
-            min_area=500, max_area=150000,
+            min_area=500,
+            max_area=150000,
         )
         self._detectors["blue"] = ObjectDetector(
-            color_ranges=[COLOR_PRESETS["blue"]], min_area=500, max_area=150000,
+            color_ranges=[COLOR_PRESETS["blue"]],
+            min_area=500,
+            max_area=150000,
         )
         self._detectors["green"] = ObjectDetector(
-            color_ranges=[COLOR_PRESETS["green"]], min_area=500, max_area=150000,
+            color_ranges=[COLOR_PRESETS["green"]],
+            min_area=500,
+            max_area=150000,
         )
         self._detectors["all"] = ObjectDetector(min_area=500)
         self._active_labels = target_labels
@@ -126,21 +134,15 @@ class DualCameraArmTracker:
         if cal_cam1 is not None:
             self.cal_cam1 = cal_cam1
 
-    def _estimate_xy_from_overhead(
-        self, det: DetectedObject
-    ) -> Optional[np.ndarray]:
+    def _estimate_xy_from_overhead(self, det: DetectedObject) -> Optional[np.ndarray]:
         """Get X/Y workspace position from overhead camera detection."""
         if self.cal_cam1 is None or self.cal_cam1.cam_to_workspace is None:
             return None
         cx, cy = det.centroid_2d
-        pos = self.cal_cam1.pixel_to_workspace(
-            float(cx), float(cy), known_z=self.table_height_mm
-        )
+        pos = self.cal_cam1.pixel_to_workspace(float(cx), float(cy), known_z=self.table_height_mm)
         return pos
 
-    def _estimate_z_from_front(
-        self, det: DetectedObject, default_depth_mm: float = 400.0
-    ) -> float:
+    def _estimate_z_from_front(self, det: DetectedObject, default_depth_mm: float = 400.0) -> float:
         """Estimate object height (Z) from front camera vertical position.
 
         Objects higher in the image (smaller v) are higher in the workspace.
@@ -205,28 +207,32 @@ class DualCameraArmTracker:
                 used_cam0.add(best_j)
                 used_cam1.add(i)
                 pos = np.array([xy_pos[0], xy_pos[1], z])
-                tracked.append(TrackedObject(
-                    label=d1.label,
-                    position_mm=pos,
-                    confidence=min(1.0, (d0.confidence + d1.confidence) / 2 * 1.3),
-                    bbox_cam0=d0.bbox,
-                    bbox_cam1=d1.bbox,
-                    centroid_cam0=d0.centroid_2d,
-                    centroid_cam1=d1.centroid_2d,
-                    source="both",
-                ))
+                tracked.append(
+                    TrackedObject(
+                        label=d1.label,
+                        position_mm=pos,
+                        confidence=min(1.0, (d0.confidence + d1.confidence) / 2 * 1.3),
+                        bbox_cam0=d0.bbox,
+                        bbox_cam1=d1.bbox,
+                        centroid_cam0=d0.centroid_2d,
+                        centroid_cam1=d1.centroid_2d,
+                        source="both",
+                    )
+                )
             else:
                 # Only overhead camera saw it — assume on table
                 used_cam1.add(i)
                 pos = np.array([xy_pos[0], xy_pos[1], self.table_height_mm])
-                tracked.append(TrackedObject(
-                    label=d1.label,
-                    position_mm=pos,
-                    confidence=d1.confidence * 0.7,
-                    bbox_cam1=d1.bbox,
-                    centroid_cam1=d1.centroid_2d,
-                    source="cam1",
-                ))
+                tracked.append(
+                    TrackedObject(
+                        label=d1.label,
+                        position_mm=pos,
+                        confidence=d1.confidence * 0.7,
+                        bbox_cam1=d1.bbox,
+                        centroid_cam1=d1.centroid_2d,
+                        source="cam1",
+                    )
+                )
 
         # Objects only seen in front camera
         for j, d0 in enumerate(dets_cam0):
@@ -234,14 +240,16 @@ class DualCameraArmTracker:
                 continue
             z = self._estimate_z_from_front(d0)
             pos = np.array([0.0, 0.0, z])  # X/Y unknown
-            tracked.append(TrackedObject(
-                label=d0.label,
-                position_mm=pos,
-                confidence=d0.confidence * 0.5,
-                bbox_cam0=d0.bbox,
-                centroid_cam0=d0.centroid_2d,
-                source="cam0",
-            ))
+            tracked.append(
+                TrackedObject(
+                    label=d0.label,
+                    position_mm=pos,
+                    confidence=d0.confidence * 0.5,
+                    bbox_cam0=d0.bbox,
+                    centroid_cam0=d0.centroid_2d,
+                    source="cam0",
+                )
+            )
 
         return tracked
 
@@ -301,7 +309,10 @@ class DualCameraArmTracker:
         return result
 
     def _annotate_frame(
-        self, frame: np.ndarray, objects: list[TrackedObject], cam: str,
+        self,
+        frame: np.ndarray,
+        objects: list[TrackedObject],
+        cam: str,
     ) -> np.ndarray:
         """Draw tracking annotations on a camera frame."""
         for obj in objects:
@@ -318,18 +329,36 @@ class DualCameraArmTracker:
             pos = obj.position_mm
             label = f"{obj.label} ({pos[0]:.0f},{pos[1]:.0f},{pos[2]:.0f})mm"
             cv2.putText(
-                frame, label, (x, y - 10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
+                frame,
+                label,
+                (x, y - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                color,
+                1,
+                cv2.LINE_AA,
             )
             info = f"src={obj.source} conf={obj.confidence:.2f}"
             cv2.putText(
-                frame, info, (x, y + h + 15),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 200, 0), 1, cv2.LINE_AA,
+                frame,
+                info,
+                (x, y + h + 15),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.35,
+                (255, 200, 0),
+                1,
+                cv2.LINE_AA,
             )
 
         cv2.putText(
-            frame, cam.upper(), (10, 25),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA,
+            frame,
+            cam.upper(),
+            (10, 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
         )
         return frame
 

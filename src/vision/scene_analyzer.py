@@ -349,9 +349,7 @@ class SceneAnalyzer:
         """Create a readable identifier for an object."""
         return f"{obj.color} object #{index}"
 
-    def _compute_relationships(
-        self, objects: list[SceneObject]
-    ) -> list[ObjectRelationship]:
+    def _compute_relationships(self, objects: list[SceneObject]) -> list[ObjectRelationship]:
         """Compute pairwise spatial relationships between objects."""
         relationships = []
 
@@ -379,13 +377,9 @@ class SceneAnalyzer:
                 dy = obj_b.normalized_y - obj_a.normalized_y
                 if abs(dy) > 0.1:
                     if dy > 0:
-                        relationships.append(
-                            ObjectRelationship(id_a, SpatialRelation.ABOVE, id_b)
-                        )
+                        relationships.append(ObjectRelationship(id_a, SpatialRelation.ABOVE, id_b))
                     else:
-                        relationships.append(
-                            ObjectRelationship(id_a, SpatialRelation.BELOW, id_b)
-                        )
+                        relationships.append(ObjectRelationship(id_a, SpatialRelation.BELOW, id_b))
 
                 # Workspace distance relationship (if both have 3D positions)
                 if obj_a.centroid_3d is not None and obj_b.centroid_3d is not None:
@@ -399,15 +393,11 @@ class SceneAnalyzer:
                         if abs(dy_ws) > 50:
                             if dy_ws > 0:
                                 relationships.append(
-                                    ObjectRelationship(
-                                        id_a, SpatialRelation.IN_FRONT_OF, id_b
-                                    )
+                                    ObjectRelationship(id_a, SpatialRelation.IN_FRONT_OF, id_b)
                                 )
                             else:
                                 relationships.append(
-                                    ObjectRelationship(
-                                        id_a, SpatialRelation.BEHIND, id_b
-                                    )
+                                    ObjectRelationship(id_a, SpatialRelation.BEHIND, id_b)
                                 )
 
                 # Proximity (in normalized image space)
@@ -416,9 +406,7 @@ class SceneAnalyzer:
                     + (obj_a.normalized_y - obj_b.normalized_y) ** 2
                 )
                 if dist_2d < 0.15:
-                    relationships.append(
-                        ObjectRelationship(id_a, SpatialRelation.NEAR, id_b)
-                    )
+                    relationships.append(ObjectRelationship(id_a, SpatialRelation.NEAR, id_b))
 
         return relationships
 
@@ -454,21 +442,16 @@ class SceneAnalyzer:
                 x, y, z = obj.centroid_3d
                 pos_str = f" at ({x:.0f}, {y:.0f}, {z:.0f})mm"
             parts.append(
-                f"  {self._object_id(obj, i)}: {obj.region}, "
-                f"{obj.size_category}{pos_str}"
+                f"  {self._object_id(obj, i)}: {obj.region}, " f"{obj.size_category}{pos_str}"
             )
 
         # Key relationships
         for rel in relationships[:5]:
-            parts.append(
-                f"  {rel.subject} is {rel.relation.value.replace('_', ' ')} {rel.target}"
-            )
+            parts.append(f"  {rel.subject} is {rel.relation.value.replace('_', ' ')} {rel.target}")
 
         return "\n".join(parts)
 
-    def annotate_frame(
-        self, image: np.ndarray, scene: SceneDescription
-    ) -> np.ndarray:
+    def annotate_frame(self, image: np.ndarray, scene: SceneDescription) -> np.ndarray:
         """Draw scene analysis annotations on a frame (returns copy)."""
         vis = image.copy()
 

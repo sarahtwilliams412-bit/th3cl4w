@@ -216,13 +216,9 @@ class PickExecutor:
 
         # Phase 4: Collision check (optional)
         if workspace_mapper is not None and collision_preview is not None:
-            preview = collision_preview.preview_trajectory(
-                trajectory, workspace_mapper, step=3
-            )
+            preview = collision_preview.preview_trajectory(trajectory, workspace_mapper, step=3)
             if not preview.clear:
-                logger.warning(
-                    "Collision detected in pick trajectory: %s", preview.summary
-                )
+                logger.warning("Collision detected in pick trajectory: %s", preview.summary)
                 # Still return the plan but warn
                 collision_msg = f" (WARNING: {preview.summary})"
             else:
@@ -359,15 +355,11 @@ class PickExecutor:
 
             # Fallback: build manually with linear segments
             logger.info("Task planner pick_and_place returned %s, building manually", result.status)
-            return self._build_manual_trajectory(
-                current_angles_deg, current_gripper_mm, grasp_plan
-            )
+            return self._build_manual_trajectory(current_angles_deg, current_gripper_mm, grasp_plan)
 
         except Exception as e:
             logger.warning("pick_and_place failed: %s, building manual trajectory", e)
-            return self._build_manual_trajectory(
-                current_angles_deg, current_gripper_mm, grasp_plan
-            )
+            return self._build_manual_trajectory(current_angles_deg, current_gripper_mm, grasp_plan)
 
     def _build_manual_trajectory(
         self,

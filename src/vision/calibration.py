@@ -80,9 +80,7 @@ class CameraCalibration:
         ray = np.array([x, y, 1.0], dtype=np.float64)
         return ray / np.linalg.norm(ray)
 
-    def pixel_to_workspace(
-        self, u: float, v: float, known_z: float = 0.0
-    ) -> Optional[np.ndarray]:
+    def pixel_to_workspace(self, u: float, v: float, known_z: float = 0.0) -> Optional[np.ndarray]:
         """Project a pixel onto the workspace plane at known Z height.
 
         For overhead camera: projects onto table surface (Z=0 by default).
@@ -164,21 +162,16 @@ class IndependentCalibrator:
         self.square_size_mm = square_size_mm
 
         # Object points for the checkerboard (Z=0 plane)
-        self.obj_points = np.zeros(
-            (board_size[0] * board_size[1], 3), dtype=np.float32
-        )
+        self.obj_points = np.zeros((board_size[0] * board_size[1], 3), dtype=np.float32)
         self.obj_points[:, :2] = (
-            np.mgrid[0 : board_size[0], 0 : board_size[1]].T.reshape(-1, 2)
-            * square_size_mm
+            np.mgrid[0 : board_size[0], 0 : board_size[1]].T.reshape(-1, 2) * square_size_mm
         )
 
         # Collected calibration images per camera
         self._image_points: dict[str, list[np.ndarray]] = {}
         self._image_sizes: dict[str, tuple[int, int]] = {}
 
-    def find_corners(
-        self, image: np.ndarray, refine: bool = True
-    ) -> Optional[np.ndarray]:
+    def find_corners(self, image: np.ndarray, refine: bool = True) -> Optional[np.ndarray]:
         """Find checkerboard corners in an image.
 
         Returns Nx1x2 corner array or None if not found.
@@ -193,9 +186,7 @@ class IndependentCalibrator:
             corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
         return corners
 
-    def add_calibration_image(
-        self, camera_id: str, image: np.ndarray
-    ) -> Optional[np.ndarray]:
+    def add_calibration_image(self, camera_id: str, image: np.ndarray) -> Optional[np.ndarray]:
         """Add a calibration image for a camera. Returns corners if found."""
         corners = self.find_corners(image)
         if corners is None:
@@ -214,9 +205,7 @@ class IndependentCalibrator:
         )
         return corners
 
-    def calibrate_camera(
-        self, camera_id: str, min_images: int = 3
-    ) -> Optional[CameraCalibration]:
+    def calibrate_camera(self, camera_id: str, min_images: int = 3) -> Optional[CameraCalibration]:
         """Compute intrinsics and distortion for a camera.
 
         Needs at least min_images checkerboard images.
@@ -224,17 +213,13 @@ class IndependentCalibrator:
         """
         pts = self._image_points.get(camera_id, [])
         if len(pts) < min_images:
-            logger.error(
-                "Need %d images for %s, have %d", min_images, camera_id, len(pts)
-            )
+            logger.error("Need %d images for %s, have %d", min_images, camera_id, len(pts))
             return None
 
         image_size = self._image_sizes[camera_id]
         obj_pts = [self.obj_points] * len(pts)
 
-        rms, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
-            obj_pts, pts, image_size, None, None
-        )
+        rms, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(obj_pts, pts, image_size, None, None)
 
         cal = CameraCalibration(
             camera_id=camera_id,
