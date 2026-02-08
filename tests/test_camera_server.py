@@ -1,4 +1,7 @@
-"""Tests for th3cl4w camera streaming server."""
+"""Tests for th3cl4w camera streaming server.
+
+Requires opencv-python (cv2) — skipped if not installed.
+"""
 
 import json
 import threading
@@ -8,6 +11,9 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import numpy as np
 import pytest
+
+# Skip entire module if cv2 is not available (camera server needs real cv2)
+pytest.importorskip("cv2", reason="opencv-python (cv2) not installed")
 
 import sys
 from pathlib import Path
