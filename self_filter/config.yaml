@@ -1,0 +1,36 @@
+# Self-Filter Configuration
+
+d1_connection:
+  ip: "192.168.123.100"
+  port: 8082
+  protocol: "udp"           # or "unitree_sdk2" if available
+  poll_rate_hz: 10
+  timeout_ms: 100
+
+# DH parameters for the Unitree D1 arm (7-DOF: 6 arm + 1 gripper)
+# Using existing project DH parameters from src/kinematics/kinematics.py
+# Format: [a_mm, alpha_rad, d_mm, theta_offset_rad]
+dh_parameters:
+  - [0,     -1.5708,  121.5,  0]       # J0: shoulder_yaw (base rotation)
+  - [0,      1.5708,    0,    0]       # J1: shoulder_pitch
+  - [0,     -1.5708,  208.5,  0]       # J2: shoulder_roll
+  - [0,      1.5708,    0,    0]       # J3: elbow_pitch
+  - [0,     -1.5708,  208.5,  0]       # J4: wrist_yaw
+  - [0,      1.5708,    0,    0]       # J5: wrist_pitch
+  - [0,      0,        113,   0]       # J6: wrist_roll / flange
+
+link_radii_mm:
+  - 40    # base housing
+  - 35    # upper arm link 1
+  - 30    # upper arm link 2
+  - 30    # forearm link 1
+  - 25    # forearm link 2
+  - 25    # wrist
+  - 20    # flange/gripper
+
+arm_safety_margin_mm: 15     # Inflate arm volume by this much
+obstacle_threshold: 0.3      # Voxels above this after subtraction = obstacle
+
+calibration_file: "calibration/calibration.json"
+zmq_input: "tcp://localhost:5556"
+zmq_output: "tcp://*:5557"
