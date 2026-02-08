@@ -4,6 +4,8 @@ from src.planning.motion_planner import MotionPlanner, Waypoint, Trajectory, Tra
 from src.planning.task_planner import TaskPlanner, TaskResult
 from src.planning.path_optimizer import PathOptimizer
 from src.planning.collision_preview import CollisionPreview, PreviewResult
+from src.planning.pick_executor import PickExecutor, PickResult, PickPhase
+from src.planning.vision_task_planner import VisionTaskPlanner, VisionTaskPlan, ActionType
 
 __all__ = [
     "MotionPlanner",
@@ -15,4 +17,10 @@ __all__ = [
     "PathOptimizer",
     "CollisionPreview",
     "PreviewResult",
+    "PickExecutor",
+    "PickResult",
+    "PickPhase",
+    "VisionTaskPlanner",
+    "VisionTaskPlan",
+    "ActionType",
 ]

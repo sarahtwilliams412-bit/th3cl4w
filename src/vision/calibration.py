@@ -1,12 +1,17 @@
 """
-Stereo camera calibration using checkerboard patterns.
+Independent Camera Calibrator — Calibrates each camera separately.
 
-Captures image pairs, finds chessboard corners, calibrates each camera
-individually, then performs stereo calibration to compute rectification maps.
+Each camera gets its own intrinsics, distortion coefficients, and
+camera-to-workspace extrinsic transform. No stereo pair needed.
+
+cam0 (front/side): Provides height (Z) information via vertical checkerboard.
+cam1 (overhead/top-down): Provides X/Y workspace position via flat checkerboard.
 """
 
 import json
 import logging
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -15,226 +20,308 @@ import numpy as np
 
 logger = logging.getLogger("th3cl4w.vision.calibration")
 
+# Default checkerboard: 15/16" = 23.8125mm squares
+DEFAULT_SQUARE_SIZE_MM = 23.8
+DEFAULT_BOARD_SIZE = (7, 5)  # inner corners (cols, rows)
 
-class StereoCalibrator:
-    """Stereo camera calibration and rectification."""
 
-    def __init__(
-        self,
-        board_size: tuple[int, int] = (9, 6),
-        square_size: float = 25.0,  # mm
-        image_size: tuple[int, int] = (640, 480),
-    ):
-        self.board_size = board_size
-        self.square_size = square_size
-        self.image_size = image_size  # (width, height)
+@dataclass
+class CameraCalibration:
+    """Calibration data for a single camera."""
 
-        # Calibration results
-        self.camera_matrix_left: Optional[np.ndarray] = None
-        self.dist_coeffs_left: Optional[np.ndarray] = None
-        self.camera_matrix_right: Optional[np.ndarray] = None
-        self.dist_coeffs_right: Optional[np.ndarray] = None
-        self.R: Optional[np.ndarray] = None  # rotation between cameras
-        self.T: Optional[np.ndarray] = None  # translation between cameras
-        self.Q: Optional[np.ndarray] = None  # disparity-to-depth mapping matrix
-
-        # Rectification maps
-        self.map_left_x: Optional[np.ndarray] = None
-        self.map_left_y: Optional[np.ndarray] = None
-        self.map_right_x: Optional[np.ndarray] = None
-        self.map_right_y: Optional[np.ndarray] = None
-
-        self._calibrated = False
+    camera_id: str
+    image_size: tuple[int, int] = (640, 480)  # (width, height)
+    camera_matrix: Optional[np.ndarray] = None  # 3x3 intrinsic matrix
+    dist_coeffs: Optional[np.ndarray] = None  # distortion coefficients
+    rvecs: list[np.ndarray] = field(default_factory=list)  # rotation vectors per image
+    tvecs: list[np.ndarray] = field(default_factory=list)  # translation vectors per image
+    reprojection_error: float = -1.0
+    # Extrinsic: camera-to-workspace transform (4x4)
+    cam_to_workspace: Optional[np.ndarray] = None
 
     @property
     def is_calibrated(self) -> bool:
-        return self._calibrated
+        return self.camera_matrix is not None and self.dist_coeffs is not None
 
-    def _make_object_points(self) -> np.ndarray:
-        """Generate 3D object points for the checkerboard."""
-        objp = np.zeros((self.board_size[0] * self.board_size[1], 3), np.float32)
-        objp[:, :2] = np.mgrid[0 : self.board_size[0], 0 : self.board_size[1]].T.reshape(-1, 2)
-        objp *= self.square_size
-        return objp
+    @property
+    def fx(self) -> float:
+        return float(self.camera_matrix[0, 0]) if self.camera_matrix is not None else 500.0
 
-    def find_corners(self, image: np.ndarray) -> Optional[np.ndarray]:
-        """Find checkerboard corners in a grayscale or BGR image.
+    @property
+    def fy(self) -> float:
+        return float(self.camera_matrix[1, 1]) if self.camera_matrix is not None else 500.0
 
-        Returns refined corner positions or None if not found.
+    @property
+    def cx(self) -> float:
+        return float(self.camera_matrix[0, 2]) if self.camera_matrix is not None else 320.0
+
+    @property
+    def cy(self) -> float:
+        return float(self.camera_matrix[1, 2]) if self.camera_matrix is not None else 240.0
+
+    def undistort(self, image: np.ndarray) -> np.ndarray:
+        """Remove lens distortion from an image."""
+        if not self.is_calibrated:
+            return image
+        return cv2.undistort(image, self.camera_matrix, self.dist_coeffs)
+
+    def pixel_to_ray(self, u: float, v: float) -> np.ndarray:
+        """Convert pixel coordinates to a unit ray in camera frame.
+
+        Returns (3,) normalized direction vector in camera coordinates.
+        Camera frame: X right, Y down, Z forward.
         """
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        if self.camera_matrix is not None:
+            x = (u - self.cx) / self.fx
+            y = (v - self.cy) / self.fy
         else:
-            gray = image
+            x = (u - 320.0) / 500.0
+            y = (v - 240.0) / 500.0
+        ray = np.array([x, y, 1.0], dtype=np.float64)
+        return ray / np.linalg.norm(ray)
 
-        flags = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE
-        found, corners = cv2.findChessboardCorners(gray, self.board_size, flags)
-        if not found:
+    def pixel_to_workspace(
+        self, u: float, v: float, known_z: float = 0.0
+    ) -> Optional[np.ndarray]:
+        """Project a pixel onto the workspace plane at known Z height.
+
+        For overhead camera: projects onto table surface (Z=0 by default).
+        For front camera: projects onto a vertical plane at known depth.
+
+        Returns (3,) workspace coordinates in mm, or None if no extrinsic.
+        """
+        if self.cam_to_workspace is None:
             return None
 
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-        corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+        ray_cam = self.pixel_to_ray(u, v)
+        # Transform ray origin and direction to workspace frame
+        R = self.cam_to_workspace[:3, :3]
+        t = self.cam_to_workspace[:3, 3]
+
+        ray_ws = R @ ray_cam
+        origin_ws = t  # camera origin in workspace frame
+
+        # Intersect with Z = known_z plane
+        if abs(ray_ws[2]) < 1e-6:
+            return None  # ray parallel to plane
+        param = (known_z - origin_ws[2]) / ray_ws[2]
+        if param < 0:
+            return None  # behind camera
+        point = origin_ws + param * ray_ws
+        return point
+
+    def save(self, path: str):
+        """Save calibration to JSON file."""
+        data = {
+            "camera_id": self.camera_id,
+            "image_size": list(self.image_size),
+            "reprojection_error": self.reprojection_error,
+        }
+        if self.camera_matrix is not None:
+            data["camera_matrix"] = self.camera_matrix.tolist()
+        if self.dist_coeffs is not None:
+            data["dist_coeffs"] = self.dist_coeffs.tolist()
+        if self.cam_to_workspace is not None:
+            data["cam_to_workspace"] = self.cam_to_workspace.tolist()
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+        logger.info("Saved calibration for %s to %s", self.camera_id, path)
+
+    @classmethod
+    def load(cls, path: str) -> "CameraCalibration":
+        """Load calibration from JSON file."""
+        with open(path) as f:
+            data = json.load(f)
+        cal = cls(
+            camera_id=data["camera_id"],
+            image_size=tuple(data["image_size"]),
+            reprojection_error=data.get("reprojection_error", -1.0),
+        )
+        if "camera_matrix" in data:
+            cal.camera_matrix = np.array(data["camera_matrix"], dtype=np.float64)
+        if "dist_coeffs" in data:
+            cal.dist_coeffs = np.array(data["dist_coeffs"], dtype=np.float64)
+        if "cam_to_workspace" in data:
+            cal.cam_to_workspace = np.array(data["cam_to_workspace"], dtype=np.float64)
+        return cal
+
+
+class IndependentCalibrator:
+    """Calibrates cameras independently using checkerboard patterns.
+
+    Each camera is calibrated on its own — intrinsics + distortion from
+    multiple checkerboard views, then an extrinsic transform from a
+    known checkerboard placement in the workspace.
+    """
+
+    def __init__(
+        self,
+        board_size: tuple[int, int] = DEFAULT_BOARD_SIZE,
+        square_size_mm: float = DEFAULT_SQUARE_SIZE_MM,
+    ):
+        self.board_size = board_size
+        self.square_size_mm = square_size_mm
+
+        # Object points for the checkerboard (Z=0 plane)
+        self.obj_points = np.zeros(
+            (board_size[0] * board_size[1], 3), dtype=np.float32
+        )
+        self.obj_points[:, :2] = (
+            np.mgrid[0 : board_size[0], 0 : board_size[1]].T.reshape(-1, 2)
+            * square_size_mm
+        )
+
+        # Collected calibration images per camera
+        self._image_points: dict[str, list[np.ndarray]] = {}
+        self._image_sizes: dict[str, tuple[int, int]] = {}
+
+    def find_corners(
+        self, image: np.ndarray, refine: bool = True
+    ) -> Optional[np.ndarray]:
+        """Find checkerboard corners in an image.
+
+        Returns Nx1x2 corner array or None if not found.
+        """
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+        flags = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE
+        found, corners = cv2.findChessboardCorners(gray, self.board_size, flags)
+        if not found or corners is None:
+            return None
+        if refine:
+            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+            corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
         return corners
 
-    def calibrate(
-        self,
-        image_pairs: list[tuple[np.ndarray, np.ndarray]],
-    ) -> float:
-        """Run stereo calibration from a list of (left, right) image pairs.
+    def add_calibration_image(
+        self, camera_id: str, image: np.ndarray
+    ) -> Optional[np.ndarray]:
+        """Add a calibration image for a camera. Returns corners if found."""
+        corners = self.find_corners(image)
+        if corners is None:
+            logger.warning("No checkerboard found for %s", camera_id)
+            return None
 
-        Returns the stereo reprojection error.
-        Raises ValueError if fewer than 3 valid pairs are found.
+        if camera_id not in self._image_points:
+            self._image_points[camera_id] = []
+        self._image_points[camera_id].append(corners)
+        h, w = image.shape[:2]
+        self._image_sizes[camera_id] = (w, h)
+        logger.info(
+            "Added calibration image for %s (%d total)",
+            camera_id,
+            len(self._image_points[camera_id]),
+        )
+        return corners
+
+    def calibrate_camera(
+        self, camera_id: str, min_images: int = 3
+    ) -> Optional[CameraCalibration]:
+        """Compute intrinsics and distortion for a camera.
+
+        Needs at least min_images checkerboard images.
+        Returns CameraCalibration or None if insufficient data.
         """
-        objp = self._make_object_points()
-        obj_points: list[np.ndarray] = []
-        img_points_left: list[np.ndarray] = []
-        img_points_right: list[np.ndarray] = []
+        pts = self._image_points.get(camera_id, [])
+        if len(pts) < min_images:
+            logger.error(
+                "Need %d images for %s, have %d", min_images, camera_id, len(pts)
+            )
+            return None
 
-        for i, (left, right) in enumerate(image_pairs):
-            corners_l = self.find_corners(left)
-            corners_r = self.find_corners(right)
-            if corners_l is not None and corners_r is not None:
-                obj_points.append(objp)
-                img_points_left.append(corners_l)
-                img_points_right.append(corners_r)
-                logger.info("Pair %d: corners found", i)
-            else:
-                logger.warning(
-                    "Pair %d: corners not found (L=%s, R=%s)",
-                    i,
-                    corners_l is not None,
-                    corners_r is not None,
-                )
+        image_size = self._image_sizes[camera_id]
+        obj_pts = [self.obj_points] * len(pts)
 
-        if len(obj_points) < 3:
-            raise ValueError(f"Need at least 3 valid image pairs, got {len(obj_points)}")
-
-        logger.info("Calibrating with %d valid pairs...", len(obj_points))
-        h, w = self.image_size[1], self.image_size[0]
-
-        # Individual camera calibration
-        ret_l, self.camera_matrix_left, self.dist_coeffs_left, _, _ = cv2.calibrateCamera(
-            obj_points, img_points_left, (w, h), None, None
+        rms, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
+            obj_pts, pts, image_size, None, None
         )
-        ret_r, self.camera_matrix_right, self.dist_coeffs_right, _, _ = cv2.calibrateCamera(
-            obj_points, img_points_right, (w, h), None, None
+
+        cal = CameraCalibration(
+            camera_id=camera_id,
+            image_size=image_size,
+            camera_matrix=mtx,
+            dist_coeffs=dist,
+            rvecs=list(rvecs),
+            tvecs=list(tvecs),
+            reprojection_error=rms,
         )
-        logger.info("Individual calibration RMS: left=%.4f, right=%.4f", ret_l, ret_r)
-
-        # Stereo calibration
-        flags = cv2.CALIB_FIX_INTRINSIC
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-6)
-
-        (
+        logger.info(
+            "Calibrated %s: RMS=%.4f, fx=%.1f, fy=%.1f",
+            camera_id,
             rms,
-            self.camera_matrix_left,
-            self.dist_coeffs_left,
-            self.camera_matrix_right,
-            self.dist_coeffs_right,
-            self.R,
-            self.T,
-            E,
-            F,
-        ) = cv2.stereoCalibrate(
-            obj_points,
-            img_points_left,
-            img_points_right,
-            self.camera_matrix_left,
-            self.dist_coeffs_left,
-            self.camera_matrix_right,
-            self.dist_coeffs_right,
-            (w, h),
-            criteria=criteria,
-            flags=flags,
+            cal.fx,
+            cal.fy,
         )
+        return cal
 
-        logger.info("Stereo calibration RMS error: %.4f", rms)
+    def compute_extrinsic(
+        self,
+        cal: CameraCalibration,
+        image: np.ndarray,
+        workspace_origin_on_board: np.ndarray = None,
+        board_to_workspace: np.ndarray = None,
+    ) -> Optional[np.ndarray]:
+        """Compute camera-to-workspace transform from a single checkerboard image.
 
-        # Compute rectification maps
-        self._compute_rectification_maps()
-        self._calibrated = True
-        return rms
+        The checkerboard defines a local coordinate system. You can provide:
+        - board_to_workspace: 4x4 transform from board frame to workspace frame
+          (if the board is at a known position/orientation in the workspace)
 
-    def _compute_rectification_maps(self):
-        """Compute rectification transforms and projection matrices."""
-        h, w = self.image_size[1], self.image_size[0]
+        If neither is provided, the board frame IS the workspace frame.
 
-        R1, R2, P1, P2, self.Q, roi1, roi2 = cv2.stereoRectify(
-            self.camera_matrix_left,
-            self.dist_coeffs_left,
-            self.camera_matrix_right,
-            self.dist_coeffs_right,
-            (w, h),
-            self.R,
-            self.T,
-            alpha=0,
-            flags=cv2.CALIB_ZERO_DISPARITY,
-        )
-
-        self.map_left_x, self.map_left_y = cv2.initUndistortRectifyMap(
-            self.camera_matrix_left, self.dist_coeffs_left, R1, P1, (w, h), cv2.CV_32FC1
-        )
-        self.map_right_x, self.map_right_y = cv2.initUndistortRectifyMap(
-            self.camera_matrix_right, self.dist_coeffs_right, R2, P2, (w, h), cv2.CV_32FC1
-        )
-
-    def rectify(self, left: np.ndarray, right: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Apply rectification maps to a stereo image pair.
-
-        Raises RuntimeError if not calibrated.
+        Returns 4x4 cam_to_workspace transform, also stored in cal.cam_to_workspace.
         """
-        if not self._calibrated:
-            raise RuntimeError("Calibration required before rectification")
+        if not cal.is_calibrated:
+            return None
 
-        rect_left = cv2.remap(left, self.map_left_x, self.map_left_y, cv2.INTER_LINEAR)
-        rect_right = cv2.remap(right, self.map_right_x, self.map_right_y, cv2.INTER_LINEAR)
-        return rect_left, rect_right
+        corners = self.find_corners(image)
+        if corners is None:
+            logger.warning("No checkerboard found for extrinsic computation")
+            return None
 
-    def save(self, path: str | Path):
-        """Save calibration data to a .npz file."""
-        if not self._calibrated:
-            raise RuntimeError("Nothing to save — not calibrated")
-
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        np.savez(
-            str(path),
-            camera_matrix_left=self.camera_matrix_left,
-            dist_coeffs_left=self.dist_coeffs_left,
-            camera_matrix_right=self.camera_matrix_right,
-            dist_coeffs_right=self.dist_coeffs_right,
-            R=self.R,
-            T=self.T,
-            Q=self.Q,
-            map_left_x=self.map_left_x,
-            map_left_y=self.map_left_y,
-            map_right_x=self.map_right_x,
-            map_right_y=self.map_right_y,
-            image_size=np.array(self.image_size),
-            board_size=np.array(self.board_size),
-            square_size=np.array(self.square_size),
+        ok, rvec, tvec = cv2.solvePnP(
+            self.obj_points,
+            corners,
+            cal.camera_matrix,
+            cal.dist_coeffs,
         )
-        logger.info("Calibration saved to %s", path)
+        if not ok:
+            return None
 
-    def load(self, path: str | Path):
-        """Load calibration data from a .npz file."""
-        path = Path(path)
-        data = np.load(str(path))
+        # Camera-to-board transform
+        R_cam_to_board, _ = cv2.Rodrigues(rvec)
+        T_cam_to_board = np.eye(4, dtype=np.float64)
+        T_cam_to_board[:3, :3] = R_cam_to_board
+        T_cam_to_board[:3, 3] = tvec.flatten()
 
-        self.camera_matrix_left = data["camera_matrix_left"]
-        self.dist_coeffs_left = data["dist_coeffs_left"]
-        self.camera_matrix_right = data["camera_matrix_right"]
-        self.dist_coeffs_right = data["dist_coeffs_right"]
-        self.R = data["R"]
-        self.T = data["T"]
-        self.Q = data["Q"]
-        self.map_left_x = data["map_left_x"]
-        self.map_left_y = data["map_left_y"]
-        self.map_right_x = data["map_right_x"]
-        self.map_right_y = data["map_right_y"]
-        self.image_size = tuple(data["image_size"].tolist())
-        self.board_size = tuple(data["board_size"].tolist())
-        self.square_size = float(data["square_size"])
-        self._calibrated = True
-        logger.info("Calibration loaded from %s", path)
+        # Board-to-workspace (identity if not specified)
+        if board_to_workspace is None:
+            board_to_workspace = np.eye(4, dtype=np.float64)
+
+        # cam_to_workspace = board_to_workspace @ inv(T_cam_to_board)
+        # Actually: T_cam_to_board maps board points to camera frame
+        # So cam_to_workspace = board_to_workspace @ inv(T_cam_to_board) would be wrong
+        # T_cam_to_board: P_camera = R * P_board + t
+        # We want: P_workspace = board_to_workspace @ P_board
+        # And: P_board = R^T * (P_camera - t)
+        # So: P_workspace = board_to_workspace @ [R^T | -R^T*t] @ P_camera_hom
+        T_board_from_cam = np.eye(4, dtype=np.float64)
+        T_board_from_cam[:3, :3] = R_cam_to_board.T
+        T_board_from_cam[:3, 3] = -R_cam_to_board.T @ tvec.flatten()
+
+        cam_to_workspace = board_to_workspace @ T_board_from_cam
+
+        # Actually we want the inverse direction for pixel_to_workspace:
+        # We need to know where the camera is in workspace frame.
+        # cam_to_workspace here transforms camera-frame points to workspace.
+        # That's what we want.
+        cal.cam_to_workspace = cam_to_workspace
+        logger.info(
+            "Computed extrinsic for %s, camera at workspace pos: %s",
+            cal.camera_id,
+            [round(float(x), 1) for x in cam_to_workspace[:3, 3]],
+        )
+        return cam_to_workspace
+
+    def image_count(self, camera_id: str) -> int:
+        return len(self._image_points.get(camera_id, []))

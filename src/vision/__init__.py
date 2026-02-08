@@ -1,28 +1,40 @@
 """
-th3cl4w Vision Module — Stereo Vision + Workspace Mapping
+th3cl4w Vision Module — Independent Camera Views + Object Detection
 
-Provides stereo camera calibration, depth estimation, object detection,
-and bifocal workspace mapping for arm planning.
+Provides object detection, workspace mapping, dual-camera arm tracking,
+visual grasp planning, scene analysis, and claw position prediction.
+Each camera operates independently (no stereo pair).
 Requires opencv-python (cv2) which may not be installed in all environments.
 """
 
 try:
-    from .calibration import StereoCalibrator
-    from .stereo_depth import StereoDepthEstimator
     from .object_detection import ObjectDetector
     from .workspace_mapper import WorkspaceMapper
+    from .arm_tracker import DualCameraArmTracker, TrackedObject
+    from .grasp_planner import VisualGraspPlanner, GraspPlan
+    from .scene_analyzer import SceneAnalyzer, SceneDescription, SceneObject
     from .claw_position import ClawPositionPredictor
 except ImportError:
-    StereoCalibrator = None  # type: ignore[assignment,misc]
-    StereoDepthEstimator = None  # type: ignore[assignment,misc]
     ObjectDetector = None  # type: ignore[assignment,misc]
     WorkspaceMapper = None  # type: ignore[assignment,misc]
+    DualCameraArmTracker = None  # type: ignore[assignment,misc]
+    TrackedObject = None  # type: ignore[assignment,misc]
+    VisualGraspPlanner = None  # type: ignore[assignment,misc]
+    GraspPlan = None  # type: ignore[assignment,misc]
+    SceneAnalyzer = None  # type: ignore[assignment,misc]
+    SceneDescription = None  # type: ignore[assignment,misc]
+    SceneObject = None  # type: ignore[assignment,misc]
     ClawPositionPredictor = None  # type: ignore[assignment,misc]
 
 __all__ = [
-    "StereoCalibrator",
-    "StereoDepthEstimator",
     "ObjectDetector",
     "WorkspaceMapper",
+    "DualCameraArmTracker",
+    "TrackedObject",
+    "VisualGraspPlanner",
+    "GraspPlan",
+    "SceneAnalyzer",
+    "SceneDescription",
+    "SceneObject",
     "ClawPositionPredictor",
 ]
