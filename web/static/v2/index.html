@@ -283,6 +283,48 @@ body:not([data-connected="true"]) .conn-lost-banner{display:block}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
+/* === CLAW POSITION PREDICTION === */
+.claw-predict-section{border-left:3px solid var(--accent)}
+.claw-predict-section .panel-section-header{color:var(--accent)}
+.claw-predict-toggle{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.claw-toggle-switch{position:relative;width:36px;height:20px;background:var(--border);border-radius:10px;cursor:pointer;transition:background .2s;flex-shrink:0}
+.claw-toggle-switch.on{background:var(--accent)}
+.claw-toggle-switch::after{content:'';position:absolute;width:16px;height:16px;background:#fff;border-radius:50%;top:2px;left:2px;transition:transform .2s}
+.claw-toggle-switch.on::after{transform:translateX(16px)}
+.claw-toggle-label{font-family:var(--mono);font-size:10px;color:var(--text-dim)}
+.claw-toggle-label.on{color:var(--accent)}
+
+.claw-predict-readout{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:8px;font-family:var(--mono);font-size:10px;margin-bottom:6px;display:none}
+.claw-predict-readout.visible{display:block}
+.claw-row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(42,42,68,.2)}
+.claw-row:last-child{border-bottom:none}
+.claw-row-label{color:var(--text-dim);font-size:9px}
+.claw-row-val{font-weight:600}
+.claw-row-val.x{color:#e94560}
+.claw-row-val.y{color:#53d769}
+.claw-row-val.z{color:#4a90d9}
+.claw-row-val.err{color:var(--warning)}
+.claw-row-val.err.good{color:var(--success)}
+.claw-row-val.conf{color:var(--accent)}
+.claw-row-val.no-detect{color:var(--text-muted);font-weight:400;font-style:italic}
+
+.claw-status-line{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;color:var(--text-muted);margin-bottom:4px}
+.claw-status-dot{width:6px;height:6px;border-radius:50%;background:var(--text-muted)}
+.claw-status-dot.detecting{background:var(--success);box-shadow:0 0 4px var(--success);animation:claw-pulse 1.5s infinite}
+.claw-status-dot.searching{background:var(--warning);animation:claw-pulse 0.8s infinite}
+@keyframes claw-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+.claw-update-btn{width:100%;font-family:var(--mono);font-size:10px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface-raised);color:var(--text-dim);cursor:pointer;text-transform:uppercase;letter-spacing:1px;transition:all .15s}
+.claw-update-btn:hover:not(:disabled){background:var(--surface-hover);border-color:var(--accent);color:var(--text)}
+.claw-update-btn:disabled{opacity:.25;cursor:not-allowed}
+.claw-update-btn.running{border-color:var(--accent);color:var(--accent)}
+
+.claw-err-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px}
+.claw-err-fill{height:100%;border-radius:2px;transition:width .3s,background .3s}
+.claw-err-fill.good{background:var(--success)}
+.claw-err-fill.warn{background:var(--warning)}
+.claw-err-fill.bad{background:var(--danger)}
+
 @media(max-width:900px){
   .controls-grid{grid-template-columns:1fr;grid-template-rows:1fr auto auto}
   .right-panel{grid-column:1;grid-row:2;max-height:40vh;border-top:1px solid var(--border)}
@@ -436,6 +478,55 @@ body:not([data-connected="true"]) .conn-lost-banner{display:block}
           </div>
         </div>
 
+        <!-- Claw Position Prediction -->
+        <div class="panel-section claw-predict-section">
+          <div class="panel-section-header">🎯 Claw Position</div>
+          <div class="claw-predict-toggle">
+            <div class="claw-toggle-switch" id="clawToggle" title="Toggle claw position prediction"></div>
+            <span class="claw-toggle-label" id="clawToggleLabel">Position prediction OFF</span>
+          </div>
+          <div class="claw-status-line" id="clawStatusLine" style="display:none">
+            <div class="claw-status-dot" id="clawStatusDot"></div>
+            <span id="clawStatusText">Initializing...</span>
+          </div>
+          <div class="claw-predict-readout" id="clawReadout">
+            <div class="claw-row">
+              <span class="claw-row-label">Predicted</span>
+              <span>
+                <span class="claw-row-val x" id="clawPredX">—</span>
+                <span class="claw-row-val y" id="clawPredY">—</span>
+                <span class="claw-row-val z" id="clawPredZ">—</span>
+              </span>
+            </div>
+            <div class="claw-row">
+              <span class="claw-row-label">FK Computed</span>
+              <span>
+                <span class="claw-row-val x" id="clawFkX">—</span>
+                <span class="claw-row-val y" id="clawFkY">—</span>
+                <span class="claw-row-val z" id="clawFkZ">—</span>
+              </span>
+            </div>
+            <div class="claw-row">
+              <span class="claw-row-label">Error</span>
+              <span class="claw-row-val err" id="clawError">—</span>
+            </div>
+            <div class="claw-err-bar"><div class="claw-err-fill" id="clawErrFill"></div></div>
+            <div class="claw-row" style="margin-top:4px">
+              <span class="claw-row-label">Confidence</span>
+              <span class="claw-row-val conf" id="clawConf">—</span>
+            </div>
+            <div class="claw-row">
+              <span class="claw-row-label">Depth</span>
+              <span class="claw-row-val" id="clawDepth">—</span>
+            </div>
+            <div class="claw-row">
+              <span class="claw-row-label">Latency</span>
+              <span class="claw-row-val" id="clawLatency">—</span>
+            </div>
+          </div>
+          <button class="claw-update-btn" id="clawUpdateBtn" disabled>Predict Position</button>
+        </div>
+
         <!-- Advanced: Joint-space (collapsed) -->
         <div class="panel-section">
           <button class="advanced-toggle" id="advancedToggle">
@@ -522,6 +613,7 @@ body:not([data-connected="true"]) .conn-lost-banner{display:block}
     <div class="shortcut-row"><span class="shortcut-key">H</span><span class="shortcut-action">Home task</span></div>
     <div class="shortcut-row"><span class="shortcut-key">R</span><span class="shortcut-action">Ready task</span></div>
     <div class="shortcut-row"><span class="shortcut-key">Escape</span><span class="shortcut-action">Stop current task</span></div>
+    <div class="shortcut-row"><span class="shortcut-key">P</span><span class="shortcut-action">Toggle claw position prediction</span></div>
     <div class="shortcut-row"><span class="shortcut-key">C</span><span class="shortcut-action">Toggle cameras</span></div>
     <div class="shortcut-row"><span class="shortcut-key">L</span><span class="shortcut-action">Toggle log</span></div>
     <div class="shortcut-row"><span class="shortcut-key">?</span><span class="shortcut-action">Show this overlay</span></div>
@@ -1213,6 +1305,9 @@ function connectWS() {
       lastStateTs = now;
       wsUpdateCount++;
       if(!armSynced) { armSynced=true; logLocal('SYNC','First state received','info'); }
+
+      // Update claw prediction from streamed state
+      if (data.claw_prediction) updateClawFromState(data);
     } catch(err) {}
   };
 }
@@ -1495,10 +1590,185 @@ document.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase()==='r'&&armState.enabled) { runTask('ready'); return; }
   if (e.key==='Escape') { runTask('stop'); return; }
 
+  // Claw prediction toggle
+  if (e.key.toLowerCase()==='p') { document.getElementById('clawToggle').click(); return; }
+
   // Drawers
   if (e.key.toLowerCase()==='c') { document.querySelector('[data-drawer="cameras"]').click(); return; }
   if (e.key.toLowerCase()==='l') { document.querySelector('.drawer-tab[data-drawer="log"]').click(); return; }
 });
+
+// ============================================================
+// CLAW POSITION PREDICTION
+// ============================================================
+let clawPredictEnabled = false;
+let clawPredictPolling = false;
+let clawPollTimer = null;
+const CLAW_POLL_INTERVAL = 500; // ms between auto-updates when enabled
+
+const clawToggle = document.getElementById('clawToggle');
+const clawToggleLabel = document.getElementById('clawToggleLabel');
+const clawReadout = document.getElementById('clawReadout');
+const clawStatusLine = document.getElementById('clawStatusLine');
+const clawUpdateBtn = document.getElementById('clawUpdateBtn');
+
+clawToggle.addEventListener('click', async () => {
+  try {
+    const data = await apiPost('/api/claw-predict/toggle');
+    if (data.ok !== undefined) {
+      clawPredictEnabled = data.enabled;
+      updateClawToggleUI();
+      if (clawPredictEnabled) {
+        showToast('Claw prediction ON');
+        startClawPolling();
+      } else {
+        showToast('Claw prediction OFF');
+        stopClawPolling();
+      }
+    } else {
+      showToast('Claw predictor not available', true);
+    }
+  } catch(e) {
+    showToast('Failed to toggle predictor', true);
+  }
+});
+
+clawUpdateBtn.addEventListener('click', () => {
+  if (!clawPredictEnabled) return;
+  triggerClawPrediction();
+});
+
+function updateClawToggleUI() {
+  clawToggle.classList.toggle('on', clawPredictEnabled);
+  clawToggleLabel.textContent = clawPredictEnabled ? 'Position prediction ON' : 'Position prediction OFF';
+  clawToggleLabel.classList.toggle('on', clawPredictEnabled);
+  clawReadout.classList.toggle('visible', clawPredictEnabled);
+  clawStatusLine.style.display = clawPredictEnabled ? 'flex' : 'none';
+  clawUpdateBtn.disabled = !clawPredictEnabled;
+}
+
+async function triggerClawPrediction() {
+  clawUpdateBtn.classList.add('running');
+  clawUpdateBtn.textContent = 'Predicting...';
+  try {
+    const data = await apiPost('/api/claw-predict/update');
+    if (data.ok && data.prediction) {
+      updateClawReadout(data.prediction);
+    } else {
+      updateClawReadout(null);
+    }
+  } catch(e) {
+    updateClawReadout(null);
+  }
+  clawUpdateBtn.classList.remove('running');
+  clawUpdateBtn.textContent = 'Predict Position';
+}
+
+function startClawPolling() {
+  if (clawPredictPolling) return;
+  clawPredictPolling = true;
+  clawPollTimer = setInterval(() => {
+    if (clawPredictEnabled) triggerClawPrediction();
+    else stopClawPolling();
+  }, CLAW_POLL_INTERVAL);
+  // Immediate first prediction
+  triggerClawPrediction();
+}
+
+function stopClawPolling() {
+  clawPredictPolling = false;
+  if (clawPollTimer) { clearInterval(clawPollTimer); clawPollTimer = null; }
+}
+
+function updateClawReadout(prediction) {
+  const dot = document.getElementById('clawStatusDot');
+  const statusText = document.getElementById('clawStatusText');
+
+  if (!prediction || !prediction.detected) {
+    // No detection
+    dot.className = 'claw-status-dot searching';
+    statusText.textContent = prediction ? 'Searching for claw...' : 'Update failed';
+    document.getElementById('clawPredX').textContent = '—';
+    document.getElementById('clawPredY').textContent = '—';
+    document.getElementById('clawPredZ').textContent = '—';
+    document.getElementById('clawFkX').textContent = '—';
+    document.getElementById('clawFkY').textContent = '—';
+    document.getElementById('clawFkZ').textContent = '—';
+    document.getElementById('clawError').textContent = '—';
+    document.getElementById('clawError').className = 'claw-row-val no-detect';
+    document.getElementById('clawConf').textContent = '—';
+    document.getElementById('clawDepth').textContent = '—';
+    document.getElementById('clawLatency').textContent = prediction ? prediction.elapsed_ms.toFixed(0) + 'ms' : '—';
+    document.getElementById('clawErrFill').style.width = '0';
+    return;
+  }
+
+  // Detection found
+  dot.className = 'claw-status-dot detecting';
+  statusText.textContent = 'Tracking claw';
+
+  if (prediction.position_mm) {
+    const p = prediction.position_mm;
+    document.getElementById('clawPredX').textContent = 'X ' + p[0].toFixed(0);
+    document.getElementById('clawPredY').textContent = ' Y ' + p[1].toFixed(0);
+    document.getElementById('clawPredZ').textContent = ' Z ' + p[2].toFixed(0);
+  }
+
+  if (prediction.fk_position_mm) {
+    const f = prediction.fk_position_mm;
+    document.getElementById('clawFkX').textContent = 'X ' + f[0].toFixed(0);
+    document.getElementById('clawFkY').textContent = ' Y ' + f[1].toFixed(0);
+    document.getElementById('clawFkZ').textContent = ' Z ' + f[2].toFixed(0);
+  }
+
+  // Error display
+  const errEl = document.getElementById('clawError');
+  const errFill = document.getElementById('clawErrFill');
+  if (prediction.error_mm > 0) {
+    errEl.textContent = prediction.error_mm.toFixed(1) + ' mm';
+    const errClass = prediction.error_mm < 20 ? 'good' : (prediction.error_mm < 50 ? '' : '');
+    errEl.className = 'claw-row-val err' + (errClass ? ' ' + errClass : '');
+
+    // Error bar (scale: 0-100mm)
+    const errPct = Math.min(100, (prediction.error_mm / 100) * 100);
+    errFill.style.width = errPct + '%';
+    if (prediction.error_mm < 20) errFill.className = 'claw-err-fill good';
+    else if (prediction.error_mm < 50) errFill.className = 'claw-err-fill warn';
+    else errFill.className = 'claw-err-fill bad';
+  } else {
+    errEl.textContent = '—';
+    errEl.className = 'claw-row-val err';
+    errFill.style.width = '0';
+  }
+
+  // Confidence
+  document.getElementById('clawConf').textContent = (prediction.confidence * 100).toFixed(0) + '%';
+
+  // Depth
+  document.getElementById('clawDepth').textContent = prediction.depth_mm > 0 ? prediction.depth_mm.toFixed(0) + ' mm' : '—';
+
+  // Latency
+  document.getElementById('clawLatency').textContent = prediction.elapsed_ms.toFixed(0) + 'ms';
+}
+
+// Also update from WebSocket state data
+function updateClawFromState(state) {
+  if (!state.claw_prediction) return;
+  const cp = state.claw_prediction;
+
+  // Sync enabled state from server
+  if (cp.enabled !== undefined && cp.enabled !== clawPredictEnabled) {
+    clawPredictEnabled = cp.enabled;
+    updateClawToggleUI();
+    if (clawPredictEnabled && !clawPredictPolling) startClawPolling();
+    else if (!clawPredictEnabled) stopClawPolling();
+  }
+
+  // Update readout from streamed data (only if not polling, to avoid flicker)
+  if (!clawPredictPolling && cp.detected !== undefined) {
+    updateClawReadout(cp);
+  }
+}
 
 // ============================================================
 // ANIMATION LOOP

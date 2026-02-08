@@ -11,10 +11,18 @@ try:
     from .stereo_depth import StereoDepthEstimator
     from .object_detection import ObjectDetector
     from .workspace_mapper import WorkspaceMapper
+    from .claw_position import ClawPositionPredictor
 except ImportError:
     StereoCalibrator = None  # type: ignore[assignment,misc]
     StereoDepthEstimator = None  # type: ignore[assignment,misc]
     ObjectDetector = None  # type: ignore[assignment,misc]
     WorkspaceMapper = None  # type: ignore[assignment,misc]
+    ClawPositionPredictor = None  # type: ignore[assignment,misc]
 
-__all__ = ["StereoCalibrator", "StereoDepthEstimator", "ObjectDetector", "WorkspaceMapper"]
+__all__ = [
+    "StereoCalibrator",
+    "StereoDepthEstimator",
+    "ObjectDetector",
+    "WorkspaceMapper",
+    "ClawPositionPredictor",
+]
