@@ -24,14 +24,37 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
-def reset_server():
-    """Reset server state before each test."""
+def reset_server(tmp_path):
+    """Reset server state before each test, using a temp telemetry DB."""
+    import src.telemetry.collector as _tc_mod
+    from src.telemetry.collector import TelemetryCollector
+
+    # Replace the singleton with a temp-DB collector so tests don't pollute data/telemetry.db
+    old_collector = _tc_mod._collector
+    tmp_collector = TelemetryCollector(db_path=str(tmp_path / "test_telemetry.db"))
+    tmp_collector.start()
+    tmp_collector.enable()
+    _tc_mod._collector = tmp_collector
+
     from web.server import SimulatedArm, action_log
     import web.server as srv
     srv.arm = SimulatedArm()
     srv._prev_state = {}
     action_log._entries.clear()
     yield
+
+    tmp_collector.close()
+    _tc_mod._collector = old_collector
+
+
+@pytest.fixture
+def enabled_client():
+    """Client with arm powered on and enabled."""
+    from web.server import app
+    with TestClient(app) as c:
+        c.post("/api/command/power-on")
+        c.post("/api/command/enable")
+        yield c
 
 
 @pytest.fixture
@@ -143,19 +166,24 @@ class TestEmergencyStop:
 # --- Set Joint ---
 
 class TestSetJoint:
-    def test_set_joint_valid(self, client):
-        r = client.post("/api/command/set-joint", json={"id": 0, "angle": 45.0})
+    def test_set_joint_valid(self, enabled_client):
+        r = enabled_client.post("/api/command/set-joint", json={"id": 0, "angle": 45.0})
         assert r.status_code == 200
         assert r.json()["ok"] is True
 
-    def test_set_joint_all_joints(self, client):
+    def test_set_joint_rejected_when_not_enabled(self, client):
+        r = client.post("/api/command/set-joint", json={"id": 0, "angle": 45.0})
+        assert r.status_code == 409
+        assert r.json()["ok"] is False
+
+    def test_set_joint_all_joints(self, enabled_client):
         for i, (lo, hi) in enumerate([(-135,135), (-90,90), (-90,90), (-135,135), (-90,90), (-135,135)]):
-            r = client.post("/api/command/set-joint", json={"id": i, "angle": hi / 2})
+            r = enabled_client.post("/api/command/set-joint", json={"id": i, "angle": hi / 2})
             assert r.json()["ok"] is True
 
-    def test_set_joint_out_of_range(self, client):
+    def test_set_joint_out_of_range(self, enabled_client):
         # J1 range is ±90
-        r = client.post("/api/command/set-joint", json={"id": 1, "angle": 100.0})
+        r = enabled_client.post("/api/command/set-joint", json={"id": 1, "angle": 100.0})
         assert r.status_code == 400
         assert r.json()["ok"] is False
 
@@ -174,21 +202,25 @@ class TestSetJoint:
         r = client.post("/api/command/set-joint", json={"angle": 10.0})
         assert r.status_code == 422
 
-    def test_set_joint_boundary(self, client):
+    def test_set_joint_boundary(self, enabled_client):
         # Exactly at boundary should work
-        r = client.post("/api/command/set-joint", json={"id": 0, "angle": 135.0})
+        r = enabled_client.post("/api/command/set-joint", json={"id": 0, "angle": 135.0})
         assert r.json()["ok"] is True
-        r = client.post("/api/command/set-joint", json={"id": 0, "angle": -135.0})
+        r = enabled_client.post("/api/command/set-joint", json={"id": 0, "angle": -135.0})
         assert r.json()["ok"] is True
 
 
 # --- Set All Joints ---
 
 class TestSetAllJoints:
-    def test_set_all_joints(self, client):
+    def test_set_all_joints(self, enabled_client):
         angles = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
-        r = client.post("/api/command/set-all-joints", json={"angles": angles})
+        r = enabled_client.post("/api/command/set-all-joints", json={"angles": angles})
         assert r.json()["ok"] is True
+
+    def test_set_all_joints_rejected_when_not_enabled(self, client):
+        r = client.post("/api/command/set-all-joints", json={"angles": [0.0] * 6})
+        assert r.status_code == 409
 
     def test_set_all_joints_wrong_count(self, client):
         r = client.post("/api/command/set-all-joints", json={"angles": [0.0] * 5})
@@ -197,10 +229,10 @@ class TestSetAllJoints:
         r = client.post("/api/command/set-all-joints", json={"angles": [0.0] * 7})
         assert r.status_code == 422
 
-    def test_set_all_joints_out_of_range(self, client):
+    def test_set_all_joints_out_of_range(self, enabled_client):
         # J1 (index 1) max is 90
         angles = [0.0, 100.0, 0.0, 0.0, 0.0, 0.0]
-        r = client.post("/api/command/set-all-joints", json={"angles": angles})
+        r = enabled_client.post("/api/command/set-all-joints", json={"angles": angles})
         assert r.status_code == 400
         assert r.json()["ok"] is False
 
@@ -212,16 +244,20 @@ class TestSetAllJoints:
 # --- Set Gripper ---
 
 class TestSetGripper:
-    def test_set_gripper_valid(self, client):
+    def test_set_gripper_valid(self, enabled_client):
+        r = enabled_client.post("/api/command/set-gripper", json={"position": 32.5})
+        assert r.json()["ok"] is True
+
+    def test_set_gripper_rejected_when_not_enabled(self, client):
         r = client.post("/api/command/set-gripper", json={"position": 32.5})
+        assert r.status_code == 409
+
+    def test_set_gripper_zero(self, enabled_client):
+        r = enabled_client.post("/api/command/set-gripper", json={"position": 0.0})
         assert r.json()["ok"] is True
 
-    def test_set_gripper_zero(self, client):
-        r = client.post("/api/command/set-gripper", json={"position": 0.0})
-        assert r.json()["ok"] is True
-
-    def test_set_gripper_max(self, client):
-        r = client.post("/api/command/set-gripper", json={"position": 65.0})
+    def test_set_gripper_max(self, enabled_client):
+        r = enabled_client.post("/api/command/set-gripper", json={"position": 65.0})
         assert r.json()["ok"] is True
 
     def test_set_gripper_out_of_range(self, client):
@@ -348,10 +384,10 @@ class TestResponseFormat:
             assert "state" in d, f"Missing state in {endpoint} response"
             assert "joints" in d["state"]
 
-    def test_set_joint_response_has_state(self, client):
-        r = client.post("/api/command/set-joint", json={"id": 0, "angle": 10.0})
+    def test_set_joint_response_has_state(self, enabled_client):
+        r = enabled_client.post("/api/command/set-joint", json={"id": 0, "angle": 10.0})
         assert "state" in r.json()
 
-    def test_set_gripper_response_has_state(self, client):
-        r = client.post("/api/command/set-gripper", json={"position": 10.0})
+    def test_set_gripper_response_has_state(self, enabled_client):
+        r = enabled_client.post("/api/command/set-gripper", json={"position": 10.0})
         assert "state" in r.json()

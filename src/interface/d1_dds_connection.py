@@ -82,7 +82,7 @@ class D1DDSConnection:
     # How often the reader thread polls for new samples (seconds)
     _POLL_INTERVAL = 0.005  # 5 ms — fast enough for real-time feedback
 
-    def __init__(self) -> None:
+    def __init__(self, collector=None) -> None:
         self._dp: Optional[DomainParticipant] = None
         self._reader: Optional[DataReader] = None
         self._writer: Optional[DataWriter] = None
@@ -94,6 +94,16 @@ class D1DDSConnection:
         self._stop_event = threading.Event()
         self._prev_angles: Optional[Dict[str, float]] = None
         self._last_stale_warn: float = 0.0
+        # Use explicitly passed collector to avoid singleton import-path issues
+        self._collector = collector
+
+    def _get_collector(self):
+        """Return the telemetry collector — prefer explicit instance, fall back to singleton."""
+        if self._collector is not None:
+            return self._collector
+        if _HAS_TELEMETRY:
+            return get_collector()
+        return None
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -188,10 +198,9 @@ class D1DDSConnection:
 
         if not self._connected or self._writer is None:
             logger.error("Cannot send command — not connected")
-            if _HAS_TELEMETRY:
-                tc = get_collector()
-                if tc.enabled:
-                    tc.emit("dds", EventType.ERROR, {"error": "not_connected", "cmd": str(cmd)}, correlation_id)
+            tc = self._get_collector()
+            if tc is not None and tc.enabled:
+                tc.emit("dds", EventType.ERROR, {"error": "not_connected", "cmd": str(cmd)}, correlation_id)
             return False
 
         if "seq" not in cmd:
@@ -201,22 +210,20 @@ class D1DDSConnection:
             payload = json.dumps(cmd, separators=(",", ":"))
             self._writer.write(ArmString_(data_=payload))
             logger.debug("Published command: %s", payload)
-            if _HAS_TELEMETRY:
-                tc = get_collector()
-                if tc.enabled:
-                    data = cmd.get("data", {}) or {}
-                    tc.log_dds_command(
-                        seq=cmd.get("seq", 0), funcode=cmd.get("funcode", 0),
-                        joint_id=data.get("id"), target_value=data.get("angle"),
-                        data=data, correlation_id=correlation_id, raw_len=len(payload),
-                    )
+            tc = self._get_collector()
+            if tc is not None and tc.enabled:
+                data = cmd.get("data", {}) or {}
+                tc.log_dds_command(
+                    seq=cmd.get("seq", 0), funcode=cmd.get("funcode", 0),
+                    joint_id=data.get("id"), target_value=data.get("angle"),
+                    data=data, correlation_id=correlation_id, raw_len=len(payload),
+                )
             return True
         except Exception:
             logger.exception("Failed to publish command")
-            if _HAS_TELEMETRY:
-                tc = get_collector()
-                if tc.enabled:
-                    tc.emit("dds", EventType.ERROR, {"error": "publish_failed", "seq": cmd.get("seq")}, correlation_id)
+            tc = self._get_collector()
+            if tc is not None and tc.enabled:
+                tc.emit("dds", EventType.ERROR, {"error": "publish_failed", "seq": cmd.get("seq")}, correlation_id)
             return False
 
     # ------------------------------------------------------------------
@@ -378,19 +385,18 @@ class D1DDSConnection:
                 pass
 
             # Stale connection detection
-            if _HAS_TELEMETRY:
-                tc = get_collector()
-                if tc.enabled:
-                    now = time.monotonic()
-                    with self._cache.lock:
-                        last = self._cache.last_update
-                    if last > 0 and (now - last) > 2.0:
-                        if (now - self._last_stale_warn) > 5.0:
-                            tc.emit("dds", EventType.ERROR, {
-                                "error": "stale_connection",
-                                "seconds_since_last": round(now - last, 2),
-                            })
-                            self._last_stale_warn = now
+            tc = self._get_collector()
+            if tc is not None and tc.enabled:
+                now = time.monotonic()
+                with self._cache.lock:
+                    last = self._cache.last_update
+                if last > 0 and (now - last) > 2.0:
+                    if (now - self._last_stale_warn) > 5.0:
+                        tc.emit("dds", EventType.ERROR, {
+                            "error": "stale_connection",
+                            "seconds_since_last": round(now - last, 2),
+                        })
+                        self._last_stale_warn = now
 
             self._stop_event.wait(self._POLL_INTERVAL)
         logger.debug("Feedback reader thread stopped")
@@ -407,14 +413,13 @@ class D1DDSConnection:
         data = msg.get("data")
         seq = msg.get("seq", 0)
 
-        if _HAS_TELEMETRY:
-            tc = get_collector()
-            if tc.enabled:
-                tc.log_dds_feedback(
-                    seq=seq, funcode=funcode,
-                    angles=data if funcode == 1 and isinstance(data, dict) else None,
-                    status=data if funcode == 3 and isinstance(data, dict) else None,
-                )
+        tc = self._get_collector()
+        if tc is not None and tc.enabled:
+            tc.log_dds_feedback(
+                seq=seq, funcode=funcode,
+                angles=data if funcode == 1 and isinstance(data, dict) else None,
+                status=data if funcode == 3 and isinstance(data, dict) else None,
+            )
 
         if data is None and funcode != 7:
             return
@@ -427,8 +432,7 @@ class D1DDSConnection:
                 # Joint angle feedback
                 self._cache.joint_angles = data
                 # Detect changes for telemetry
-                if _HAS_TELEMETRY and isinstance(data, dict):
-                    tc = get_collector()
+                if tc is not None and isinstance(data, dict):
                     if tc.enabled and self._prev_angles is not None:
                         changed = {k: v for k, v in data.items() if self._prev_angles.get(k) != v}
                         if changed:
@@ -437,8 +441,7 @@ class D1DDSConnection:
             elif funcode == 3:
                 # Status feedback
                 self._cache.status = data
-                if _HAS_TELEMETRY and isinstance(data, dict):
-                    tc = get_collector()
+                if tc is not None and isinstance(data, dict):
                     if tc.enabled:
                         if "recv_status" in data:
                             tc.emit("dds", EventType.CMD_ACK, {"seq": seq, "recv_status": data["recv_status"]})
