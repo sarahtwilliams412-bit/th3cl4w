@@ -135,11 +135,35 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .de-ERROR { color: #e94560; }
 .de-CAM_FRAME { color: #888; }
 
+/* Bifocal Workspace Mapping Panel */
+.bifocal-panel { background: #111827; border-top: 2px solid #9b59b6; font-family: var(--mono); font-size: 11px; padding: 8px 12px; overflow-y: auto; max-height: 320px; }
+.bifocal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.bifocal-title { font-size: 10px; color: #9b59b6; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
+.bifocal-status { display: flex; gap: 8px; align-items: center; }
+.bf-badge { font-size: 9px; padding: 2px 6px; border-radius: 3px; background: #1a2744; color: var(--text-dim); }
+.bf-badge.active { background: #1a3d2e; color: var(--success); }
+.bf-badge.calib { background: #3d2e1a; color: #f0ad4e; }
+.bifocal-controls { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.bifocal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bf-section { background: #0d1525; border: 1px solid #333; border-radius: 4px; padding: 6px 8px; }
+.bf-section-title { font-size: 9px; color: #9b59b6; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.bf-stat { display: flex; justify-content: space-between; padding: 1px 0; }
+.bf-stat span:first-child { color: var(--text-dim); font-size: 9px; }
+.bf-stat span:last-child { color: var(--text); font-size: 10px; }
+.bf-preview-result { margin-top: 6px; padding: 6px 8px; border-radius: 4px; font-size: 10px; }
+.bf-preview-result.clear { background: #0a3d20; border: 1px solid var(--success); color: var(--success); }
+.bf-preview-result.collision { background: #3d0a0a; border: 1px solid var(--danger); color: var(--danger); }
+.bf-preview-result.unknown { background: #1a2744; border: 1px solid #444; color: var(--text-dim); }
+.bf-workspace-viz { width: 100%; height: 120px; background: #0a0f1a; border: 1px solid #333; border-radius: 4px; margin-top: 4px; }
+.bf-calib-row { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
+.bf-calib-row input { width: 70px; font-family: var(--mono); font-size: 10px; padding: 3px 6px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 3px; color: var(--text); }
+
 @media (max-width: 800px) {
   .main { flex-direction: column; }
   .panel-left { min-height: 220px; border-right: none; border-bottom: 1px solid var(--card-border); }
   .panel-right { width: 100%; flex: 1; }
   .debug-stats { grid-template-columns: repeat(2, 1fr); }
+  .bifocal-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -150,6 +174,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="conn-dot" id="connDot"></div>
   <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">DISCONNECTED</span>
   <span class="conn-quality" id="connQuality"></span>
+  <button class="btn" id="btnBifocal" style="font-size:10px;padding:3px 8px;border-color:#9b59b6;color:#9b59b6">BIFOCAL</button>
   <button class="btn" id="btnDebug" style="font-size:10px;padding:3px 8px">🔧 DEBUG</button>
   <a href="/telemetry" class="btn" style="font-size:10px;padding:3px 8px;text-decoration:none">📊 TELEMETRY</a>
   <div class="topbar-spacer"></div>
@@ -231,6 +256,46 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 <div class="log-panel">
   <div class="log-title">Action Log</div>
   <div class="log-scroll" id="logScroll"></div>
+</div>
+
+<div class="bifocal-panel" id="bifocalPanel" style="display:none">
+  <div class="bifocal-header">
+    <span class="bifocal-title">Bifocal Workspace Mapping</span>
+    <div class="bifocal-status">
+      <span class="bf-badge" id="bfBadgeEnabled">OFF</span>
+      <span class="bf-badge" id="bfBadgeCalib">UNCALIBRATED</span>
+      <span class="bf-badge" id="bfBadgeMap">NO MAP</span>
+    </div>
+  </div>
+  <div class="bifocal-controls">
+    <button class="btn" id="btnBfToggle" style="border-color:#9b59b6;color:#9b59b6">Enable Mapper</button>
+    <button class="btn" id="btnBfUpdate">Scan Now</button>
+    <button class="btn" id="btnBfPreview">Preview Pose</button>
+    <button class="btn" id="btnBfClear" style="border-color:var(--warning);color:var(--warning)">Clear Map</button>
+  </div>
+  <div class="bifocal-grid">
+    <div class="bf-section">
+      <div class="bf-section-title">Workspace Map</div>
+      <div class="bf-stat"><span>Voxels occupied</span><span id="bfOccupied">0</span></div>
+      <div class="bf-stat"><span>Mapped %</span><span id="bfMapped">0%</span></div>
+      <div class="bf-stat"><span>Grid size</span><span id="bfGridSize">--</span></div>
+      <div class="bf-stat"><span>Voxel size</span><span id="bfVoxelSize">--</span></div>
+      <div class="bf-stat"><span>Updates</span><span id="bfUpdates">0</span></div>
+      <canvas class="bf-workspace-viz" id="bfVizCanvas" width="300" height="120"></canvas>
+    </div>
+    <div class="bf-section">
+      <div class="bf-section-title">Scale Calibration</div>
+      <div class="bf-stat"><span>Scale factor</span><span id="bfScale">1.0000</span></div>
+      <div class="bf-stat"><span>Calibrated</span><span id="bfScaleStatus">No</span></div>
+      <div class="bf-calib-row">
+        <span style="font-size:9px;color:var(--text-dim)">Square mm:</span>
+        <input type="number" id="bfSquareSize" value="25" min="1" max="200" step="0.5">
+        <button class="btn" id="btnBfCalibBoard" style="font-size:9px;padding:2px 6px">Checkerboard</button>
+      </div>
+      <div class="bf-section-title" style="margin-top:6px">Collision Preview</div>
+      <div class="bf-preview-result unknown" id="bfPreviewResult">No preview run yet</div>
+    </div>
+  </div>
 </div>
 
 <div class="debug-panel" id="debugPanel" style="display:none">
@@ -1015,6 +1080,248 @@ function renderDebugEvents(events) {
   }).join('');
   container.scrollTop = container.scrollHeight;
 }
+
+// ---- Bifocal Workspace Mapping ----
+let bifocalOn = false;
+let bifocalEnabled = false; // mapper active
+let bifocalPollInterval = null;
+let bfOccupiedPoints = []; // cached occupied points for viz
+let bfArmPoints = []; // cached arm envelope points
+let bfPreviewClear = null; // null=unknown, true=clear, false=collision
+let bfPreviewHits = [];
+
+document.getElementById('btnBifocal').addEventListener('click', () => {
+  bifocalOn = !bifocalOn;
+  const btn = document.getElementById('btnBifocal');
+  const panel = document.getElementById('bifocalPanel');
+  btn.className = 'btn' + (bifocalOn ? ' on' : '');
+  btn.style.borderColor = bifocalOn ? '#9b59b6' : '#9b59b6';
+  panel.style.display = bifocalOn ? 'block' : 'none';
+  if (bifocalOn) {
+    bifocalPollInterval = setInterval(pollBifocal, 2000);
+    pollBifocal();
+  } else {
+    if (bifocalPollInterval) { clearInterval(bifocalPollInterval); bifocalPollInterval = null; }
+  }
+});
+
+document.getElementById('btnBfToggle').addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/bifocal/toggle', { method: 'POST' });
+    const data = await resp.json();
+    bifocalEnabled = data.enabled;
+    updateBifocalBadges();
+    logLocal('BIFOCAL', `Mapper ${bifocalEnabled ? 'enabled' : 'disabled'}`, 'info');
+  } catch(e) { logLocal('BIFOCAL', `Toggle failed: ${e.message}`, 'error'); }
+});
+
+document.getElementById('btnBfUpdate').addEventListener('click', async () => {
+  logLocal('BIFOCAL', 'Scanning workspace...', 'info');
+  try {
+    const resp = await fetch('/api/bifocal/update', { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      logLocal('BIFOCAL', `Scan: ${data.voxels_occupied} voxels, ${data.elapsed_ms}ms`, 'info');
+      pollBifocal(); // refresh
+    } else {
+      logLocal('BIFOCAL', `Scan failed: ${data.error}`, 'error');
+    }
+  } catch(e) { logLocal('BIFOCAL', `Scan error: ${e.message}`, 'error'); }
+});
+
+document.getElementById('btnBfPreview').addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/bifocal/preview', { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      bfPreviewClear = data.clear;
+      bfPreviewHits = data.hits || [];
+      bfArmPoints = data.arm_points_mm || [];
+      const el = document.getElementById('bfPreviewResult');
+      el.textContent = data.summary + ` (${data.elapsed_ms}ms)`;
+      el.className = 'bf-preview-result ' + (data.clear ? 'clear' : 'collision');
+      logLocal('BIFOCAL', `Preview: ${data.summary}`, data.clear ? 'info' : 'warning');
+      vizDirty = true; // redraw arm with overlay
+    }
+  } catch(e) { logLocal('BIFOCAL', `Preview error: ${e.message}`, 'error'); }
+});
+
+document.getElementById('btnBfClear').addEventListener('click', async () => {
+  try {
+    await fetch('/api/bifocal/clear', { method: 'POST' });
+    bfOccupiedPoints = [];
+    bfPreviewClear = null;
+    bfPreviewHits = [];
+    logLocal('BIFOCAL', 'Map cleared', 'info');
+    pollBifocal();
+  } catch(e) { logLocal('BIFOCAL', `Clear error: ${e.message}`, 'error'); }
+});
+
+document.getElementById('btnBfCalibBoard').addEventListener('click', async () => {
+  const sq = parseFloat(document.getElementById('bfSquareSize').value) || 25;
+  logLocal('BIFOCAL', `Calibrating with ${sq}mm squares...`, 'info');
+  try {
+    const resp = await fetch('/api/bifocal/calibrate-scale', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ square_size_mm: sq })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      logLocal('BIFOCAL', `Scale calibrated: ${data.scale_factor}x (apparent ${data.apparent_square_mm}mm -> ${data.known_square_mm}mm)`, 'info');
+    } else {
+      logLocal('BIFOCAL', `Calibration failed: ${data.error}`, 'error');
+    }
+    pollBifocal();
+  } catch(e) { logLocal('BIFOCAL', `Calibration error: ${e.message}`, 'error'); }
+});
+
+function updateBifocalBadges() {
+  const enBadge = document.getElementById('bfBadgeEnabled');
+  enBadge.textContent = bifocalEnabled ? 'ON' : 'OFF';
+  enBadge.className = 'bf-badge' + (bifocalEnabled ? ' active' : '');
+  const toggleBtn = document.getElementById('btnBfToggle');
+  toggleBtn.textContent = bifocalEnabled ? 'Disable Mapper' : 'Enable Mapper';
+  toggleBtn.className = 'btn' + (bifocalEnabled ? ' on' : '');
+}
+
+async function pollBifocal() {
+  if (!bifocalOn) return;
+  try {
+    // Poll status and workspace in parallel
+    const [statusResp, wsResp] = await Promise.all([
+      fetch('/api/bifocal/status'),
+      fetch('/api/bifocal/workspace?max_points=300')
+    ]);
+    if (statusResp.ok) {
+      const s = await statusResp.json();
+      bifocalEnabled = s.enabled;
+      updateBifocalBadges();
+      document.getElementById('bfOccupied').textContent = s.occupied || 0;
+      document.getElementById('bfMapped').textContent = (s.mapped_pct || 0) + '%';
+      document.getElementById('bfGridSize').textContent = s.grid_shape ? s.grid_shape.join('x') : '--';
+      document.getElementById('bfVoxelSize').textContent = (s.voxel_size_mm || '--') + 'mm';
+      document.getElementById('bfUpdates').textContent = s.update_count || 0;
+      document.getElementById('bfScale').textContent = (s.scale_factor || 1).toFixed(4);
+      document.getElementById('bfScaleStatus').textContent = s.scale_calibrated ? 'Yes' : 'No';
+      const calibBadge = document.getElementById('bfBadgeCalib');
+      calibBadge.textContent = s.scale_calibrated ? 'CALIBRATED' : (s.calibrator_ready ? 'STEREO OK' : 'UNCALIBRATED');
+      calibBadge.className = 'bf-badge' + (s.scale_calibrated ? ' active' : s.calibrator_ready ? ' calib' : '');
+      const mapBadge = document.getElementById('bfBadgeMap');
+      mapBadge.textContent = s.occupied > 0 ? `${s.occupied} VOXELS` : 'NO MAP';
+      mapBadge.className = 'bf-badge' + (s.occupied > 0 ? ' active' : '');
+    }
+    if (wsResp.ok) {
+      const ws = await wsResp.json();
+      bfOccupiedPoints = ws.points || [];
+      drawBifocalViz();
+    }
+  } catch(e) { /* silent */ }
+}
+
+function drawBifocalViz() {
+  const canvas = document.getElementById('bfVizCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#0a0f1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(155,89,182,0.1)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < W; x += 20) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  if (bfOccupiedPoints.length === 0) {
+    ctx.fillStyle = 'rgba(155,89,182,0.3)';
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('No workspace data — run a scan', W/2, H/2);
+    ctx.textAlign = 'left';
+    return;
+  }
+
+  // Top-down view (X-Z plane, Y is up)
+  // Find bounds
+  const scale = Math.min(W, H) / 1400; // workspace is ~1200mm across
+  const cx = W / 2, cy = H / 2;
+
+  // Draw occupied voxels as dots
+  ctx.fillStyle = 'rgba(155,89,182,0.6)';
+  for (const pt of bfOccupiedPoints) {
+    const sx = cx + pt[0] * scale;
+    const sy = cy - pt[2] * scale; // Z forward = up on screen
+    ctx.fillRect(sx - 1, sy - 1, 3, 3);
+  }
+
+  // Draw arm base marker
+  ctx.fillStyle = '#e94560';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Draw arm envelope if we have it
+  if (bfArmPoints.length > 0) {
+    ctx.strokeStyle = bfPreviewClear === false ? '#e94560' : '#53d769';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < bfArmPoints.length; i++) {
+      const sx = cx + bfArmPoints[i][0] * scale;
+      const sy = cy - bfArmPoints[i][2] * scale;
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+
+    // Draw collision hits
+    if (bfPreviewHits.length > 0) {
+      ctx.fillStyle = '#e94560';
+      for (const hit of bfPreviewHits) {
+        const sx = cx + hit.point[0] * scale;
+        const sy = cy - hit.point[2] * scale;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Labels
+  ctx.fillStyle = 'rgba(155,89,182,0.5)';
+  ctx.font = '8px JetBrains Mono, monospace';
+  ctx.fillText('Top-down (X-Z)', 4, 10);
+  ctx.fillText(`${bfOccupiedPoints.length} pts`, 4, H - 4);
+}
+
+// Draw bifocal collision overlay on the main arm canvas
+function drawBifocalOverlay() {
+  if (!bifocalOn || bfPreviewClear === null) return;
+
+  const W = canvas.width, H = canvas.height;
+  const scale = Math.min(W, H) / 900;
+
+  // Show collision status indicator
+  const indicatorX = 10, indicatorY = H - 30 * scale;
+  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
+
+  if (bfPreviewClear === true) {
+    ctx.fillStyle = 'rgba(83,215,105,0.8)';
+    ctx.fillText('BIFOCAL: PATH CLEAR', indicatorX, indicatorY);
+  } else if (bfPreviewClear === false) {
+    ctx.fillStyle = 'rgba(233,69,96,0.9)';
+    ctx.fillText(`BIFOCAL: ${bfPreviewHits.length} COLLISION(S)`, indicatorX, indicatorY);
+  }
+}
+
+// Patch drawArm to include bifocal overlay
+const _origDrawArm = drawArm;
+drawArm = function() {
+  _origDrawArm();
+  drawBifocalOverlay();
+};
 
 // Start
 connectWS();
