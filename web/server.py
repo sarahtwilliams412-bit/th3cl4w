@@ -350,6 +350,14 @@ async def lifespan(app: FastAPI):
         vision_task_planner = VisionTaskPlanner(task_planner=task_planner)
         action_log.add("SYSTEM", "Vision task planner initialized", "info")
 
+    # Initialize claw position predictor
+    global claw_predictor
+    if _HAS_CLAW_PREDICT:
+        claw_predictor = ClawPositionPredictor()
+        action_log.add(
+            "SYSTEM", "Claw position predictor initialized (disabled by default)", "info"
+        )
+
     yield
 
     if smoother is not None:
@@ -799,6 +807,16 @@ async def ws_state(ws: WebSocket):
         while True:
             state = get_arm_state()
             state["log"] = action_log.last(30)
+
+            # Include claw prediction data if predictor is enabled
+            if claw_predictor is not None and claw_predictor.enabled:
+                last_pred = claw_predictor.get_last_prediction()
+                if last_pred is not None:
+                    state["claw_prediction"] = last_pred.to_dict()
+                else:
+                    state["claw_prediction"] = {"enabled": True, "detected": False}
+            elif claw_predictor is not None:
+                state["claw_prediction"] = {"enabled": False}
             await ws.send_json(state)
             if _HAS_TELEMETRY:
                 tc = get_collector()
@@ -1881,6 +1899,142 @@ async def vision_analyze(camera: int = 0):
     )
 
     return {"ok": True, "scene": scene.to_dict()}
+
+
+# ---------------------------------------------------------------------------
+# Claw Position Prediction endpoints — visual tracking of end-effector
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/claw-predict/toggle")
+async def claw_predict_toggle():
+    """Toggle the claw position predictor on/off."""
+    if not _HAS_CLAW_PREDICT or claw_predictor is None:
+        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
+    enabled = claw_predictor.toggle()
+    action_log.add("CLAW_PREDICT", f"Predictor {'enabled' if enabled else 'disabled'}", "info")
+    return {"ok": True, "enabled": enabled}
+
+
+@app.get("/api/claw-predict/status")
+async def claw_predict_status():
+    """Get claw position predictor status and last prediction."""
+    if not _HAS_CLAW_PREDICT or claw_predictor is None:
+        return {"available": False}
+    status = claw_predictor.get_status()
+    status["available"] = True
+    return status
+
+
+@app.post("/api/claw-predict/update")
+async def claw_predict_update():
+    """Trigger a claw position prediction from current camera frames."""
+    if not _HAS_CLAW_PREDICT or claw_predictor is None:
+        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
+    if not claw_predictor.enabled:
+        return JSONResponse({"ok": False, "error": "Predictor not enabled"}, status_code=409)
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp0 = await client.get("http://localhost:8081/snap/0")
+            resp1 = await client.get("http://localhost:8081/snap/1")
+        if resp0.status_code != 200 or resp1.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
+
+        import cv2
+
+        cam0 = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        cam1 = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if cam0 is None or cam1 is None:
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode camera frames"}, status_code=502
+            )
+
+        # Sync scale factor from workspace mapper if available
+        if workspace_mapper is not None and workspace_mapper.scale_calibrated:
+            claw_predictor.set_scale_factor(workspace_mapper._scale_factor)
+
+        # Compute FK position for comparison
+        fk_pos = _get_fk_position_mm()
+
+        result = claw_predictor.predict(cam0, cam1, fk_position_mm=fk_pos)
+        return {"ok": True, "prediction": result.to_dict()}
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+class ClawHSVRequest(BaseModel):
+    h_lower: int = Field(ge=0, le=180)
+    s_lower: int = Field(ge=0, le=255)
+    v_lower: int = Field(ge=0, le=255)
+    h_upper: int = Field(ge=0, le=180)
+    s_upper: int = Field(ge=0, le=255)
+    v_upper: int = Field(ge=0, le=255)
+
+
+@app.post("/api/claw-predict/set-hsv")
+async def claw_predict_set_hsv(req: ClawHSVRequest):
+    """Set custom HSV color range for claw detection."""
+    if not _HAS_CLAW_PREDICT or claw_predictor is None:
+        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
+    claw_predictor.set_hsv_range(
+        (req.h_lower, req.s_lower, req.v_lower),
+        (req.h_upper, req.s_upper, req.v_upper),
+    )
+    action_log.add(
+        "CLAW_PREDICT",
+        f"HSV range set: [{req.h_lower},{req.s_lower},{req.v_lower}]-[{req.h_upper},{req.s_upper},{req.v_upper}]",
+        "info",
+    )
+    return {"ok": True}
+
+
+class ClawROIRequest(BaseModel):
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    w: int = Field(gt=0)
+    h: int = Field(gt=0)
+
+
+@app.post("/api/claw-predict/set-roi")
+async def claw_predict_set_roi(req: ClawROIRequest):
+    """Set a region of interest for claw detection."""
+    if not _HAS_CLAW_PREDICT or claw_predictor is None:
+        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
+    claw_predictor.set_detection_roi(req.x, req.y, req.w, req.h)
+    action_log.add("CLAW_PREDICT", f"ROI set: ({req.x},{req.y}) {req.w}x{req.h}", "info")
+    return {"ok": True}
+
+
+@app.post("/api/claw-predict/clear-roi")
+async def claw_predict_clear_roi():
+    """Clear the detection ROI."""
+    if not _HAS_CLAW_PREDICT or claw_predictor is None:
+        return JSONResponse({"ok": False, "error": "Claw predictor not available"}, status_code=501)
+    claw_predictor.clear_detection_roi()
+    action_log.add("CLAW_PREDICT", "ROI cleared", "info")
+    return {"ok": True}
+
+
+def _get_fk_position_mm() -> Optional[list[float]]:
+    """Compute the current end-effector position from forward kinematics."""
+    try:
+        from src.kinematics import D1Kinematics
+
+        kin = D1Kinematics()
+        joints_6 = _get_current_joints()
+        # FK expects 7 joints (6 arm + gripper); gripper angle is 0
+        joints_7 = np.append(joints_6, 0.0)
+        joint_radians = np.deg2rad(joints_7)
+        T = kin.forward_kinematics(joint_radians)
+        # Position in meters from FK, convert to mm
+        pos_mm = T[:3, 3] * 1000.0
+        return list(float(v) for v in pos_mm)
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------

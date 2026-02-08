@@ -1,28 +1,26 @@
 """
-Claw Position Predictor — Visual 3D position estimation of the claw/gripper.
+Claw Position Predictor — Visual position estimation of the claw/gripper.
 
-Uses both stereo cameras and scale calibration from measuring devices
-(checkerboard or tape measure) to detect the claw in both images,
-triangulate its 3D position, and compare against the FK-derived position.
+Uses independent cameras (cam0 overhead, cam1 front/side) to detect the
+claw in each view and estimate its workspace position. No stereo pair
+or stereo calibration is required.
 
-This module provides a toggleable prediction system that:
-1. Detects the gripper/end-effector in left and right camera frames
-2. Uses stereo triangulation to compute 3D position in camera space
-3. Applies the scale factor from measuring device calibration
-4. Reports predicted world coordinates with confidence metrics
+Detection strategy:
+1. Detect the gripper/end-effector in each camera frame via HSV color + edge detection
+2. cam0 (overhead) provides X/Y position in workspace
+3. cam1 (front/side) provides Z (height) information
+4. Combine into an estimated 3D position
+5. Compare against FK-derived position for validation
 """
 
 import logging
 import time
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import cv2
 import numpy as np
-
-from .calibration import StereoCalibrator
-from .stereo_depth import StereoDepthEstimator
 
 logger = logging.getLogger("th3cl4w.vision.claw_position")
 
@@ -31,10 +29,10 @@ logger = logging.getLogger("th3cl4w.vision.claw_position")
 class ClawPrediction:
     """Result of a single claw position prediction."""
 
-    # Detected position in camera pixel space (left camera)
-    pixel_left: Optional[tuple[int, int]] = None
-    # Detected position in camera pixel space (right camera)
-    pixel_right: Optional[tuple[int, int]] = None
+    # Detected position in camera pixel space (cam0 / overhead)
+    pixel_cam0: Optional[tuple[int, int]] = None
+    # Detected position in camera pixel space (cam1 / front-side)
+    pixel_cam1: Optional[tuple[int, int]] = None
     # Predicted 3D position in world coordinates (mm)
     position_mm: Optional[list[float]] = None
     # FK-computed position for comparison (mm)
@@ -43,10 +41,11 @@ class ClawPrediction:
     error_mm: float = 0.0
     # Detection confidence (0-1)
     confidence: float = 0.0
-    # Depth at the detected claw location (mm)
-    depth_mm: float = 0.0
-    # Was the claw detected in both views
+    # Was the claw detected in at least one view
     detected: bool = False
+    # Which cameras detected the claw
+    detected_cam0: bool = False
+    detected_cam1: bool = False
     # Timestamp of the prediction
     timestamp: float = 0.0
     # Processing time in ms
@@ -54,53 +53,48 @@ class ClawPrediction:
 
     def to_dict(self) -> dict:
         return {
-            "pixel_left": list(self.pixel_left) if self.pixel_left else None,
-            "pixel_right": list(self.pixel_right) if self.pixel_right else None,
+            "pixel_cam0": list(self.pixel_cam0) if self.pixel_cam0 else None,
+            "pixel_cam1": list(self.pixel_cam1) if self.pixel_cam1 else None,
             "position_mm": [round(v, 1) for v in self.position_mm] if self.position_mm else None,
             "fk_position_mm": (
                 [round(v, 1) for v in self.fk_position_mm] if self.fk_position_mm else None
             ),
             "error_mm": round(self.error_mm, 1),
             "confidence": round(self.confidence, 3),
-            "depth_mm": round(self.depth_mm, 1),
             "detected": self.detected,
+            "detected_cam0": self.detected_cam0,
+            "detected_cam1": self.detected_cam1,
             "timestamp": self.timestamp,
             "elapsed_ms": round(self.elapsed_ms, 1),
         }
 
 
 class ClawPositionPredictor:
-    """Predicts the claw's real-world position using stereo vision.
+    """Predicts the claw's real-world position using independent cameras.
 
-    Detection strategy:
-    - Convert both camera frames to HSV color space
-    - Apply adaptive color thresholding to isolate the gripper
-    - Use morphological operations to clean up the mask
-    - Find the largest contour matching the expected shape/size
-    - Compute centroid in both images
-    - Triangulate using stereo geometry
-    - Apply scale correction from calibration
+    cam0 (overhead): provides X/Y position via top-down view
+    cam1 (front/side): provides Z (height) via side view
+
+    Detection uses HSV color thresholding + edge detection to find the
+    gripper in each camera frame independently.
     """
 
     # Default HSV range for gripper detection (metallic/gray tone)
-    # These can be tuned based on the actual gripper appearance
     DEFAULT_HSV_LOWER = np.array([0, 0, 80])
     DEFAULT_HSV_UPPER = np.array([180, 60, 220])
 
-    # Secondary detection: look for the distinctive end-effector shape
-    # using edge-based detection as a fallback
-    MIN_CONTOUR_AREA = 200  # minimum pixel area for a valid detection
-    MAX_CONTOUR_AREA = 50000  # maximum pixel area
+    MIN_CONTOUR_AREA = 200
+    MAX_CONTOUR_AREA = 50000
 
     def __init__(
         self,
-        calibrator: StereoCalibrator,
-        depth_estimator: Optional[StereoDepthEstimator] = None,
         scale_factor: float = 1.0,
+        cam0_pixels_per_mm: float = 2.0,
+        cam1_pixels_per_mm: float = 2.0,
     ):
-        self.calibrator = calibrator
-        self._depth_est = depth_estimator
         self._scale_factor = scale_factor
+        self._cam0_px_per_mm = cam0_pixels_per_mm
+        self._cam1_px_per_mm = cam1_pixels_per_mm
 
         # Detection parameters (can be tuned via API)
         self._hsv_lower = self.DEFAULT_HSV_LOWER.copy()
@@ -118,7 +112,11 @@ class ClawPositionPredictor:
 
         # Smoothing: exponential moving average on position
         self._smooth_position: Optional[np.ndarray] = None
-        self._smooth_alpha = 0.4  # higher = more responsive, lower = smoother
+        self._smooth_alpha = 0.4
+
+        # Workspace origin offsets (cam center maps to these arm-frame coords)
+        self._cam0_origin_mm = np.array([0.0, 0.0])  # X, Y offset
+        self._cam1_z_origin_mm = 0.0  # Z offset
 
     @property
     def enabled(self) -> bool:
@@ -161,15 +159,6 @@ class ClawPositionPredictor:
         """Clear the detection ROI (search entire frame)."""
         self._detection_roi = None
 
-    def _ensure_depth_estimator(self):
-        """Lazy-create depth estimator from calibrator."""
-        if self._depth_est is None and self.calibrator.is_calibrated:
-            self._depth_est = StereoDepthEstimator(
-                self.calibrator,
-                num_disparities=64,
-                block_size=7,
-            )
-
     def _detect_claw_in_frame(
         self, frame: np.ndarray
     ) -> tuple[Optional[tuple[int, int]], float, Optional[np.ndarray]]:
@@ -200,10 +189,8 @@ class ClawPositionPredictor:
         if self._use_edge_detection:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             edges = cv2.Canny(gray, 50, 150)
-            # Dilate edges to connect nearby edge segments
             kernel_edge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
             edges = cv2.dilate(edges, kernel_edge, iterations=1)
-            # Combine color mask with edge info: keep color detections near edges
             edge_dilated = cv2.dilate(edges, kernel_edge, iterations=3)
             mask = cv2.bitwise_and(mask, edge_dilated)
 
@@ -231,21 +218,16 @@ class ClawPositionPredictor:
         # Score contours: prefer larger, more circular, centered contours
         best_contour = None
         best_score = 0.0
-
         frame_cx, frame_cy = frame.shape[1] / 2, frame.shape[0] / 2
 
         for contour in valid_contours:
             area = cv2.contourArea(contour)
             perimeter = cv2.arcLength(contour, True)
-
-            # Circularity (1.0 = perfect circle)
             circularity = 4 * np.pi * area / (perimeter * perimeter + 1e-6)
 
-            # Compactness score based on bounding rect aspect ratio
             x_c, y_c, w_c, h_c = cv2.boundingRect(contour)
             aspect = min(w_c, h_c) / (max(w_c, h_c) + 1e-6)
 
-            # Center proximity (prefer detections toward frame center for the end effector)
             M = cv2.moments(contour)
             if M["m00"] > 0:
                 cx = int(M["m10"] / M["m00"])
@@ -256,8 +238,7 @@ class ClawPositionPredictor:
             else:
                 center_score = 0.0
 
-            # Combined score
-            area_score = min(1.0, area / 5000)  # normalize area
+            area_score = min(1.0, area / 5000)
             score = area_score * 0.35 + circularity * 0.25 + aspect * 0.15 + center_score * 0.25
 
             if score > best_score:
@@ -267,7 +248,6 @@ class ClawPositionPredictor:
         if best_contour is None:
             return None, 0.0, mask
 
-        # Compute centroid
         M = cv2.moments(best_contour)
         if M["m00"] <= 0:
             return None, 0.0, mask
@@ -279,15 +259,15 @@ class ClawPositionPredictor:
 
     def predict(
         self,
-        left_frame: np.ndarray,
-        right_frame: np.ndarray,
+        cam0_frame: np.ndarray,
+        cam1_frame: np.ndarray,
         fk_position_mm: Optional[list[float]] = None,
     ) -> ClawPrediction:
-        """Run claw position prediction on a stereo frame pair.
+        """Run claw position prediction using independent camera frames.
 
         Args:
-            left_frame: Left camera image (BGR).
-            right_frame: Right camera image (BGR).
+            cam0_frame: Overhead camera image (BGR) — provides X/Y.
+            cam1_frame: Front/side camera image (BGR) — provides Z.
             fk_position_mm: Optional FK-computed end-effector position [x, y, z]
                 for comparison/error computation.
 
@@ -301,26 +281,28 @@ class ClawPositionPredictor:
             prediction.elapsed_ms = (time.monotonic() - t0) * 1000
             return prediction
 
-        # Detect claw in both frames
-        left_centroid, left_conf, _ = self._detect_claw_in_frame(left_frame)
-        right_centroid, right_conf, _ = self._detect_claw_in_frame(right_frame)
+        # Detect claw in both cameras independently
+        cam0_centroid, cam0_conf, _ = self._detect_claw_in_frame(cam0_frame)
+        cam1_centroid, cam1_conf, _ = self._detect_claw_in_frame(cam1_frame)
 
-        prediction.pixel_left = left_centroid
-        prediction.pixel_right = right_centroid
-        prediction.confidence = (left_conf + right_conf) / 2
+        prediction.pixel_cam0 = cam0_centroid
+        prediction.pixel_cam1 = cam1_centroid
+        prediction.detected_cam0 = cam0_centroid is not None
+        prediction.detected_cam1 = cam1_centroid is not None
+        prediction.detected = prediction.detected_cam0 or prediction.detected_cam1
+        prediction.confidence = (cam0_conf + cam1_conf) / 2
 
-        if left_centroid is None or right_centroid is None:
+        if not prediction.detected:
             prediction.elapsed_ms = (time.monotonic() - t0) * 1000
             self._update_state(prediction)
             return prediction
 
-        prediction.detected = True
-
-        # Compute 3D position via stereo triangulation
-        position_3d = self._triangulate(left_centroid, right_centroid, left_frame, right_frame)
+        # Estimate 3D position from independent cameras
+        position_3d = self._estimate_position(
+            cam0_centroid, cam1_centroid, cam0_frame, cam1_frame
+        )
 
         if position_3d is not None:
-            # Apply scale correction
             scaled = position_3d * self._scale_factor
 
             # Apply exponential smoothing
@@ -332,7 +314,6 @@ class ClawPositionPredictor:
                 self._smooth_position = scaled.copy()
 
             prediction.position_mm = self._smooth_position.tolist()
-            prediction.depth_mm = float(scaled[2])
 
             # Compare with FK position
             if fk_position_mm is not None:
@@ -344,53 +325,40 @@ class ClawPositionPredictor:
         self._update_state(prediction)
         return prediction
 
-    def _triangulate(
+    def _estimate_position(
         self,
-        left_pt: tuple[int, int],
-        right_pt: tuple[int, int],
-        left_frame: np.ndarray,
-        right_frame: np.ndarray,
+        cam0_centroid: Optional[tuple[int, int]],
+        cam1_centroid: Optional[tuple[int, int]],
+        cam0_frame: np.ndarray,
+        cam1_frame: np.ndarray,
     ) -> Optional[np.ndarray]:
-        """Compute 3D position from stereo correspondences.
+        """Estimate 3D position from independent camera detections.
 
-        Uses the stereo depth estimator for disparity-based depth at the
-        detected points, then back-projects to 3D.
+        cam0 (overhead) → X, Y workspace coordinates
+        cam1 (front/side) → Z (height) coordinate
         """
-        self._ensure_depth_estimator()
-        if self._depth_est is None:
+        x_mm = 0.0
+        y_mm = 0.0
+        z_mm = 0.0
+
+        if cam0_centroid is not None:
+            # Overhead camera: pixel position → X, Y in workspace
+            h0, w0 = cam0_frame.shape[:2]
+            cx0, cy0 = w0 / 2, h0 / 2
+            x_mm = (cam0_centroid[0] - cx0) / self._cam0_px_per_mm + self._cam0_origin_mm[0]
+            y_mm = (cam0_centroid[1] - cy0) / self._cam0_px_per_mm + self._cam0_origin_mm[1]
+
+        if cam1_centroid is not None:
+            # Front/side camera: vertical pixel position → Z (height)
+            h1, w1 = cam1_frame.shape[:2]
+            cy1 = h1 / 2
+            # Invert Y axis: higher in image = higher in world
+            z_mm = (cy1 - cam1_centroid[1]) / self._cam1_px_per_mm + self._cam1_z_origin_mm
+
+        if cam0_centroid is None and cam1_centroid is None:
             return None
 
-        # Compute depth map
-        _, depth_map = self._depth_est.compute_depth(left_frame, right_frame, rectify=True)
-
-        # Get depth at detected claw position (left camera, averaged over window)
-        depth = self._depth_est.get_depth_at(depth_map, left_pt[0], left_pt[1], window=7)
-        if depth <= 0:
-            # Fallback: try disparity-based triangulation directly
-            disparity = abs(left_pt[0] - right_pt[0])
-            if disparity > 0 and self.calibrator.Q is not None:
-                focal = abs(self.calibrator.Q[2, 3])
-                baseline_inv = abs(self.calibrator.Q[3, 2])
-                if baseline_inv > 0:
-                    depth = focal / (baseline_inv * disparity)
-
-        if depth <= 0 or depth > 10000:
-            return None
-
-        # Back-project to 3D using camera intrinsics
-        if self.calibrator.camera_matrix_left is not None:
-            fx = self.calibrator.camera_matrix_left[0, 0]
-            fy = self.calibrator.camera_matrix_left[1, 1]
-            cx = self.calibrator.camera_matrix_left[0, 2]
-            cy = self.calibrator.camera_matrix_left[1, 2]
-        else:
-            return None
-
-        x_3d = (left_pt[0] - cx) * depth / fx
-        y_3d = (left_pt[1] - cy) * depth / fy
-        z_3d = depth
-
-        return np.array([x_3d, y_3d, z_3d], dtype=np.float64)
+        return np.array([x_mm, y_mm, z_mm], dtype=np.float64)
 
     def _update_state(self, prediction: ClawPrediction):
         """Update internal state with latest prediction."""
@@ -416,12 +384,11 @@ class ClawPositionPredictor:
             status = {
                 "enabled": self._enabled,
                 "prediction_count": self._prediction_count,
-                "detection_rate": (round(recent_detections / max(total_recent, 1), 2)),
+                "detection_rate": round(recent_detections / max(total_recent, 1), 2),
                 "scale_factor": round(self._scale_factor, 4),
                 "hsv_lower": self._hsv_lower.tolist(),
                 "hsv_upper": self._hsv_upper.tolist(),
                 "has_roi": self._detection_roi is not None,
-                "has_calibration": self.calibrator.is_calibrated,
             }
 
             if last is not None:
@@ -429,17 +396,12 @@ class ClawPositionPredictor:
 
             return status
 
-    def get_annotated_frame(self, frame: np.ndarray, is_left: bool = True) -> np.ndarray:
-        """Draw detection annotations on a camera frame.
-
-        Overlays the detected claw position, bounding info, and
-        coordinate readout onto the frame for visualization.
-        """
+    def get_annotated_frame(self, frame: np.ndarray, camera_id: int = 0) -> np.ndarray:
+        """Draw detection annotations on a camera frame."""
         annotated: np.ndarray = frame.copy()
         prediction = self._last_prediction
 
         if prediction is None or not prediction.detected:
-            # Draw "NO DETECTION" indicator
             cv2.putText(
                 annotated,
                 "CLAW: NO DETECTION",
@@ -452,65 +414,27 @@ class ClawPositionPredictor:
             )
             return annotated
 
-        pixel = prediction.pixel_left if is_left else prediction.pixel_right
+        pixel = prediction.pixel_cam0 if camera_id == 0 else prediction.pixel_cam1
         if pixel is None:
             return annotated
 
         px, py = pixel
+        color = (0, 220, 100)
 
-        # Draw crosshair at detected position
-        color = (0, 220, 100)  # green
-        cv2.drawMarker(
-            annotated,
-            (px, py),
-            color,
-            cv2.MARKER_CROSS,
-            markerSize=30,
-            thickness=2,
-        )
-
-        # Draw circle around detection
+        cv2.drawMarker(annotated, (px, py), color, cv2.MARKER_CROSS, markerSize=30, thickness=2)
         cv2.circle(annotated, (px, py), 20, color, 2)
 
-        # Draw confidence and position text
         conf_text = f"Conf: {prediction.confidence:.0%}"
-        cv2.putText(
-            annotated,
-            conf_text,
-            (10, 25),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            color,
-            1,
-            cv2.LINE_AA,
-        )
+        cv2.putText(annotated, conf_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
         if prediction.position_mm:
             pos = prediction.position_mm
             pos_text = f"X:{pos[0]:.0f} Y:{pos[1]:.0f} Z:{pos[2]:.0f} mm"
-            cv2.putText(
-                annotated,
-                pos_text,
-                (10, 50),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (200, 200, 50),
-                1,
-                cv2.LINE_AA,
-            )
+            cv2.putText(annotated, pos_text, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 50), 1, cv2.LINE_AA)
 
         if prediction.error_mm > 0:
             err_color = (0, 200, 0) if prediction.error_mm < 30 else (0, 140, 255)
             err_text = f"FK err: {prediction.error_mm:.0f}mm"
-            cv2.putText(
-                annotated,
-                err_text,
-                (10, 75),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                err_color,
-                1,
-                cv2.LINE_AA,
-            )
+            cv2.putText(annotated, err_text, (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.5, err_color, 1, cv2.LINE_AA)
 
         return annotated
