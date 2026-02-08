@@ -213,7 +213,7 @@ async def lifespan(app: FastAPI):
             if project_root not in sys.path:
                 sys.path.insert(0, project_root)
             from src.interface.d1_dds_connection import D1DDSConnection
-            arm = D1DDSConnection()
+            arm = D1DDSConnection(collector=tc if _HAS_TELEMETRY else None)
             if arm.connect(interface_name=args.interface):
                 action_log.add("SYSTEM", f"DDS connected on {args.interface}", "info")
                 if _HAS_TELEMETRY:
@@ -339,11 +339,9 @@ def get_arm_state() -> Dict[str, Any]:
     if smoother and not smoother.synced:
         smoother.sync_from_feedback(angles, gripper)
 
-    # SAFETY: Keep smoother arm_enabled in sync with actual arm state
-    if smoother:
-        is_enabled = state["power"] and state["enabled"]
-        if smoother.arm_enabled != is_enabled:
-            smoother.set_arm_enabled(is_enabled)
+    # NOTE: smoother arm_enabled is ONLY changed by explicit command handlers
+    # (enable, disable, power-off, e-stop, reset). DO NOT sync from feedback here
+    # — the arm takes time to process enable commands, so feedback would race.
 
     # Log state transitions
     if _prev_state:
@@ -485,6 +483,8 @@ async def cmd_reset():
     cid = _new_cid()
     _telem_cmd_sent("reset", {}, cid)
     ok = arm.reset_to_zero(_correlation_id=cid) if arm else False
+    if smoother:
+        smoother.set_arm_enabled(False)
     resp = cmd_response(ok, "RESET", correlation_id=cid)
     await broadcast_ack("RESET", ok)
     return resp
@@ -493,6 +493,8 @@ async def cmd_reset():
 async def cmd_set_joint(req: SetJointRequest):
     cid = _new_cid()
     _telem_cmd_sent("set-joint", {"id": req.id, "angle": req.angle}, cid)
+    if not (smoother and smoother._arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
     action_log.add("SET_JOINT", f"Request: J{req.id} -> {req.angle}°", "info")
     lo, hi = JOINT_LIMITS_DEG.get(req.id, (-135, 135))
     if not (lo <= req.angle <= hi):
@@ -514,6 +516,8 @@ async def cmd_set_joint(req: SetJointRequest):
 async def cmd_set_all_joints(req: SetAllJointsRequest):
     cid = _new_cid()
     _telem_cmd_sent("set-all-joints", {"angles": req.angles}, cid)
+    if not (smoother and smoother._arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
     action_log.add("SET_ALL_JOINTS", f"Request: {[round(a,1) for a in req.angles]}", "info")
     for i, a in enumerate(req.angles):
         lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
@@ -536,6 +540,8 @@ async def cmd_set_all_joints(req: SetAllJointsRequest):
 async def cmd_set_gripper(req: SetGripperRequest):
     cid = _new_cid()
     _telem_cmd_sent("set-gripper", {"position": req.position}, cid)
+    if not (smoother and smoother._arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
     action_log.add("SET_GRIPPER", f"Request: {req.position} mm", "info")
     if smoother and smoother.running:
         smoother.set_gripper_target(req.position)

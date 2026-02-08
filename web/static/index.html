@@ -276,6 +276,12 @@ const LINKS_MM = {
   base: 80, shoulder: 170, elbow: 170, wrist1: 60, wrist2: 60, end: 50
 };
 
+// DH geometric offsets (degrees) — maps D1 DDS zero convention to viz geometry.
+// The D1's zero-angle config has the arm extended forward (not straight up).
+// At DDS [0, -90, 90, 0, 0, 0] the arm is folded/compact (up then back down).
+// These offsets are added to the DDS pitch angles before FK computation.
+const JOINT_VIZ_OFFSETS = [0, 90, 90, 0, 0, 0];
+
 // ---- State ----
 let ws = null;
 let armState = { connected: false, joints: [0,0,0,0,0,0], gripper: 0, power: false, enabled: false, error: 0, log: [] };
@@ -587,14 +593,14 @@ function drawArm() {
   pts.push({ x: baseX, y: baseY - linkLengths[0] * scale });
   // cumAngle stays -PI/2
 
-  // Segment 1: shoulder — J1 pitch
-  cumAngle += joints[1] * deg2rad;
+  // Segment 1: shoulder — J1 pitch (with DH offset)
+  cumAngle += (joints[1] + JOINT_VIZ_OFFSETS[1]) * deg2rad;
   let px = pts[1].x + Math.cos(cumAngle) * linkLengths[1] * scale;
   let py = pts[1].y + Math.sin(cumAngle) * linkLengths[1] * scale;
   pts.push({ x: px, y: py });
 
   // Segment 2: elbow — J2 pitch
-  cumAngle += joints[2] * deg2rad;
+  cumAngle += (joints[2] + JOINT_VIZ_OFFSETS[2]) * deg2rad;
   px = pts[2].x + Math.cos(cumAngle) * linkLengths[2] * scale;
   py = pts[2].y + Math.sin(cumAngle) * linkLengths[2] * scale;
   pts.push({ x: px, y: py });
@@ -605,7 +611,7 @@ function drawArm() {
   pts.push({ x: px, y: py });
 
   // Segment 4: wrist2 — J4 pitch
-  cumAngle += joints[4] * deg2rad;
+  cumAngle += (joints[4] + JOINT_VIZ_OFFSETS[4]) * deg2rad;
   px = pts[4].x + Math.cos(cumAngle) * linkLengths[4] * scale;
   py = pts[4].y + Math.sin(cumAngle) * linkLengths[4] * scale;
   pts.push({ x: px, y: py });
