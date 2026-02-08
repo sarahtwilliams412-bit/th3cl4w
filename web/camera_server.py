@@ -34,6 +34,14 @@ try:
 except ImportError:
     _HAS_TELEMETRY = False
 
+try:
+    from src.vision.startup_scanner import StartupScanner
+    from src.vision.world_model import WorldModel
+
+    _HAS_SCANNER = True
+except ImportError:
+    _HAS_SCANNER = False
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("th3cl4w.camera")
 
@@ -195,6 +203,7 @@ class CameraThread:
 # ---------------------------------------------------------------------------
 
 cameras: dict[int, CameraThread] = {}
+startup_scanner: Optional["StartupScanner"] = None
 
 
 class CameraHandler(BaseHTTPRequestHandler):
@@ -211,6 +220,10 @@ class CameraHandler(BaseHTTPRequestHandler):
             self._handle_snapshot()
         elif self.path == "/status":
             self._handle_status()
+        elif self.path == "/world":
+            self._handle_world_model()
+        elif self.path == "/scan":
+            self._handle_scan_report()
         else:
             self.send_error(404)
 
@@ -281,11 +294,52 @@ class CameraHandler(BaseHTTPRequestHandler):
             if cam._health:
                 cam_status["health"] = cam._health.stats
             status[str(idx)] = cam_status
+        # Include scanner phase if running
+        if startup_scanner is not None:
+            status["scanner"] = {
+                "phase": startup_scanner.phase.value,
+                "running": startup_scanner.is_running,
+            }
         body = json.dumps(status).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_world_model(self):
+        """Serve the current world model snapshot as JSON."""
+        import json
+
+        if startup_scanner is None:
+            body = json.dumps({"error": "Scanner not available"}).encode()
+        else:
+            model = startup_scanner.get_world_model()
+            snap = model.snapshot()
+            body = json.dumps(snap.to_dict()).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_scan_report(self):
+        """Serve the startup scan report as JSON."""
+        import json
+
+        if startup_scanner is None:
+            body = json.dumps({"error": "Scanner not available"}).encode()
+        else:
+            report = startup_scanner.get_report()
+            body = json.dumps(report.to_dict()).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(body)
 
@@ -315,7 +369,34 @@ class ThreadedHTTPServer(HTTPServer):
 # ---------------------------------------------------------------------------
 
 
+def _on_world_model_ready(snapshot):
+    """Callback fired when the startup scanner's initial world model is built."""
+    logger.info(
+        "World model ready: %d objects, confidence=%.2f grade=%s, "
+        "reachable_targets=%d, obstacles=%d, free_zone=%.0f%%",
+        len(snapshot.objects),
+        snapshot.model_confidence,
+        snapshot.model_grade,
+        snapshot.reachable_targets,
+        snapshot.obstacles_detected,
+        snapshot.free_zone_pct,
+    )
+    for obj in snapshot.objects:
+        dims = obj.dimensions_mm
+        logger.info(
+            "  %s: %.0fx%.0fx%.0fmm at (%.0f,%.0f,%.0f)mm — %s, %s, grade=%s",
+            obj.object_id,
+            dims[0], dims[1], dims[2],
+            obj.position_mm[0], obj.position_mm[1], obj.position_mm[2],
+            obj.category.value,
+            obj.reach_status.value,
+            obj.grade,
+        )
+
+
 def main():
+    global startup_scanner
+
     parser = argparse.ArgumentParser(description="th3cl4w Camera Streaming Server")
     parser.add_argument(
         "--cam0", type=int, default=0, help="Device index for camera 0 (default: 0)"
@@ -328,6 +409,7 @@ def main():
     parser.add_argument("--height", type=int, default=1080, help="Capture height (default: 1080)")
     parser.add_argument("--fps", type=int, default=15, help="Capture FPS (default: 15)")
     parser.add_argument("--jpeg-quality", type=int, default=92, help="JPEG quality 1-100 (default: 92)")
+    parser.add_argument("--no-scan", action="store_true", help="Disable startup environment scanning")
     args = parser.parse_args()
 
     # Start camera threads
@@ -339,18 +421,31 @@ def main():
 
     logger.info("Cameras started: cam0=/dev/video%d, cam1=/dev/video%d", args.cam0, args.cam1)
 
+    # Launch startup scanner — immediately begins assessing the environment
+    if _HAS_SCANNER and not args.no_scan:
+        startup_scanner = StartupScanner(cam0=cameras[0], cam1=cameras[1])
+        startup_scanner.on_model_ready(_on_world_model_ready)
+        startup_scanner.start()
+        logger.info("Startup scanner launched — building world model from camera feeds")
+    elif not _HAS_SCANNER:
+        logger.warning("Startup scanner unavailable (vision modules not installed)")
+
     # Start HTTP server
     server = ThreadedHTTPServer(("0.0.0.0", args.port), CameraHandler)
     logger.info("Camera server listening on http://0.0.0.0:%d", args.port)
     logger.info("  MJPEG streams: /cam/0, /cam/1")
     logger.info("  Snapshots:     /snap/0, /snap/1")
     logger.info("  Status:        /status")
+    logger.info("  World model:   /world")
+    logger.info("  Scan report:   /scan")
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         logger.info("Shutting down...")
     finally:
+        if startup_scanner is not None:
+            startup_scanner.stop()
         for cam in cameras.values():
             cam.stop()
         server.server_close()
