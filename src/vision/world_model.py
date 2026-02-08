@@ -36,14 +36,16 @@ ARM_BASE_POSITION = np.array([0.0, 0.0, 0.0])  # arm base at origin
 
 class ObjectCategory(Enum):
     """Categorize objects by their role in the world model."""
-    TARGET = "target"       # something the arm might pick up
-    OBSTACLE = "obstacle"   # something the arm must avoid
-    BOUNDARY = "boundary"   # edge of workspace / wall
-    UNKNOWN = "unknown"     # detected but not yet classified
+
+    TARGET = "target"  # something the arm might pick up
+    OBSTACLE = "obstacle"  # something the arm must avoid
+    BOUNDARY = "boundary"  # edge of workspace / wall
+    UNKNOWN = "unknown"  # detected but not yet classified
 
 
 class ReachStatus(Enum):
     """Whether an object is within the arm's operating envelope."""
+
     REACHABLE = "reachable"
     OUT_OF_RANGE = "out_of_range"
     TOO_CLOSE = "too_close"
@@ -145,7 +147,7 @@ class WorldModel:
     """
 
     SAFETY_MARGIN_MM = 30.0  # inflate bounding boxes for collision avoidance
-    STALE_AFTER_SCANS = 5    # mark objects stale after N scans without observation
+    STALE_AFTER_SCANS = 5  # mark objects stale after N scans without observation
     MIN_GRADE_FOR_INCLUSION = "D"  # objects below this grade are excluded
 
     # Grade ordering for comparison
@@ -264,7 +266,9 @@ class WorldModel:
         n_objs = len(self._objects)
         logger.info(
             "World model updated: scan=%d, objects=%d, elapsed=%.1fms",
-            self._scan_count, n_objs, elapsed_ms,
+            self._scan_count,
+            n_objs,
+            elapsed_ms,
         )
 
     def _get_or_create_id(self, label: str) -> str:
@@ -288,7 +292,7 @@ class WorldModel:
         """
         # Default: place in front of the arm at a mid-range distance
         x = 250.0  # forward
-        y = 0.0    # centered
+        y = 0.0  # centered
         z = est.height_mm / 2.0  # half-height above table
 
         if est.bbox_cam1 is not None:
@@ -313,9 +317,7 @@ class WorldModel:
         else:
             return ReachStatus.REACHABLE
 
-    def _classify_category(
-        self, est: DimensionEstimate, reach: ReachStatus
-    ) -> ObjectCategory:
+    def _classify_category(self, est: DimensionEstimate, reach: ReachStatus) -> ObjectCategory:
         """Classify whether an object is a target, obstacle, or boundary."""
         if est.graspable and reach in (ReachStatus.REACHABLE, ReachStatus.MARGINAL):
             return ObjectCategory.TARGET
@@ -324,9 +326,7 @@ class WorldModel:
         else:
             return ObjectCategory.OBSTACLE
 
-    def _smooth_position(
-        self, old: np.ndarray, new: np.ndarray, alpha: float = 0.3
-    ) -> np.ndarray:
+    def _smooth_position(self, old: np.ndarray, new: np.ndarray, alpha: float = 0.3) -> np.ndarray:
         """Exponential moving average for position smoothing."""
         return old * (1 - alpha) + new * alpha
 
@@ -334,9 +334,7 @@ class WorldModel:
         """Downgrade objects not seen in recent scans."""
         to_remove = []
         for obj_id, obj in self._objects.items():
-            scans_since_seen = self._scan_count - int(
-                obj.observation_count
-            )
+            scans_since_seen = self._scan_count - int(obj.observation_count)
             # If object hasn't been observed recently relative to total scans
             if self._scan_count > self.STALE_AFTER_SCANS:
                 # Check if last seen was too long ago
@@ -364,13 +362,12 @@ class WorldModel:
             total_obs = self._total_observations
 
         reachable_targets = sum(
-            1 for o in objects
-            if o.category == ObjectCategory.TARGET
-            and o.reach_status == ReachStatus.REACHABLE
+            1
+            for o in objects
+            if o.category == ObjectCategory.TARGET and o.reach_status == ReachStatus.REACHABLE
         )
         obstacles = sum(
-            1 for o in objects
-            if o.category in (ObjectCategory.OBSTACLE, ObjectCategory.BOUNDARY)
+            1 for o in objects if o.category in (ObjectCategory.OBSTACLE, ObjectCategory.BOUNDARY)
         )
 
         # Free zone: estimate percentage of workspace not blocked
@@ -431,8 +428,10 @@ class WorldModel:
                 total += 1
                 # Check if this point is inside any object's safety zone
                 for obj in objects:
-                    if (obj.safety_min_mm[0] <= x <= obj.safety_max_mm[0] and
-                            obj.safety_min_mm[1] <= y <= obj.safety_max_mm[1]):
+                    if (
+                        obj.safety_min_mm[0] <= x <= obj.safety_max_mm[0]
+                        and obj.safety_min_mm[1] <= y <= obj.safety_max_mm[1]
+                    ):
                         blocked += 1
                         break
 
@@ -444,7 +443,8 @@ class WorldModel:
         """Get all objects that are targets within arm reach, sorted by confidence."""
         with self._lock:
             targets = [
-                o for o in self._objects.values()
+                o
+                for o in self._objects.values()
                 if o.category == ObjectCategory.TARGET
                 and o.reach_status in (ReachStatus.REACHABLE, ReachStatus.MARGINAL)
             ]
@@ -455,13 +455,12 @@ class WorldModel:
         """Get all detected obstacles and boundaries."""
         with self._lock:
             return [
-                o for o in self._objects.values()
+                o
+                for o in self._objects.values()
                 if o.category in (ObjectCategory.OBSTACLE, ObjectCategory.BOUNDARY)
             ]
 
-    def check_collision(
-        self, point_mm: np.ndarray, radius_mm: float = 30.0
-    ) -> list[WorldObject]:
+    def check_collision(self, point_mm: np.ndarray, radius_mm: float = 30.0) -> list[WorldObject]:
         """Check if a point would collide with any known object's safety zone.
 
         Args:
@@ -475,12 +474,14 @@ class WorldModel:
         with self._lock:
             for obj in self._objects.values():
                 # Inflate safety zone by the check radius
-                if (point_mm[0] >= obj.safety_min_mm[0] - radius_mm and
-                        point_mm[0] <= obj.safety_max_mm[0] + radius_mm and
-                        point_mm[1] >= obj.safety_min_mm[1] - radius_mm and
-                        point_mm[1] <= obj.safety_max_mm[1] + radius_mm and
-                        point_mm[2] >= obj.safety_min_mm[2] - radius_mm and
-                        point_mm[2] <= obj.safety_max_mm[2] + radius_mm):
+                if (
+                    point_mm[0] >= obj.safety_min_mm[0] - radius_mm
+                    and point_mm[0] <= obj.safety_max_mm[0] + radius_mm
+                    and point_mm[1] >= obj.safety_min_mm[1] - radius_mm
+                    and point_mm[1] <= obj.safety_max_mm[1] + radius_mm
+                    and point_mm[2] >= obj.safety_min_mm[2] - radius_mm
+                    and point_mm[2] <= obj.safety_max_mm[2] + radius_mm
+                ):
                     collisions.append(obj)
         return collisions
 
@@ -496,13 +497,15 @@ class WorldModel:
         for i, pt in enumerate(path_points_mm):
             hits = self.check_collision(pt, radius_mm)
             for obj in hits:
-                events.append({
-                    "path_index": i,
-                    "point_mm": pt.tolist(),
-                    "object_id": obj.object_id,
-                    "object_label": obj.label,
-                    "object_category": obj.category.value,
-                })
+                events.append(
+                    {
+                        "path_index": i,
+                        "point_mm": pt.tolist(),
+                        "object_id": obj.object_id,
+                        "object_label": obj.label,
+                        "object_category": obj.category.value,
+                    }
+                )
         return events
 
     def clear(self):

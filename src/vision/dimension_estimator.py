@@ -194,8 +194,7 @@ class ObjectDimensionEstimator:
             return []
 
         # Match detections by label across cameras
-        estimates = self._fuse_and_estimate(dets_cam0, dets_cam1,
-                                            cam0_frame, cam1_frame)
+        estimates = self._fuse_and_estimate(dets_cam0, dets_cam1, cam0_frame, cam1_frame)
 
         # Accumulate into history and re-grade
         now = time.monotonic()
@@ -284,9 +283,7 @@ class ObjectDimensionEstimator:
 
         return estimates
 
-    def _pixels_to_mm_overhead(
-        self, pixel_extent: int, frame: Optional[np.ndarray]
-    ) -> float:
+    def _pixels_to_mm_overhead(self, pixel_extent: int, frame: Optional[np.ndarray]) -> float:
         """Convert pixel extent in overhead view to mm."""
         if self.cal_cam1 is not None and self.cal_cam1.is_calibrated and frame is not None:
             # Use focal length + assumed height for more accurate conversion
@@ -298,9 +295,7 @@ class ObjectDimensionEstimator:
             return pixel_extent * scale
         return pixel_extent * self.overhead_scale
 
-    def _pixels_to_mm_front(
-        self, pixel_extent: int, frame: Optional[np.ndarray]
-    ) -> float:
+    def _pixels_to_mm_front(self, pixel_extent: int, frame: Optional[np.ndarray]) -> float:
         """Convert pixel extent in front view to mm."""
         if self.cal_cam0 is not None and self.cal_cam0.is_calibrated and frame is not None:
             h, w = frame.shape[:2]
@@ -398,9 +393,16 @@ class ObjectDimensionEstimator:
 
         # Trim to max history
         if len(hist.widths) > self.max_history:
-            for lst in [hist.widths, hist.heights, hist.depths,
-                        hist.confidences, hist.sources, hist.bboxes_cam0,
-                        hist.bboxes_cam1, hist.timestamps]:
+            for lst in [
+                hist.widths,
+                hist.heights,
+                hist.depths,
+                hist.confidences,
+                hist.sources,
+                hist.bboxes_cam0,
+                hist.bboxes_cam1,
+                hist.timestamps,
+            ]:
                 del lst[0]
 
     def _reassess(self, est: DimensionEstimate) -> DimensionEstimate:
@@ -512,11 +514,13 @@ class ObjectDimensionEstimator:
                 confidence=base_conf,
                 source=source,
                 frame_count=n,
-                variance_mm=float(max(
-                    np.std(hist.widths) if n >= 2 else 0.0,
-                    np.std(hist.heights) if n >= 2 else 0.0,
-                    np.std(hist.depths) if n >= 2 else 0.0,
-                )),
+                variance_mm=float(
+                    max(
+                        np.std(hist.widths) if n >= 2 else 0.0,
+                        np.std(hist.heights) if n >= 2 else 0.0,
+                        np.std(hist.depths) if n >= 2 else 0.0,
+                    )
+                ),
             )
             self._grade(est)
             est = self._reassess(est)

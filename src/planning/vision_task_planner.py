@@ -141,8 +141,16 @@ _ACTION_PATTERNS: list[tuple[str, ActionType]] = [
 
 # Color keywords for matching objects
 _COLOR_KEYWORDS = [
-    "red", "green", "blue", "yellow", "orange", "purple",
-    "white", "black", "pink", "cyan",
+    "red",
+    "green",
+    "blue",
+    "yellow",
+    "orange",
+    "purple",
+    "white",
+    "black",
+    "pink",
+    "cyan",
 ]
 
 # Spatial keywords for identifying destination
@@ -182,9 +190,7 @@ class VisionTaskPlanner:
         self.task_planner = task_planner or TaskPlanner()
         # Center of the visual workspace in joint space (for image-based fallback)
         self.workspace_center = (
-            workspace_center_deg
-            if workspace_center_deg is not None
-            else READY_POSE.copy()
+            workspace_center_deg if workspace_center_deg is not None else READY_POSE.copy()
         )
         # Degrees of joint travel that maps to the full camera field of view
         self.workspace_range = workspace_range_deg
@@ -365,7 +371,9 @@ class VisionTaskPlanner:
                     obj = matches[0]
                     pos_str = ""
                     if obj.centroid_3d is not None:
-                        pos_str = f", workspace ({obj.centroid_3d[0]:.0f}, {obj.centroid_3d[1]:.0f})mm"
+                        pos_str = (
+                            f", workspace ({obj.centroid_3d[0]:.0f}, {obj.centroid_3d[1]:.0f})mm"
+                        )
                     return obj, f"Matched '{color}' -> {obj.color} object in {obj.region}{pos_str}"
 
         # Try to match by position keywords
@@ -373,7 +381,10 @@ class VisionTaskPlanner:
             if pos_word in text:
                 for obj in scene.objects:
                     if pos_word in obj.region:
-                        return obj, f"Matched position '{pos_word}' -> {obj.color} object in {obj.region}"
+                        return (
+                            obj,
+                            f"Matched position '{pos_word}' -> {obj.color} object in {obj.region}",
+                        )
 
         # Try to match by size
         if "large" in text or "big" in text or "biggest" in text:
@@ -389,7 +400,10 @@ class VisionTaskPlanner:
         # Default: use the largest object
         obj = scene.largest_object()
         if obj:
-            return obj, f"No specific target match; defaulting to largest: {obj.color} object in {obj.region}"
+            return (
+                obj,
+                f"No specific target match; defaulting to largest: {obj.color} object in {obj.region}",
+            )
 
         return None, "Could not match any target object."
 
@@ -403,9 +417,7 @@ class VisionTaskPlanner:
         text = instruction.lower()
 
         # Check for explicit destination object by color (after "to/on/near/onto")
-        dest_match = re.search(
-            r"\b(?:to|on|onto|near|next\s*to|beside)\s+(?:the\s+)?(\w+)", text
-        )
+        dest_match = re.search(r"\b(?:to|on|onto|near|next\s*to|beside)\s+(?:the\s+)?(\w+)", text)
         if dest_match:
             dest_word = dest_match.group(1)
             if dest_word in _COLOR_KEYWORDS:
@@ -421,7 +433,9 @@ class VisionTaskPlanner:
         # If two objects of different colors are mentioned, second is destination
         mentioned_colors = [c for c in _COLOR_KEYWORDS if c in text]
         if len(mentioned_colors) >= 2 and target:
-            dest_color = mentioned_colors[1] if mentioned_colors[0] == target.color else mentioned_colors[0]
+            dest_color = (
+                mentioned_colors[1] if mentioned_colors[0] == target.color else mentioned_colors[0]
+            )
             matches = scene.objects_by_color(dest_color)
             if matches:
                 return matches[0], f"Second color mentioned: {dest_color} -> destination"
@@ -471,10 +485,11 @@ class VisionTaskPlanner:
             pose = self._scene_to_joint_pose(target)
             pos_info = f"image ({target.normalized_x:.2f}, {target.normalized_y:.2f})"
             if target.centroid_3d is not None:
-                pos_info += f" / workspace ({target.centroid_3d[0]:.0f}, {target.centroid_3d[1]:.0f})mm"
+                pos_info += (
+                    f" / workspace ({target.centroid_3d[0]:.0f}, {target.centroid_3d[1]:.0f})mm"
+                )
             parts.append(
-                f"Target at {pos_info} "
-                f"-> joint pose [{', '.join(f'{a:.1f}' for a in pose)}]"
+                f"Target at {pos_info} " f"-> joint pose [{', '.join(f'{a:.1f}' for a in pose)}]"
             )
         if destination:
             pose = self._scene_to_joint_pose(destination)
@@ -618,9 +633,7 @@ class VisionTaskPlanner:
         approach_pose = self._scene_to_joint_pose(target)
         push_pose = approach_pose.copy()
         push_pose[1] -= 10.0
-        push_pose[1] = float(
-            np.clip(push_pose[1], JOINT_LIMITS_DEG[1, 0], JOINT_LIMITS_DEG[1, 1])
-        )
+        push_pose[1] = float(np.clip(push_pose[1], JOINT_LIMITS_DEG[1, 0], JOINT_LIMITS_DEG[1, 1]))
 
         waypoints = [
             Waypoint(current_pose, gripper_mm=0.0, max_speed_factor=0.6),

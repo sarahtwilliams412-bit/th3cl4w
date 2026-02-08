@@ -298,9 +298,7 @@ class ClawPositionPredictor:
             return prediction
 
         # Estimate 3D position from independent cameras
-        position_3d = self._estimate_position(
-            cam0_centroid, cam1_centroid, cam0_frame, cam1_frame
-        )
+        position_3d = self._estimate_position(cam0_centroid, cam1_centroid, cam0_frame, cam1_frame)
 
         if position_3d is not None:
             scaled = position_3d * self._scale_factor
@@ -425,16 +423,36 @@ class ClawPositionPredictor:
         cv2.circle(annotated, (px, py), 20, color, 2)
 
         conf_text = f"Conf: {prediction.confidence:.0%}"
-        cv2.putText(annotated, conf_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+        cv2.putText(
+            annotated, conf_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA
+        )
 
         if prediction.position_mm:
             pos = prediction.position_mm
             pos_text = f"X:{pos[0]:.0f} Y:{pos[1]:.0f} Z:{pos[2]:.0f} mm"
-            cv2.putText(annotated, pos_text, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 50), 1, cv2.LINE_AA)
+            cv2.putText(
+                annotated,
+                pos_text,
+                (10, 50),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (200, 200, 50),
+                1,
+                cv2.LINE_AA,
+            )
 
         if prediction.error_mm > 0:
             err_color = (0, 200, 0) if prediction.error_mm < 30 else (0, 140, 255)
             err_text = f"FK err: {prediction.error_mm:.0f}mm"
-            cv2.putText(annotated, err_text, (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.5, err_color, 1, cv2.LINE_AA)
+            cv2.putText(
+                annotated,
+                err_text,
+                (10, 75),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                err_color,
+                1,
+                cv2.LINE_AA,
+            )
 
         return annotated

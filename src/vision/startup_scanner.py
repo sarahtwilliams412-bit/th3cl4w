@@ -45,6 +45,7 @@ class FrameProvider(Protocol):
 
 class ScanPhase(Enum):
     """Phases of the startup scanning process."""
+
     WAITING_FOR_CAMERAS = "waiting_for_cameras"
     INITIAL_CAPTURE = "initial_capture"
     DIMENSION_ANALYSIS = "dimension_analysis"
@@ -58,6 +59,7 @@ class ScanPhase(Enum):
 @dataclass
 class ScanResult:
     """Result of a single scan pass (one pair of frames)."""
+
     scan_index: int
     estimates: list[DimensionEstimate]
     scene: Optional[SceneDescription]
@@ -68,6 +70,7 @@ class ScanResult:
 @dataclass
 class StartupScanReport:
     """Complete report from the startup scanning process."""
+
     phase: ScanPhase
     scans_completed: int
     total_objects_detected: int
@@ -327,7 +330,9 @@ class StartupScanner:
 
             logger.info(
                 "Burst scan %d: %d objects, %.1fms",
-                i, len(result.estimates), result.elapsed_ms,
+                i,
+                len(result.estimates),
+                result.elapsed_ms,
             )
 
             if i < self.INITIAL_BURST_COUNT - 1:
@@ -447,5 +452,7 @@ class StartupScanner:
 
             logger.info(
                 "Refinement scan %d: confidence=%.2f grade=%s",
-                refinement_count, snap.model_confidence, snap.model_grade,
+                refinement_count,
+                snap.model_confidence,
+                snap.model_grade,
             )

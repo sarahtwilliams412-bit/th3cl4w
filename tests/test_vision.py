@@ -16,8 +16,8 @@ from src.vision.calibration import (
 )
 from src.vision.workspace_mapper import WorkspaceMapper
 
-
 # --- Helpers ---
+
 
 def make_synthetic_checkerboard(
     board_size=(7, 5),
@@ -54,6 +54,7 @@ def make_varied_checkerboard_images(n=5, board_size=(7, 5)):
 
 
 # --- CameraCalibration tests ---
+
 
 class TestCameraCalibration:
     def test_defaults(self):
@@ -98,12 +99,15 @@ class TestCameraCalibration:
             dist_coeffs=np.zeros(5),
         )
         # Camera looking straight down from 500mm height
-        cal.cam_to_workspace = np.array([
-            [1, 0, 0, 0],
-            [0, -1, 0, 0],  # flip Y
-            [0, 0, -1, 500],  # Z points up, camera at 500mm
-            [0, 0, 0, 1],
-        ], dtype=np.float64)
+        cal.cam_to_workspace = np.array(
+            [
+                [1, 0, 0, 0],
+                [0, -1, 0, 0],  # flip Y
+                [0, 0, -1, 500],  # Z points up, camera at 500mm
+                [0, 0, 0, 1],
+            ],
+            dtype=np.float64,
+        )
         pos = cal.pixel_to_workspace(320.0, 240.0, known_z=0.0)
         assert pos is not None
         # Center pixel looking straight down should hit near origin
@@ -132,6 +136,7 @@ class TestCameraCalibration:
 
 
 # --- IndependentCalibrator tests ---
+
 
 class TestIndependentCalibrator:
     def test_find_corners_synthetic(self):
@@ -177,6 +182,7 @@ class TestIndependentCalibrator:
 
 
 # --- WorkspaceMapper tests ---
+
 
 class TestWorkspaceMapper:
     def test_init_defaults(self):

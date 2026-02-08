@@ -113,12 +113,14 @@ class VisualGraspPlanner:
         reach = np.linalg.norm(obj_pos[:2])  # XY distance from base
         if reach > self.max_reach:
             return self._failed_plan(
-                obj_pos, object_label,
+                obj_pos,
+                object_label,
                 f"Object at {reach:.0f}mm exceeds max reach {self.max_reach:.0f}mm",
             )
         if reach < self.min_reach:
             return self._failed_plan(
-                obj_pos, object_label,
+                obj_pos,
+                object_label,
                 f"Object at {reach:.0f}mm is within min reach {self.min_reach:.0f}mm",
             )
 
@@ -132,7 +134,8 @@ class VisualGraspPlanner:
         # Check if object fits in gripper
         if width > GRIPPER_MAX_OPEN_MM:
             return self._failed_plan(
-                obj_pos, object_label,
+                obj_pos,
+                object_label,
                 f"Object width {width:.0f}mm exceeds gripper max {GRIPPER_MAX_OPEN_MM:.0f}mm",
             )
 
@@ -244,9 +247,7 @@ class VisualGraspPlanner:
 
         return known_objects.get(label, (50.0, 80.0, 50.0))
 
-    def _top_down_grasp_pose(
-        self, obj_pos_mm: np.ndarray, obj_height_mm: float
-    ) -> np.ndarray:
+    def _top_down_grasp_pose(self, obj_pos_mm: np.ndarray, obj_height_mm: float) -> np.ndarray:
         """Compute a top-down grasp pose.
 
         End-effector points straight down (Z axis pointing down in arm frame),
@@ -265,19 +266,23 @@ class VisualGraspPlanner:
         yaw = math.atan2(grasp_y, grasp_x)
 
         # Rotation matrix: Z down, X toward object (radial), Y perpendicular
-        R = np.array([
-            [math.cos(yaw), -math.sin(yaw), 0.0],
-            [math.sin(yaw), math.cos(yaw), 0.0],
-            [0.0, 0.0, -1.0],
-        ])
+        R = np.array(
+            [
+                [math.cos(yaw), -math.sin(yaw), 0.0],
+                [math.sin(yaw), math.cos(yaw), 0.0],
+                [0.0, 0.0, -1.0],
+            ]
+        )
 
         # Flip to get EE z-axis pointing down
         # The D1 EE convention: z-axis is the approach direction
-        R_grasp = np.array([
-            [math.cos(yaw), math.sin(yaw), 0.0],
-            [math.sin(yaw), -math.cos(yaw), 0.0],
-            [0.0, 0.0, -1.0],
-        ])
+        R_grasp = np.array(
+            [
+                [math.cos(yaw), math.sin(yaw), 0.0],
+                [math.sin(yaw), -math.cos(yaw), 0.0],
+                [0.0, 0.0, -1.0],
+            ]
+        )
 
         T = np.eye(4)
         T[:3, :3] = R_grasp
@@ -285,9 +290,7 @@ class VisualGraspPlanner:
 
         return T
 
-    def _side_grasp_pose(
-        self, obj_pos_mm: np.ndarray, obj_height_mm: float
-    ) -> np.ndarray:
+    def _side_grasp_pose(self, obj_pos_mm: np.ndarray, obj_height_mm: float) -> np.ndarray:
         """Compute a side grasp pose (approach horizontally).
 
         End-effector approaches from the side, gripper horizontal.
@@ -299,11 +302,13 @@ class VisualGraspPlanner:
         yaw = math.atan2(grasp_y, grasp_x)
 
         # Horizontal approach: EE z-axis points toward object (radial)
-        R_grasp = np.array([
-            [0.0, 0.0, math.cos(yaw)],
-            [0.0, -1.0, math.sin(yaw)],
-            [1.0, 0.0, 0.0],
-        ])
+        R_grasp = np.array(
+            [
+                [0.0, 0.0, math.cos(yaw)],
+                [0.0, -1.0, math.sin(yaw)],
+                [1.0, 0.0, 0.0],
+            ]
+        )
 
         T = np.eye(4)
         T[:3, :3] = R_grasp
@@ -327,9 +332,7 @@ class VisualGraspPlanner:
         T[:3, 3] += z_axis * (distance_mm / 1000.0)
         return T
 
-    def _failed_plan(
-        self, obj_pos: np.ndarray, label: str, message: str
-    ) -> GraspPlan:
+    def _failed_plan(self, obj_pos: np.ndarray, label: str, message: str) -> GraspPlan:
         """Create a failed/infeasible grasp plan."""
         logger.warning("Grasp planning failed: %s", message)
         zero_pose = np.eye(4)

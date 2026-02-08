@@ -53,7 +53,14 @@ logger = logging.getLogger("th3cl4w.camera")
 class CameraThread:
     """Captures frames from a camera in a background thread."""
 
-    def __init__(self, device_id: int, width: int = 1920, height: int = 1080, fps: int = 15, jpeg_quality: int = 92):
+    def __init__(
+        self,
+        device_id: int,
+        width: int = 1920,
+        height: int = 1080,
+        fps: int = 15,
+        jpeg_quality: int = 92,
+    ):
         self.device_id = device_id
         self.width = width
         self.height = height
@@ -109,7 +116,7 @@ class CameraThread:
                 cap = cv2.VideoCapture(self.device_id, cv2.CAP_V4L2)
                 if cap.isOpened():
                     # Request MJPEG format for high-res throughput
-                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
                     cap.set(cv2.CAP_PROP_FPS, self.fps)
@@ -386,8 +393,12 @@ def _on_world_model_ready(snapshot):
         logger.info(
             "  %s: %.0fx%.0fx%.0fmm at (%.0f,%.0f,%.0f)mm — %s, %s, grade=%s",
             obj.object_id,
-            dims[0], dims[1], dims[2],
-            obj.position_mm[0], obj.position_mm[1], obj.position_mm[2],
+            dims[0],
+            dims[1],
+            dims[2],
+            obj.position_mm[0],
+            obj.position_mm[1],
+            obj.position_mm[2],
             obj.category.value,
             obj.reach_status.value,
             obj.grade,
@@ -408,8 +419,12 @@ def main():
     parser.add_argument("--width", type=int, default=1920, help="Capture width (default: 1920)")
     parser.add_argument("--height", type=int, default=1080, help="Capture height (default: 1080)")
     parser.add_argument("--fps", type=int, default=15, help="Capture FPS (default: 15)")
-    parser.add_argument("--jpeg-quality", type=int, default=92, help="JPEG quality 1-100 (default: 92)")
-    parser.add_argument("--no-scan", action="store_true", help="Disable startup environment scanning")
+    parser.add_argument(
+        "--jpeg-quality", type=int, default=92, help="JPEG quality 1-100 (default: 92)"
+    )
+    parser.add_argument(
+        "--no-scan", action="store_true", help="Disable startup environment scanning"
+    )
     args = parser.parse_args()
 
     # Start camera threads

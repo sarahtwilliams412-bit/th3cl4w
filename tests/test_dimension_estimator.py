@@ -27,10 +27,10 @@ from src.vision.startup_scanner import (
     StartupScanReport,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def make_color_image(width=640, height=480, color=(200, 200, 200)):
     """Create a solid-color BGR image."""
@@ -73,6 +73,7 @@ class MockFrameProvider:
 # ---------------------------------------------------------------------------
 # ObjectDimensionEstimator tests
 # ---------------------------------------------------------------------------
+
 
 class TestObjectDimensionEstimator:
     def test_init_defaults(self):
@@ -247,11 +248,17 @@ class TestObjectDimensionEstimator:
 # WorldModel tests
 # ---------------------------------------------------------------------------
 
+
 class TestWorldModel:
     def _make_estimate(self, label="red", w=40, h=100, d=40, conf=0.5, grade="C", source="both"):
         return DimensionEstimate(
-            label=label, width_mm=w, height_mm=h, depth_mm=d,
-            confidence=conf, grade=grade, source=source,
+            label=label,
+            width_mm=w,
+            height_mm=h,
+            depth_mm=d,
+            confidence=conf,
+            grade=grade,
+            source=source,
             bbox_cam1=(100, 100, 50, 50),
         )
 
@@ -376,13 +383,16 @@ class TestWorldModel:
 
     def test_world_object_to_dict(self):
         obj = WorldObject(
-            object_id="red_0", label="red",
+            object_id="red_0",
+            label="red",
             position_mm=np.array([200.0, 0.0, 50.0]),
             dimensions_mm=np.array([40.0, 100.0, 40.0]),
-            confidence=0.6, grade="C",
+            confidence=0.6,
+            grade="C",
             category=ObjectCategory.TARGET,
             reach_status=ReachStatus.REACHABLE,
-            reach_distance_mm=200.0, graspable=True,
+            reach_distance_mm=200.0,
+            graspable=True,
             safety_min_mm=np.array([150.0, -50.0, 0.0]),
             safety_max_mm=np.array([250.0, 50.0, 100.0]),
         )
@@ -395,6 +405,7 @@ class TestWorldModel:
 # ---------------------------------------------------------------------------
 # StartupScanner tests
 # ---------------------------------------------------------------------------
+
 
 class TestStartupScanner:
     def test_init_defaults(self):

@@ -25,6 +25,7 @@ CAMERA_BASE = "http://localhost:8081"
 @dataclass
 class CollisionAnalysis:
     """Result of a collision analysis."""
+
     analysis_text: str
     cam0_path: Optional[str] = None
     cam1_path: Optional[str] = None
@@ -47,6 +48,7 @@ class CollisionAnalyzer:
         if self._api_key:
             try:
                 import google.generativeai as genai
+
                 genai.configure(api_key=self._api_key)
                 self._model = genai.GenerativeModel("gemini-2.0-flash")
                 logger.info("Gemini vision model initialized")
@@ -96,8 +98,11 @@ class CollisionAnalyzer:
         if self._model and (cam0_bytes or cam1_bytes):
             try:
                 analysis_text = self._analyze_with_gemini(
-                    joint_id, commanded_deg, actual_deg,
-                    cam0_bytes, cam1_bytes,
+                    joint_id,
+                    commanded_deg,
+                    actual_deg,
+                    cam0_bytes,
+                    cam1_bytes,
                 )
                 vision_used = True
             except Exception as e:
@@ -160,10 +165,12 @@ class CollisionAnalyzer:
         parts = [prompt]
         for img_bytes in [cam0_bytes, cam1_bytes]:
             if img_bytes:
-                parts.append({
-                    "mime_type": "image/jpeg",
-                    "data": img_bytes,
-                })
+                parts.append(
+                    {
+                        "mime_type": "image/jpeg",
+                        "data": img_bytes,
+                    }
+                )
 
         response = self._model.generate_content(parts)
         return response.text

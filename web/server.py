@@ -728,19 +728,6 @@ async def cmd_set_joint(req: SetJointRequest):
         if cid:
             resp_data["correlation_id"] = cid
         return JSONResponse(resp_data, status_code=400)
-    # Check collision memory — clamp to learned safe range
-    try:
-        from src.safety.collision_memory import get_collision_memory
-        cmem = get_collision_memory()
-        if not cmem.is_safe(req.id, req.angle):
-            safe_lo, safe_hi = cmem.get_safe_range(req.id)
-            clamped = cmem.clamp_to_safe(req.id, req.angle)
-            action_log.add("SET_JOINT",
-                f"⚠ J{req.id} {req.angle}° clamped by collision memory (safe: [{safe_lo:.0f}°, {safe_hi:.0f}°]) → {clamped:.1f}°",
-                "warning")
-            req.angle = clamped
-    except Exception:
-        pass
     if smoother and smoother.running:
         smoother.set_joint_target(req.id, req.angle)
         ok = True
@@ -859,7 +846,9 @@ async def ws_state(ws: WebSocket):
                     t = smoother._target[j]
                     c = smoother._current[j]
                     # Use target if set, else current smoother position
-                    commanded.append(t if t is not None else (c if c is not None else state["joints"][j]))
+                    commanded.append(
+                        t if t is not None else (c if c is not None else state["joints"][j])
+                    )
                 stall = collision_detector.update(commanded, state["joints"])
                 if stall is not None:
                     asyncio.create_task(_handle_collision(stall, ws_clients[:]))
@@ -1556,16 +1545,18 @@ async def pick_detect(req: VisualPickRequest = VisualPickRequest()):
 
         objects_data = []
         for obj in result.objects:
-            objects_data.append({
-                "label": obj.label,
-                "position_mm": [round(float(x), 1) for x in obj.position_mm],
-                "position_cam_mm": [round(float(x), 1) for x in obj.position_cam_mm],
-                "size_mm": list(obj.size_mm),
-                "depth_mm": round(obj.depth_mm, 1),
-                "confidence": round(obj.confidence, 3),
-                "bbox_left": list(obj.bbox_left),
-                "centroid_left": list(obj.centroid_left),
-            })
+            objects_data.append(
+                {
+                    "label": obj.label,
+                    "position_mm": [round(float(x), 1) for x in obj.position_mm],
+                    "position_cam_mm": [round(float(x), 1) for x in obj.position_cam_mm],
+                    "size_mm": list(obj.size_mm),
+                    "depth_mm": round(obj.depth_mm, 1),
+                    "confidence": round(obj.confidence, 3),
+                    "bbox_left": list(obj.bbox_left),
+                    "centroid_left": list(obj.centroid_left),
+                }
+            )
 
         action_log.add(
             "VISION",
@@ -1594,12 +1585,19 @@ async def pick_plan(req: VisualPickRequest = VisualPickRequest()):
     executes the trajectory through the command smoother.
     """
     global _active_task
-    if not _HAS_VISUAL_PICK or pick_executor is None or arm_tracker is None or grasp_planner is None:
+    if (
+        not _HAS_VISUAL_PICK
+        or pick_executor is None
+        or arm_tracker is None
+        or grasp_planner is None
+    ):
         return JSONResponse(
             {"ok": False, "error": "Visual pick module not available"}, status_code=501
         )
     if req.execute and not (smoother and smoother.arm_enabled):
-        return JSONResponse({"ok": False, "error": "Arm not enabled for execution"}, status_code=409)
+        return JSONResponse(
+            {"ok": False, "error": "Arm not enabled for execution"}, status_code=409
+        )
 
     # Grab camera snapshots
     import httpx, cv2
@@ -1702,7 +1700,9 @@ async def pick_from_position(req: VisualPickFromPositionRequest):
             {"ok": False, "error": "Visual pick module not available"}, status_code=501
         )
     if req.execute and not (smoother and smoother.arm_enabled):
-        return JSONResponse({"ok": False, "error": "Arm not enabled for execution"}, status_code=409)
+        return JSONResponse(
+            {"ok": False, "error": "Arm not enabled for execution"}, status_code=409
+        )
 
     current = _get_current_joints()
     gripper = armState_gripper()
@@ -2102,6 +2102,7 @@ try:
         load_calibration as _load_viz_calibration,
         OUTPUT_PATH as _VIZ_CALIB_PATH,
     )
+
     _HAS_VIZ_CALIB = True
 except ImportError:
     _HAS_VIZ_CALIB = False
@@ -2127,7 +2128,9 @@ async def run_viz_calibration():
     if not _HAS_VIZ_CALIB:
         return JSONResponse({"ok": False, "error": "Viz calibrator not available"}, status_code=501)
     if _viz_calib_running:
-        return JSONResponse({"ok": False, "error": "Calibration already in progress"}, status_code=409)
+        return JSONResponse(
+            {"ok": False, "error": "Calibration already in progress"}, status_code=409
+        )
     if not (smoother and smoother.arm_enabled):
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
 
@@ -2140,55 +2143,20 @@ async def run_viz_calibration():
             "info" if result.success else "error",
         )
         import math
+
         def _sanitize(v):
             if isinstance(v, float) and (math.isinf(v) or math.isnan(v)):
                 return None
-            if isinstance(v, (list, tuple)):
-                return [_sanitize(x) for x in v]
-            if isinstance(v, dict):
-                return {k: _sanitize(vv) for k, vv in v.items()}
             return v
-        
-        # Build response — v2 3D calibration format
-        resp_data = {
+
+        return {
             "ok": result.success,
-            "version": 2,
-            "projection": "pinhole_3d",
+            "links_mm": {k: _sanitize(v) for k, v in result.links_mm.items()},
+            "joint_viz_offsets": [_sanitize(v) for v in result.joint_viz_offsets],
             "residual": _sanitize(result.residual),
             "n_observations": result.n_observations,
-            "n_constraints": getattr(result, 'n_constraints', 0),
             "message": result.message,
         }
-        
-        # Camera params (v2) — convert R matrix to Rodrigues for JS
-        def _cam_to_js(cp):
-            """Convert {R, t, fx, fy, cx, cy} to {rx, ry, rz, tx, ty, tz, fx, fy, cx, cy}."""
-            if not cp:
-                return cp
-            import numpy as _np
-            if 'R' in cp and 'rx' not in cp:
-                R = _np.array(cp['R']).reshape(3, 3)
-                from scipy.spatial.transform import Rotation as _Rot
-                rvec = _Rot.from_matrix(R).as_rotvec()
-                return {
-                    'fx': cp['fx'], 'fy': cp['fy'], 'cx': cp['cx'], 'cy': cp['cy'],
-                    'rx': float(rvec[0]), 'ry': float(rvec[1]), 'rz': float(rvec[2]),
-                    'tx': float(cp['t'][0]), 'ty': float(cp['t'][1]), 'tz': float(cp['t'][2]),
-                }
-            return cp
-
-        if hasattr(result, 'cam1_params') and result.cam1_params:
-            resp_data["camera_params"] = {"cam1": _sanitize(_cam_to_js(result.cam1_params))}
-            if hasattr(result, 'cam0_params') and result.cam0_params:
-                resp_data["camera_params"]["cam0"] = _sanitize(_cam_to_js(result.cam0_params))
-        
-        # Theta offsets in degrees for JS
-        if hasattr(result, 'theta_offsets') and result.theta_offsets:
-            resp_data["dh_theta_offsets_deg"] = [
-                _sanitize(round(math.degrees(o), 2)) for o in result.theta_offsets
-            ]
-        
-        return resp_data
     except Exception as e:
         action_log.add("VIZ_CALIB", f"Error: {e}", "error")
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -2209,14 +2177,6 @@ async def _handle_collision(stall: "StallEvent", clients: list):
         f"⚠ STALL on J{stall.joint_id}: cmd={stall.commanded_deg:.1f}° actual={stall.actual_deg:.1f}° (err={stall.error_deg:.1f}°)",
         "error",
     )
-
-    # 0. Record in collision memory (persistent — never hit the same spot twice)
-    try:
-        from src.safety.collision_memory import get_collision_memory
-        cmem = get_collision_memory()
-        cmem.record_collision(stall.joint_id, stall.commanded_deg, stall.actual_deg)
-    except Exception as e:
-        logger.error("Failed to record collision memory: %s", e)
 
     # 1. Stop arm movement
     if smoother:
@@ -2290,34 +2250,6 @@ async def _handle_collision(stall: "StallEvent", clients: list):
 async def api_collisions(limit: int = 20):
     """Return recent collision events."""
     return {"events": collision_events[-limit:]}
-
-
-@app.get("/api/collision-memory")
-async def api_collision_memory():
-    """Return the persistent collision memory (learned safe ranges)."""
-    try:
-        from src.safety.collision_memory import get_collision_memory
-        cmem = get_collision_memory()
-        return {
-            "ok": True,
-            "safe_ranges": {str(k): list(v) for k, v in cmem.safe_ranges.items()},
-            "n_events": len(cmem.events),
-        }
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-@app.post("/api/collision-memory/clear")
-async def api_clear_collision_memory():
-    """Clear collision memory (do this after rearranging workspace)."""
-    try:
-        from src.safety.collision_memory import get_collision_memory
-        cmem = get_collision_memory()
-        cmem.clear()
-        action_log.add("COLLISION_MEMORY", "Cleared — all ranges reset to hardware limits", "info")
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
 
 
 @app.get("/api/collisions/{timestamp}/{filename}")

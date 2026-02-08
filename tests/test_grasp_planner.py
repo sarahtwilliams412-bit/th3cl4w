@@ -19,7 +19,6 @@ from src.vision.grasp_planner import (
 from src.kinematics.kinematics import D1Kinematics
 from src.planning.motion_planner import MotionPlanner
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Tests
 # ═══════════════════════════════════════════════════════════════════════════
@@ -123,9 +122,7 @@ class TestVisualGraspPlanner:
 
     def test_failed_plan_structure(self):
         """Failed plan should have proper structure."""
-        plan = self.planner._failed_plan(
-            np.array([0.0, 0.0, 0.0]), "test", "test failure"
-        )
+        plan = self.planner._failed_plan(np.array([0.0, 0.0, 0.0]), "test", "test failure")
         assert not plan.feasible
         assert plan.confidence == 0.0
         assert plan.message == "test failure"
