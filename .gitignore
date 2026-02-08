@@ -55,3 +55,4 @@ Thumbs.db
 # ROS2 build artifacts
 install/
 log/
+data/collisions/
