@@ -1,28 +1,28 @@
 {
   "links_mm": {
-    "base": 286.9,
+    "base": 297.4,
     "shoulder": 50.0,
     "elbow": 50.0,
     "wrist1": 10.0,
-    "wrist2": 36.0,
-    "end": 36.7
+    "wrist2": 16.1,
+    "end": 16.1
   },
   "joint_viz_offsets": [
     0,
+    179.8,
     180.0,
-    70.3,
     0,
-    180.0,
+    177.1,
     0
   ],
-  "residual": 266.76,
+  "residual": 122.83,
   "n_observations": 20,
   "camera_params": {
     "sx": 0.1,
     "sy": 0.1,
-    "tx": 1834.1,
-    "ty": 56.2
+    "tx": 1918.4,
+    "ty": 27.7
   },
   "success": true,
-  "timestamp": 1770536131.0968244
+  "timestamp": 1770536965.4081898
 }

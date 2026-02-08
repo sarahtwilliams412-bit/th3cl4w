@@ -1,0 +1,11 @@
+{
+  "timestamp": "20260207_235307",
+  "joint_id": 1,
+  "commanded_deg": 30.0,
+  "actual_deg": 15.6,
+  "error_deg": 14.4,
+  "analysis": "Vision analysis unavailable \u2014 images saved for manual review",
+  "vision_used": false,
+  "cam0": "/home/sarah/.openclaw/workspace/th3cl4w/data/collisions/20260207_235307/cam0.jpg",
+  "cam1": "/home/sarah/.openclaw/workspace/th3cl4w/data/collisions/20260207_235307/cam1.jpg"
+}
