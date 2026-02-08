@@ -10,18 +10,14 @@ from src.vision.arm_tracker import DualCameraArmTracker, TrackedObject, ArmTrack
 from src.vision.calibration import CameraCalibration
 
 
-def make_red_circle_image(
-    cx=320, cy=240, radius=30, image_size=(640, 480)
-) -> np.ndarray:
+def make_red_circle_image(cx=320, cy=240, radius=30, image_size=(640, 480)) -> np.ndarray:
     """Create a test image with a red circle (detectable as 'red')."""
     img = np.ones((image_size[1], image_size[0], 3), dtype=np.uint8) * 180
     cv2.circle(img, (cx, cy), radius, (0, 0, 255), -1)  # BGR red
     return img
 
 
-def make_blue_circle_image(
-    cx=320, cy=240, radius=30, image_size=(640, 480)
-) -> np.ndarray:
+def make_blue_circle_image(cx=320, cy=240, radius=30, image_size=(640, 480)) -> np.ndarray:
     img = np.ones((image_size[1], image_size[0], 3), dtype=np.uint8) * 180
     cv2.circle(img, (cx, cy), radius, (255, 0, 0), -1)  # BGR blue
     return img

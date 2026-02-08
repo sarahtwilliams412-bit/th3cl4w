@@ -34,7 +34,6 @@ from src.planning.vision_task_planner import (
 from src.planning.task_planner import TaskPlanner, TaskStatus
 from src.planning.motion_planner import MotionPlanner, NUM_ARM_JOINTS
 
-
 # ======================================================================
 # Test helpers
 # ======================================================================
@@ -175,12 +174,8 @@ class TestSceneAnalyzer:
         img = make_multi_object_image()
         scene = analyzer.analyze(img)
         assert len(scene.relationships) > 0
-        has_left_of = any(
-            r.relation == SpatialRelation.LEFT_OF for r in scene.relationships
-        )
-        has_right_of = any(
-            r.relation == SpatialRelation.RIGHT_OF for r in scene.relationships
-        )
+        has_left_of = any(r.relation == SpatialRelation.LEFT_OF for r in scene.relationships)
+        has_right_of = any(r.relation == SpatialRelation.RIGHT_OF for r in scene.relationships)
         assert has_left_of or has_right_of
 
     def test_scene_objects_by_color(self, analyzer):
@@ -281,10 +276,17 @@ class TestSceneAnalyzer:
 
     def test_has_workspace_position(self):
         obj = SceneObject(
-            label="test", color="red", centroid_2d=(320, 240),
-            centroid_3d=None, bbox=(300, 220, 40, 40), area=1000.0,
-            depth_mm=0.0, confidence=0.5, normalized_x=0.5,
-            normalized_y=0.5, region="center",
+            label="test",
+            color="red",
+            centroid_2d=(320, 240),
+            centroid_3d=None,
+            bbox=(300, 220, 40, 40),
+            area=1000.0,
+            depth_mm=0.0,
+            confidence=0.5,
+            normalized_x=0.5,
+            normalized_y=0.5,
+            region="center",
         )
         assert not obj.has_workspace_position
 
@@ -302,16 +304,30 @@ class TestSceneAnalyzer:
         scene = SceneDescription(
             objects=[
                 SceneObject(
-                    label="red", color="red", centroid_2d=(100, 100),
-                    centroid_3d=(300.0, 200.0, 0.0), bbox=(80, 80, 40, 40),
-                    area=5000.0, depth_mm=360.0, confidence=0.5,
-                    normalized_x=0.15, normalized_y=0.2, region="top-left",
+                    label="red",
+                    color="red",
+                    centroid_2d=(100, 100),
+                    centroid_3d=(300.0, 200.0, 0.0),
+                    bbox=(80, 80, 40, 40),
+                    area=5000.0,
+                    depth_mm=360.0,
+                    confidence=0.5,
+                    normalized_x=0.15,
+                    normalized_y=0.2,
+                    region="top-left",
                 ),
                 SceneObject(
-                    label="blue", color="blue", centroid_2d=(500, 400),
-                    centroid_3d=(50.0, 50.0, 0.0), bbox=(480, 380, 40, 40),
-                    area=5000.0, depth_mm=70.0, confidence=0.5,
-                    normalized_x=0.78, normalized_y=0.83, region="bottom-right",
+                    label="blue",
+                    color="blue",
+                    centroid_2d=(500, 400),
+                    centroid_3d=(50.0, 50.0, 0.0),
+                    bbox=(480, 380, 40, 40),
+                    area=5000.0,
+                    depth_mm=70.0,
+                    confidence=0.5,
+                    normalized_x=0.78,
+                    normalized_y=0.83,
+                    region="bottom-right",
                 ),
             ]
         )
@@ -400,20 +416,32 @@ class TestObjectMatching:
         return SceneDescription(
             objects=[
                 SceneObject(
-                    label="red", color="red",
-                    centroid_2d=(160, 240), centroid_3d=(-100.0, 200.0, 0.0),
-                    bbox=(110, 190, 100, 100), area=7854.0,
-                    depth_mm=224.0, confidence=0.5,
-                    normalized_x=0.25, normalized_y=0.5,
-                    region="left", source="both",
+                    label="red",
+                    color="red",
+                    centroid_2d=(160, 240),
+                    centroid_3d=(-100.0, 200.0, 0.0),
+                    bbox=(110, 190, 100, 100),
+                    area=7854.0,
+                    depth_mm=224.0,
+                    confidence=0.5,
+                    normalized_x=0.25,
+                    normalized_y=0.5,
+                    region="left",
+                    source="both",
                 ),
                 SceneObject(
-                    label="blue", color="blue",
-                    centroid_2d=(480, 240), centroid_3d=(100.0, 200.0, 0.0),
-                    bbox=(430, 190, 100, 100), area=7854.0,
-                    depth_mm=224.0, confidence=0.5,
-                    normalized_x=0.75, normalized_y=0.5,
-                    region="right", source="both",
+                    label="blue",
+                    color="blue",
+                    centroid_2d=(480, 240),
+                    centroid_3d=(100.0, 200.0, 0.0),
+                    bbox=(430, 190, 100, 100),
+                    area=7854.0,
+                    depth_mm=224.0,
+                    confidence=0.5,
+                    normalized_x=0.75,
+                    normalized_y=0.5,
+                    region="right",
+                    source="both",
                 ),
             ],
             frame_width=640,
@@ -422,30 +450,22 @@ class TestObjectMatching:
         )
 
     def test_match_by_color_red(self, planner, scene_two_objects):
-        target, detail = planner._match_target(
-            "pick up the red object", scene_two_objects
-        )
+        target, detail = planner._match_target("pick up the red object", scene_two_objects)
         assert target is not None
         assert target.color == "red"
 
     def test_match_by_color_blue(self, planner, scene_two_objects):
-        target, detail = planner._match_target(
-            "grab the blue thing", scene_two_objects
-        )
+        target, detail = planner._match_target("grab the blue thing", scene_two_objects)
         assert target is not None
         assert target.color == "blue"
 
     def test_match_by_position_left(self, planner, scene_two_objects):
-        target, detail = planner._match_target(
-            "pick up the left object", scene_two_objects
-        )
+        target, detail = planner._match_target("pick up the left object", scene_two_objects)
         assert target is not None
         assert target.region == "left"
 
     def test_match_by_position_right(self, planner, scene_two_objects):
-        target, detail = planner._match_target(
-            "grab the right one", scene_two_objects
-        )
+        target, detail = planner._match_target("grab the right one", scene_two_objects)
         assert target is not None
         assert target.region == "right"
 
@@ -454,22 +474,34 @@ class TestObjectMatching:
         scene = SceneDescription(
             objects=[
                 SceneObject(
-                    label="red", color="red", centroid_2d=(160, 240),
-                    centroid_3d=(300.0, 200.0, 0.0), bbox=(110, 190, 100, 100),
-                    area=7854.0, depth_mm=360.0, confidence=0.5,
-                    normalized_x=0.25, normalized_y=0.5, region="left",
+                    label="red",
+                    color="red",
+                    centroid_2d=(160, 240),
+                    centroid_3d=(300.0, 200.0, 0.0),
+                    bbox=(110, 190, 100, 100),
+                    area=7854.0,
+                    depth_mm=360.0,
+                    confidence=0.5,
+                    normalized_x=0.25,
+                    normalized_y=0.5,
+                    region="left",
                 ),
                 SceneObject(
-                    label="blue", color="blue", centroid_2d=(480, 240),
-                    centroid_3d=(50.0, 50.0, 0.0), bbox=(430, 190, 100, 100),
-                    area=7854.0, depth_mm=70.0, confidence=0.5,
-                    normalized_x=0.75, normalized_y=0.5, region="right",
+                    label="blue",
+                    color="blue",
+                    centroid_2d=(480, 240),
+                    centroid_3d=(50.0, 50.0, 0.0),
+                    bbox=(430, 190, 100, 100),
+                    area=7854.0,
+                    depth_mm=70.0,
+                    confidence=0.5,
+                    normalized_x=0.75,
+                    normalized_y=0.5,
+                    region="right",
                 ),
             ],
         )
-        target, detail = planner._match_target(
-            "pick up the nearest object", scene
-        )
+        target, detail = planner._match_target("pick up the nearest object", scene)
         assert target is not None
         assert target.color == "blue"
 
@@ -477,11 +509,17 @@ class TestObjectMatching:
         scene = SceneDescription(
             objects=[
                 SceneObject(
-                    label="green", color="green",
-                    centroid_2d=(320, 240), centroid_3d=None,
-                    bbox=(270, 190, 100, 100), area=5000.0,
-                    depth_mm=0.0, confidence=0.5,
-                    normalized_x=0.5, normalized_y=0.5, region="center",
+                    label="green",
+                    color="green",
+                    centroid_2d=(320, 240),
+                    centroid_3d=None,
+                    bbox=(270, 190, 100, 100),
+                    area=5000.0,
+                    depth_mm=0.0,
+                    confidence=0.5,
+                    normalized_x=0.5,
+                    normalized_y=0.5,
+                    region="center",
                 ),
             ]
         )
@@ -513,9 +551,7 @@ class TestObjectMatching:
 
     def test_match_includes_workspace_in_detail(self, planner, scene_two_objects):
         """When workspace position is available, match detail should mention it."""
-        target, detail = planner._match_target(
-            "pick up the red object", scene_two_objects
-        )
+        target, detail = planner._match_target("pick up the red object", scene_two_objects)
         assert target is not None
         assert "workspace" in detail
 
@@ -540,12 +576,18 @@ class TestVisionTaskPlan:
         return SceneDescription(
             objects=[
                 SceneObject(
-                    label="red", color="red",
-                    centroid_2d=(320, 240), centroid_3d=(150.0, 200.0, 0.0),
-                    bbox=(270, 190, 100, 100), area=7854.0,
-                    depth_mm=250.0, confidence=0.7,
-                    normalized_x=0.5, normalized_y=0.5,
-                    region="center", source="both",
+                    label="red",
+                    color="red",
+                    centroid_2d=(320, 240),
+                    centroid_3d=(150.0, 200.0, 0.0),
+                    bbox=(270, 190, 100, 100),
+                    area=7854.0,
+                    depth_mm=250.0,
+                    confidence=0.7,
+                    normalized_x=0.5,
+                    normalized_y=0.5,
+                    region="center",
+                    source="both",
                 ),
             ],
             frame_width=640,
@@ -559,20 +601,32 @@ class TestVisionTaskPlan:
         return SceneDescription(
             objects=[
                 SceneObject(
-                    label="red", color="red",
-                    centroid_2d=(160, 240), centroid_3d=(-100.0, 200.0, 0.0),
-                    bbox=(110, 190, 100, 100), area=7854.0,
-                    depth_mm=224.0, confidence=0.5,
-                    normalized_x=0.25, normalized_y=0.5,
-                    region="left", source="both",
+                    label="red",
+                    color="red",
+                    centroid_2d=(160, 240),
+                    centroid_3d=(-100.0, 200.0, 0.0),
+                    bbox=(110, 190, 100, 100),
+                    area=7854.0,
+                    depth_mm=224.0,
+                    confidence=0.5,
+                    normalized_x=0.25,
+                    normalized_y=0.5,
+                    region="left",
+                    source="both",
                 ),
                 SceneObject(
-                    label="blue", color="blue",
-                    centroid_2d=(480, 240), centroid_3d=(100.0, 200.0, 0.0),
-                    bbox=(430, 190, 100, 100), area=7854.0,
-                    depth_mm=224.0, confidence=0.5,
-                    normalized_x=0.75, normalized_y=0.5,
-                    region="right", source="both",
+                    label="blue",
+                    color="blue",
+                    centroid_2d=(480, 240),
+                    centroid_3d=(100.0, 200.0, 0.0),
+                    bbox=(430, 190, 100, 100),
+                    area=7854.0,
+                    depth_mm=224.0,
+                    confidence=0.5,
+                    normalized_x=0.75,
+                    normalized_y=0.5,
+                    region="right",
+                    source="both",
                 ),
             ],
             frame_width=640,
@@ -647,9 +701,7 @@ class TestVisionTaskPlan:
         assert plan.action == ActionType.INSPECT
         assert plan.success
 
-    def test_plan_pick_and_place_two_objects(
-        self, planner, current_pose, scene_two_objects
-    ):
+    def test_plan_pick_and_place_two_objects(self, planner, current_pose, scene_two_objects):
         plan = planner.plan(
             "pick up the red object and place it near the blue one",
             scene_two_objects,
@@ -696,11 +748,17 @@ class TestVisionTaskPlan:
     def test_scene_to_joint_pose(self, planner):
         """Test that scene-to-joint mapping produces valid poses."""
         obj = SceneObject(
-            label="test", color="red",
-            centroid_2d=(320, 240), centroid_3d=None,
-            bbox=(270, 190, 100, 100), area=5000.0,
-            depth_mm=0.0, confidence=0.5,
-            normalized_x=0.5, normalized_y=0.5, region="center",
+            label="test",
+            color="red",
+            centroid_2d=(320, 240),
+            centroid_3d=None,
+            bbox=(270, 190, 100, 100),
+            area=5000.0,
+            depth_mm=0.0,
+            confidence=0.5,
+            normalized_x=0.5,
+            normalized_y=0.5,
+            region="center",
         )
         pose = planner._scene_to_joint_pose(obj)
         assert pose.shape == (NUM_ARM_JOINTS,)
@@ -712,16 +770,30 @@ class TestVisionTaskPlan:
     def test_scene_to_joint_pose_varies_with_position(self, planner):
         """Objects at different positions should map to different poses."""
         left_obj = SceneObject(
-            label="test", color="red", centroid_2d=(100, 240),
-            centroid_3d=None, bbox=(50, 190, 100, 100), area=5000.0,
-            depth_mm=0.0, confidence=0.5, normalized_x=0.15,
-            normalized_y=0.5, region="left",
+            label="test",
+            color="red",
+            centroid_2d=(100, 240),
+            centroid_3d=None,
+            bbox=(50, 190, 100, 100),
+            area=5000.0,
+            depth_mm=0.0,
+            confidence=0.5,
+            normalized_x=0.15,
+            normalized_y=0.5,
+            region="left",
         )
         right_obj = SceneObject(
-            label="test", color="blue", centroid_2d=(540, 240),
-            centroid_3d=None, bbox=(490, 190, 100, 100), area=5000.0,
-            depth_mm=0.0, confidence=0.5, normalized_x=0.85,
-            normalized_y=0.5, region="right",
+            label="test",
+            color="blue",
+            centroid_2d=(540, 240),
+            centroid_3d=None,
+            bbox=(490, 190, 100, 100),
+            area=5000.0,
+            depth_mm=0.0,
+            confidence=0.5,
+            normalized_x=0.85,
+            normalized_y=0.5,
+            region="right",
         )
         left_pose = planner._scene_to_joint_pose(left_obj)
         right_pose = planner._scene_to_joint_pose(right_obj)

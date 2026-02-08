@@ -40,20 +40,21 @@ async def get_client() -> httpx.AsyncClient:
 # API proxy — forward all /api/* requests to backend
 # ---------------------------------------------------------------------------
 
+
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_api(request: Request, path: str):
     client = await get_client()
     url = f"{BACKEND}/api/{path}"
-    
+
     # Forward query params
     if request.url.query:
         url += f"?{request.url.query}"
-    
+
     body = await request.body()
     headers = dict(request.headers)
     # Remove host header to avoid confusion
     headers.pop("host", None)
-    
+
     try:
         resp = await client.request(
             method=request.method,
@@ -67,22 +68,27 @@ async def proxy_api(request: Request, path: str):
             headers=dict(resp.headers),
         )
     except httpx.ConnectError:
-        return Response(content=b'{"error":"Backend unavailable"}', status_code=502,
-                       media_type="application/json")
+        return Response(
+            content=b'{"error":"Backend unavailable"}',
+            status_code=502,
+            media_type="application/json",
+        )
 
 
 # ---------------------------------------------------------------------------
 # WebSocket proxy — /ws/state and /ws/telemetry
 # ---------------------------------------------------------------------------
 
+
 @app.websocket("/ws/{path:path}")
 async def proxy_ws(ws: WebSocket, path: str):
     await ws.accept()
     import websockets
-    
+
     backend_url = f"{BACKEND_WS}/ws/{path}"
     try:
         async with websockets.connect(backend_url) as backend_ws:
+
             async def forward_to_client():
                 try:
                     async for msg in backend_ws:
@@ -112,6 +118,7 @@ async def proxy_ws(ws: WebSocket, path: str):
 # Camera proxy — /cam/* streams from camera server
 # ---------------------------------------------------------------------------
 
+
 @app.get("/cam/{cam_id}")
 async def proxy_cam_stream(request: Request, cam_id: int):
     """Proxy MJPEG stream from camera server."""
@@ -122,23 +129,22 @@ async def proxy_cam_stream(request: Request, cam_id: int):
             # Use streaming request for MJPEG
             req = client.build_request("GET", f"{base}/cam/{cam_id}")
             resp = await client.send(req, stream=True)
-            
+
             async def stream_body():
                 try:
                     async for chunk in resp.aiter_bytes(4096):
                         yield chunk
                 finally:
                     await resp.aclose()
-            
+
             return StreamingResponse(
                 stream_body(),
                 status_code=resp.status_code,
-                headers={k: v for k, v in resp.headers.items() 
-                        if k.lower() in ("content-type",)},
+                headers={k: v for k, v in resp.headers.items() if k.lower() in ("content-type",)},
             )
         except Exception:
             continue
-    
+
     return Response(content=b"Camera unavailable", status_code=502)
 
 
@@ -148,8 +154,9 @@ async def proxy_cam_snap(cam_id: int):
     for base in [CAM_SERVER, BACKEND]:
         try:
             resp = await client.get(f"{base}/snap/{cam_id}")
-            return Response(content=resp.content, status_code=resp.status_code,
-                          headers=dict(resp.headers))
+            return Response(
+                content=resp.content, status_code=resp.status_code, headers=dict(resp.headers)
+            )
         except Exception:
             continue
     return Response(content=b"Camera unavailable", status_code=502)
@@ -159,13 +166,13 @@ async def proxy_cam_snap(cam_id: int):
 # Telemetry page proxy
 # ---------------------------------------------------------------------------
 
+
 @app.get("/telemetry")
 async def proxy_telemetry():
     client = await get_client()
     try:
         resp = await client.get(f"{BACKEND}/telemetry")
-        return Response(content=resp.content, status_code=resp.status_code,
-                       media_type="text/html")
+        return Response(content=resp.content, status_code=resp.status_code, media_type="text/html")
     except Exception:
         return Response(content=b"Backend unavailable", status_code=502)
 
@@ -174,9 +181,11 @@ async def proxy_telemetry():
 # V2 UI — serve v2.html as the root
 # ---------------------------------------------------------------------------
 
+
 @app.get("/")
 async def serve_v2():
     from fastapi.responses import FileResponse
+
     return FileResponse(Path(__file__).parent / "static" / "v2.html")
 
 

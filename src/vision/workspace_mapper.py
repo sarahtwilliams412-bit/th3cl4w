@@ -238,12 +238,14 @@ class WorkspaceMapper:
                             obs_pt = self._cell_to_world(nx, ny)
                             dist = np.sqrt((px - obs_pt[0]) ** 2 + (py - obs_pt[1]) ** 2)
                             if dist <= radius_mm:
-                                collisions.append({
-                                    "path_index": i,
-                                    "point_mm": [px, py],
-                                    "obstacle_mm": obs_pt.tolist(),
-                                    "distance_mm": round(float(dist), 1),
-                                })
+                                collisions.append(
+                                    {
+                                        "path_index": i,
+                                        "point_mm": [px, py],
+                                        "obstacle_mm": obs_pt.tolist(),
+                                        "distance_mm": round(float(dist), 1),
+                                    }
+                                )
                                 break
                     else:
                         continue
@@ -282,9 +284,7 @@ class WorkspaceMapper:
             if len(indices) > max_cells:
                 step = max(1, len(indices) // max_cells)
                 indices = indices[::step]
-            return [
-                self._cell_to_world(idx[0], idx[1]).tolist() for idx in indices
-            ]
+            return [self._cell_to_world(idx[0], idx[1]).tolist() for idx in indices]
 
     def clear(self):
         """Clear the occupancy grid."""
@@ -296,10 +296,6 @@ class WorkspaceMapper:
 
     def get_status(self) -> dict:
         summary = self.get_occupancy_summary()
-        summary["cam0_calibrated"] = (
-            self.cal_cam0 is not None and self.cal_cam0.is_calibrated
-        )
-        summary["cam1_calibrated"] = (
-            self.cal_cam1 is not None and self.cal_cam1.is_calibrated
-        )
+        summary["cam0_calibrated"] = self.cal_cam0 is not None and self.cal_cam0.is_calibrated
+        summary["cam1_calibrated"] = self.cal_cam1 is not None and self.cal_cam1.is_calibrated
         return summary

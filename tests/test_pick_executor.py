@@ -15,7 +15,6 @@ from src.planning.pick_executor import PickExecutor, PickResult, PickPhase
 from src.planning.motion_planner import MotionPlanner, Trajectory, TrajectoryPoint
 from src.planning.task_planner import TaskPlanner
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Mock helpers
 # ═══════════════════════════════════════════════════════════════════════════
@@ -129,7 +128,11 @@ class TestPickExecutor:
         grasp_planner = make_mock_grasp_planner()
 
         result = self.executor.plan_pick(
-            left, right, tracker, grasp_planner, current,
+            left,
+            right,
+            tracker,
+            grasp_planner,
+            current,
             target_label="redbull",
         )
 
@@ -151,7 +154,11 @@ class TestPickExecutor:
         grasp_planner = make_mock_grasp_planner()
 
         result = self.executor.plan_pick(
-            left, right, tracker, grasp_planner, current,
+            left,
+            right,
+            tracker,
+            grasp_planner,
+            current,
         )
 
         assert not result.success
@@ -169,7 +176,11 @@ class TestPickExecutor:
         grasp_planner = make_mock_grasp_planner(bad_plan)
 
         result = self.executor.plan_pick(
-            left, right, tracker, grasp_planner, current,
+            left,
+            right,
+            tracker,
+            grasp_planner,
+            current,
         )
 
         assert not result.success
@@ -182,7 +193,9 @@ class TestPickExecutor:
         grasp_planner = make_mock_grasp_planner()
 
         result = self.executor.plan_pick_from_position(
-            pos, grasp_planner, current,
+            pos,
+            grasp_planner,
+            current,
         )
 
         assert result.success
@@ -197,7 +210,9 @@ class TestPickExecutor:
         grasp_planner = make_mock_grasp_planner(bad_plan)
 
         result = self.executor.plan_pick_from_position(
-            pos, grasp_planner, current,
+            pos,
+            grasp_planner,
+            current,
         )
 
         assert not result.success
@@ -269,12 +284,16 @@ class TestPickResult:
         assert result.detected_objects == []
 
     def test_with_trajectory(self):
-        traj = Trajectory(points=[
-            TrajectoryPoint(
-                time=0.0, positions=np.zeros(6),
-                velocities=np.zeros(6), accelerations=np.zeros(6),
-            ),
-        ])
+        traj = Trajectory(
+            points=[
+                TrajectoryPoint(
+                    time=0.0,
+                    positions=np.zeros(6),
+                    velocities=np.zeros(6),
+                    accelerations=np.zeros(6),
+                ),
+            ]
+        )
         result = PickResult(
             phase=PickPhase.COMPLETE,
             success=True,

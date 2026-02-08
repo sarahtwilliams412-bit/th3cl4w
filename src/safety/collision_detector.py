@@ -18,6 +18,7 @@ logger = logging.getLogger("th3cl4w.collision_detector")
 @dataclass
 class StallEvent:
     """Info about a detected stall/collision."""
+
     joint_id: int
     commanded_deg: float
     actual_deg: float
@@ -61,7 +62,7 @@ class CollisionDetector:
         self._last_good: List[float] = [0.0] * num_joints
         # Last time a stall was fired per joint (for cooldown)
         # Initialize to -infinity so first stall can always fire
-        self._last_stall_time: List[float] = [float('-inf')] * num_joints
+        self._last_stall_time: List[float] = [float("-inf")] * num_joints
 
         self._callbacks: List[StallCallback] = []
         self._enabled = True
@@ -159,4 +160,4 @@ class CollisionDetector:
         """Reset all tracking state."""
         with self._lock:
             self._error_start = [None] * self._num_joints
-            self._last_stall_time = [float('-inf')] * self._num_joints
+            self._last_stall_time = [float("-inf")] * self._num_joints
