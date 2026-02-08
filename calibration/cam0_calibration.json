@@ -1,0 +1,71 @@
+{
+  "camera": "cam0",
+  "view": "front_side",
+  "image_size": [
+    1920,
+    1080
+  ],
+  "board_size": [
+    4,
+    3
+  ],
+  "square_mm": 23.8,
+  "mm_per_pixel": 1.2616,
+  "corners_px": [
+    [
+      805.6,
+      404.4
+    ],
+    [
+      786.6,
+      403.5
+    ],
+    [
+      767.9,
+      402.6
+    ],
+    [
+      749.2,
+      401.7
+    ],
+    [
+      806.4,
+      385.5
+    ],
+    [
+      787.4,
+      384.5
+    ],
+    [
+      768.4,
+      383.6
+    ],
+    [
+      749.5,
+      382.8
+    ],
+    [
+      806.8,
+      366.6
+    ],
+    [
+      787.8,
+      365.5
+    ],
+    [
+      768.9,
+      364.7
+    ],
+    [
+      750.4,
+      364.1
+    ]
+  ],
+  "board_region_px": {
+    "x_min": 749.2,
+    "x_max": 806.8,
+    "y_min": 364.1,
+    "y_max": 404.4
+  },
+  "notes": "Checkerboard propped vertically behind arm. Small apparent size (~57x40px). Scale ~1.26mm/px at board distance."
+}
