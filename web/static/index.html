@@ -1327,20 +1327,30 @@ function dismissCollision() {
 //  TAB SWITCHING
 // ============================================================
 
+window._activeTab = 'control';
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    const prevTab = window._activeTab;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     btn.classList.add('active');
     const tab = btn.dataset.tab;
+    window._activeTab = tab;
     const tabMap = { control: 'tabControl', ascii: 'tabAscii', factory: 'tabFactory', realworld: 'tabRealworld' };
     document.getElementById(tabMap[tab] || 'tabControl').classList.add('active');
-    if (tab === 'ascii') { asciiConnect(); } else { asciiDisconnect(); }
-    if (tab === 'control') setTimeout(resizeCanvas, 50);
-    if (tab === 'factory' && typeof fw_activate === 'function') fw_activate();
-    if (tab !== 'factory' && typeof fw_deactivate === 'function') fw_deactivate();
-    if (tab === 'realworld' && typeof rw_activate === 'function') rw_activate();
-    if (tab !== 'realworld' && typeof rw_deactivate === 'function') rw_deactivate();
+
+    // Disconnect everything from previous tab
+    if (prevTab === 'ascii' && typeof asciiDisconnect === 'function') asciiDisconnect();
+    if (prevTab === 'factory' && typeof fw_deactivate === 'function') fw_deactivate();
+    if (prevTab === 'realworld' && typeof rw_deactivate === 'function') rw_deactivate();
+
+    // Connect new tab after DOM settles
+    setTimeout(() => {
+      if (tab === 'ascii' && typeof asciiConnect === 'function') asciiConnect();
+      if (tab === 'control') resizeCanvas();
+      if (tab === 'factory' && typeof fw_activate === 'function') fw_activate();
+      if (tab === 'realworld' && typeof rw_activate === 'function') rw_activate();
+    }, 100);
   });
 });
 
@@ -1379,7 +1389,23 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   // Initial fetch
   fetchCalibStatus();
 })();
+
+// ============================================================
+//  PERFORMANCE MONITORING
+// ============================================================
+(function() {
+  const loadTime = performance.now();
+  window.addEventListener('load', () => {
+    console.log(`[perf] Page loaded in ${(performance.now()).toFixed(0)}ms`);
+    setInterval(() => {
+      const wsCount = typeof WSManager !== 'undefined' ? WSManager.activeCount : '?';
+      console.log(`[perf] Active WebSockets: ${wsCount} | Tab: ${window._activeTab || 'control'}`);
+    }, 10000);
+  });
+})();
 </script>
+<script src="ws-manager.js"></script>
+<script defer src="ascii-video.js"></script>
 <script defer src="factory3d.js"></script>
 <script defer src="realworld3d.js"></script>
 </body>
