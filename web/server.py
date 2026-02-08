@@ -2338,8 +2338,8 @@ async def ws_ascii(ws: WebSocket):
     # Defaults
     cam_id = 0
     charset_name = "standard"
-    width = 160
-    height = 70
+    width = 320
+    height = 140
     color = False
     invert = True
     converter = None
@@ -2367,8 +2367,8 @@ async def ws_ascii(ws: WebSocket):
                 if data.get("type") == "settings":
                     cam_id = int(data.get("cam", cam_id))
                     charset_name = data.get("charset", charset_name)
-                    width = max(20, min(400, int(data.get("width", width))))
-                    height = max(10, min(200, int(data.get("height", height))))
+                    width = max(20, min(600, int(data.get("width", width))))
+                    height = max(10, min(400, int(data.get("height", height))))
                     color = bool(data.get("color", color))
                     invert = bool(data.get("invert", invert))
                     _build_converter()
