@@ -13,6 +13,7 @@ try:
     from .workspace_mapper import WorkspaceMapper
     from .arm_tracker import DualCameraArmTracker, TrackedObject
     from .grasp_planner import VisualGraspPlanner, GraspPlan
+    from .scene_analyzer import SceneAnalyzer, SceneDescription, SceneObject
 except ImportError:
     StereoCalibrator = None  # type: ignore[assignment,misc]
     StereoDepthEstimator = None  # type: ignore[assignment,misc]
@@ -22,6 +23,9 @@ except ImportError:
     TrackedObject = None  # type: ignore[assignment,misc]
     VisualGraspPlanner = None  # type: ignore[assignment,misc]
     GraspPlan = None  # type: ignore[assignment,misc]
+    SceneAnalyzer = None  # type: ignore[assignment,misc]
+    SceneDescription = None  # type: ignore[assignment,misc]
+    SceneObject = None  # type: ignore[assignment,misc]
 
 __all__ = [
     "StereoCalibrator",
@@ -32,4 +36,7 @@ __all__ = [
     "TrackedObject",
     "VisualGraspPlanner",
     "GraspPlan",
+    "SceneAnalyzer",
+    "SceneDescription",
+    "SceneObject",
 ]
