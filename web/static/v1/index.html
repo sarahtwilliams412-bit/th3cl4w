@@ -1,3 +1,4 @@
+<!-- th3cl4w V1 Control Panel — Stable Base -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>th3cl4w — D1 Arm Control</title>
 <style>
+/* === Variables & Reset === */
 :root {
   --bg: #1a1a2e;
   --card: #16213e;
@@ -22,6 +24,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); font-family: var(--sans); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
+/* === Top Bar === */
 .topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--card); border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
 .logo { font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 2px; color: var(--danger); }
 .conn-dot { width: 10px; height: 10px; border-radius: 50%; background: #666; flex-shrink: 0; }
@@ -33,16 +36,20 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .conn-quality { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
 .topbar-spacer { flex: 1; }
 
+/* === Layout === */
 .main { display: flex; flex: 1; overflow: hidden; }
 .panel-left { flex: 1; min-width: 300px; display: flex; flex-direction: column; border-right: 1px solid var(--card-border); }
 .panel-right { width: 400px; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; }
 
+/* === Visualization === */
 .viz-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; }
 .viz-container canvas { max-width: 100%; max-height: 100%; }
 
+/* === Controls === */
 .controls { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .section-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 2px; }
 
+/* === Joint Sliders === */
 .joint-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
 .joint-label { font-family: var(--mono); font-size: 11px; width: 22px; color: var(--text-dim); text-align: right; }
 .joint-slider { flex: 1; -webkit-appearance: none; appearance: none; height: 5px; background: #1a2744; border-radius: 3px; outline: none; }
@@ -52,6 +59,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .joint-value { font-family: var(--mono); font-size: 11px; width: 58px; text-align: right; color: var(--text); }
 .joint-range { font-family: var(--mono); font-size: 9px; color: #555; width: 40px; text-align: center; }
 
+/* === Buttons === */
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn { font-family: var(--mono); font-size: 11px; padding: 6px 12px; border: 1px solid var(--card-border); border-radius: 4px; cursor: pointer; background: var(--card); color: var(--text); transition: all 0.15s; text-transform: uppercase; letter-spacing: 1px; }
 .btn:hover:not(:disabled) { background: var(--primary); border-color: #4a90d9; }
@@ -60,16 +68,19 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .btn.on { background: #0a3d20; border-color: var(--success); color: var(--success); }
 .btn.danger-active { background: #3d1a1a; border-color: var(--danger); color: var(--danger); }
 
+/* === Emergency Stop === */
 .estop { width: 100%; padding: 14px; font-size: 15px; font-weight: 700; background: var(--danger); color: #fff; border: 2px solid #ff6b81; border-radius: 6px; cursor: pointer; letter-spacing: 3px; text-transform: uppercase; font-family: var(--mono); transition: all 0.15s; }
 .estop:hover { background: #ff2244; box-shadow: 0 0 20px rgba(233,69,96,0.5); }
 .estop:active { transform: scale(0.98); }
 .estop.flash { animation: estop-flash 0.8s infinite; }
 @keyframes estop-flash { 0%,100% { box-shadow: 0 0 5px rgba(233,69,96,0.3); } 50% { box-shadow: 0 0 25px rgba(233,69,96,0.8); border-color: #fff; } }
 
+/* === Raw Command Input === */
 .raw-cmd { display: flex; gap: 6px; margin-top: 4px; }
 .raw-cmd input { flex: 1; font-family: var(--mono); font-size: 11px; padding: 6px 8px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; color: var(--text); outline: none; }
 .raw-cmd input:focus { border-color: var(--info); }
 
+/* === Action Log === */
 .log-panel { height: 150px; flex-shrink: 0; border-top: 1px solid var(--card-border); display: flex; flex-direction: column; }
 .log-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); padding: 6px 12px 2px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
 .log-scroll { flex: 1; overflow-y: auto; padding: 0 12px 6px; font-family: var(--mono); font-size: 10px; line-height: 1.5; }
@@ -83,6 +94,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .log-entry.error .detail { color: #d9534f; }
 .log-entry.warning .detail { color: #c09853; }
 
+/* === Camera Panel === */
 .camera-panel { border-top: 1px solid var(--card-border); flex-shrink: 0; }
 .camera-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; }
 .cam-toggle { font-size: 10px !important; padding: 3px 8px !important; }
@@ -95,11 +107,12 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .cam-img { width: 100%; aspect-ratio: 4/3; object-fit: contain; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; }
 .cam-snap { font-size: 9px !important; padding: 2px 6px !important; align-self: flex-start; }
 
+/* === Scrollbar === */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 3px; }
 
-/* Debug Panel */
+/* === Debug Panel === */
 .debug-panel { background: #111827; border-top: 2px solid #4a90d9; font-family: var(--mono); font-size: 11px; padding: 8px 12px; overflow-y: auto; max-height: 340px; }
 .debug-section { margin-bottom: 10px; }
 .debug-title { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; }
@@ -135,6 +148,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .de-ERROR { color: #e94560; }
 .de-CAM_FRAME { color: #888; }
 
+/* === Responsive === */
 @media (max-width: 800px) {
   .main { flex-direction: column; }
   .panel-left { min-height: 220px; border-right: none; border-bottom: 1px solid var(--card-border); }
@@ -270,7 +284,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 <script>
 'use strict';
 
-// ---- D1 specs ----
+// ============================================================
+//  CONSTANTS & SPECS
+// ============================================================
+
 const JOINT_SPECS = [
   { name: 'J0', min: -135, max: 135, label: 'Base Yaw',    type: 'yaw'   },
   { name: 'J1', min: -90,  max: 90,  label: 'Shoulder',    type: 'pitch' },
@@ -288,23 +305,29 @@ const LINKS_MM = {
 // DH geometric offsets (degrees) — maps D1 DDS zero convention to viz geometry.
 // The D1's zero-angle config has the arm extended forward (not straight up).
 // At DDS [0, -90, 90, 0, 0, 0] the arm is folded/compact (up then back down).
-// These offsets are added to the DDS pitch angles before FK computation.
 const JOINT_VIZ_OFFSETS = [0, 90, 90, 0, 0, 0];
 
-// ---- State ----
+// ============================================================
+//  STATE
+// ============================================================
+
 let ws = null;
 let armState = { connected: false, joints: [0,0,0,0,0,0], gripper: 0, power: false, enabled: false, error: 0, log: [] };
 let lastStateTs = 0;
-let userDragging = -1; // -1=none, 0-5=joint, 6=gripper
+let userDragging = -1;           // -1=none, 0-5=joint, 6=gripper
 let animFrameId = null;
-let localLog = []; // client-side log entries
-let armSynced = false; // SAFETY: don't send commands until first state received
-let updatingFromState = false; // Guard against state→slider→command feedback loop
-let vizDirty = true; // V4: only redraw when state changes
+let localLog = [];               // Client-side log entries
+let armSynced = false;           // SAFETY: don't send commands until first state received
+let updatingFromState = false;   // Guard against state→slider→command feedback loop
+let vizDirty = true;             // Only redraw when state changes
 let lastGoodJoints = [0,0,0,0,0,0]; // Client-side cache to prevent zero-snap
-let vizJoints = [0,0,0,0,0,0]; // Smoothed joints actually rendered
-let jointSource = 'init'; // Telemetry: where current joint values came from
-let wsUpdateCount = 0; // Telemetry: count of WS updates received
+let vizJoints = [0,0,0,0,0,0];  // Smoothed joints actually rendered
+let jointSource = 'init';        // Telemetry: where current joint values came from
+let wsUpdateCount = 0;           // Telemetry: count of WS updates received
+
+// ============================================================
+//  UTILITIES
+// ============================================================
 
 function logLocal(action, details, level) {
   const now = new Date();
@@ -313,7 +336,31 @@ function logLocal(action, details, level) {
   if (localLog.length > 100) localLog.shift();
 }
 
-// ---- Build sliders ----
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function makeThrottle(fn, ms = 50) {
+  let lastCall = 0, timer = null;
+  return function(...args) {
+    const now = Date.now();
+    if (now - lastCall >= ms) {
+      lastCall = now;
+      fn(...args);
+    } else {
+      clearTimeout(timer);
+      timer = setTimeout(() => { lastCall = Date.now(); fn(...args); }, ms - (now - lastCall));
+    }
+  };
+}
+
+// ============================================================
+//  SLIDER SETUP (Joint + Gripper)
+// ============================================================
+
 const slidersDiv = document.getElementById('jointSliders');
 for (let i = 0; i < 6; i++) {
   const spec = JOINT_SPECS[i];
@@ -331,7 +378,7 @@ for (let i = 0; i < 6; i++) {
   slider.addEventListener('touchstart', () => userDragging = i);
   slider.addEventListener('input', () => {
     document.getElementById(`jv${i}`).textContent = parseFloat(slider.value).toFixed(1) + '°';
-    if (!armSynced || updatingFromState) return; // SAFETY: don't send until synced
+    if (!armSynced || updatingFromState) return;
     throttledSendJoint(i, parseFloat(slider.value));
   });
   const release = () => { if (userDragging === i) { sendJoint(i, parseFloat(slider.value)); userDragging = -1; } };
@@ -340,13 +387,12 @@ for (let i = 0; i < 6; i++) {
   slider.addEventListener('change', release);
 }
 
-// Gripper
 const gripSlider = document.getElementById('gripperSlider');
 gripSlider.addEventListener('mousedown', () => userDragging = 6);
 gripSlider.addEventListener('touchstart', () => userDragging = 6);
 gripSlider.addEventListener('input', () => {
   document.getElementById('gripperValue').textContent = parseFloat(gripSlider.value).toFixed(1) + ' mm';
-  if (!armSynced || updatingFromState) return; // SAFETY: don't send until synced
+  if (!armSynced || updatingFromState) return;
   throttledSendGripper(parseFloat(gripSlider.value));
 });
 const gripRelease = () => { if (userDragging === 6) { sendGripper(parseFloat(gripSlider.value)); userDragging = -1; } };
@@ -354,31 +400,20 @@ gripSlider.addEventListener('mouseup', gripRelease);
 gripSlider.addEventListener('touchend', gripRelease);
 gripSlider.addEventListener('change', gripRelease);
 
-// ---- Throttle helper (50ms = 20Hz max send rate, server smooths the rest) ----
-function makeThrottle(fn, ms = 50) {
-  let lastCall = 0, timer = null;
-  return function(...args) {
-    const now = Date.now();
-    if (now - lastCall >= ms) {
-      lastCall = now;
-      fn(...args);
-    } else {
-      clearTimeout(timer);
-      timer = setTimeout(() => { lastCall = Date.now(); fn(...args); }, ms - (now - lastCall));
-    }
-  };
-}
 const throttledSendJoint = makeThrottle((id, angle) => sendJoint(id, angle), 50);
 const throttledSendGripper = makeThrottle((pos) => sendGripper(pos), 50);
 
-// ---- Commands ----
+// ============================================================
+//  COMMANDS (API calls)
+// ============================================================
+
 async function cmd(action) {
   logLocal(action.toUpperCase(), `Sending POST /api/command/${action}`, 'info');
   try {
     const resp = await fetch(`/api/command/${action}`, { method: 'POST' });
     const data = await resp.json();
     if (data.ok) {
-      logLocal(action.toUpperCase(), `✓ Success`, 'info');
+      logLocal(action.toUpperCase(), '✓ Success', 'info');
     } else {
       logLocal(action.toUpperCase(), `✗ Failed: ${data.error || 'unknown'}`, 'error');
     }
@@ -390,12 +425,11 @@ async function cmd(action) {
 }
 
 async function sendJoint(id, angle) {
-  if (!armSynced) return; // SAFETY: don't send before first state sync
-  const body = { id, angle };
+  if (!armSynced) return;
   logLocal('SET_JOINT', `J${id} -> ${angle.toFixed(1)}°`, 'info');
   try {
     const resp = await fetch('/api/command/set-joint', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, angle })
     });
     const data = await resp.json();
     if (!data.ok) logLocal('SET_JOINT', `✗ ${data.error || 'failed'}`, 'error');
@@ -403,7 +437,7 @@ async function sendJoint(id, angle) {
 }
 
 async function sendGripper(pos) {
-  if (!armSynced) return; // SAFETY: don't send before first state sync
+  if (!armSynced) return;
   logLocal('SET_GRIPPER', `${pos.toFixed(1)} mm`, 'info');
   try {
     const resp = await fetch('/api/command/set-gripper', {
@@ -414,13 +448,6 @@ async function sendGripper(pos) {
   } catch(e) { logLocal('SET_GRIPPER', `✗ ${e.message}`, 'error'); }
 }
 
-// Button wiring — system commands
-document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
-document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
-document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
-document.getElementById('btnDisable').addEventListener('click', () => cmd('disable'));
-
-// Task buttons — use planning module for smooth trajectories
 async function runTask(name, body = {}) {
   logLocal('TASK', `Starting task: ${name}`, 'info');
   try {
@@ -435,13 +462,21 @@ async function runTask(name, body = {}) {
     }
   } catch(e) { logLocal('TASK', `${name}: ${e.message}`, 'error'); }
 }
+
+// ============================================================
+//  BUTTON WIRING
+// ============================================================
+
+document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
+document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
+document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
+document.getElementById('btnDisable').addEventListener('click', () => cmd('disable'));
 document.getElementById('btnTaskHome').addEventListener('click', () => runTask('home'));
 document.getElementById('btnTaskReady').addEventListener('click', () => runTask('ready'));
 document.getElementById('btnTaskWave').addEventListener('click', () => runTask('wave'));
 document.getElementById('btnTaskStop').addEventListener('click', () => runTask('stop'));
 document.getElementById('btnEstop').addEventListener('click', () => cmd('stop'));
 
-// Raw command
 document.getElementById('btnRawSend').addEventListener('click', async () => {
   const raw = document.getElementById('rawInput').value.trim();
   if (!raw) return;
@@ -459,7 +494,10 @@ document.getElementById('btnRawSend').addEventListener('click', async () => {
 });
 document.getElementById('rawInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnRawSend').click(); });
 
-// ---- WebSocket ----
+// ============================================================
+//  WEBSOCKET
+// ============================================================
+
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws/state`);
@@ -473,15 +511,14 @@ function connectWS() {
         logLocal('ACK', `${data.action}: ${data.ok ? 'OK' : 'FAIL'}`, data.ok ? 'info' : 'error');
         return;
       }
+
       // Zero-snap protection: if server sends all-zero joints but we had real values, keep cached
       const newJoints = data.joints || [0,0,0,0,0,0];
       const allZero = newJoints.every(v => Math.abs(v) < 0.01);
       const hadReal = lastGoodJoints.some(v => Math.abs(v) > 0.1);
       if (allZero && hadReal && armSynced) {
-        // Server sent stale zeros — use cached joints instead
         data.joints = lastGoodJoints.slice();
         jointSource = 'cached (zero-snap blocked)';
-        console.log('[TELEM] Blocked zero-snap, using cached:', lastGoodJoints);
       } else {
         lastGoodJoints = newJoints.slice();
         jointSource = 'ws';
@@ -508,7 +545,10 @@ function updateConn(on) {
   document.getElementById('connLabel').textContent = on ? 'CONNECTED' : 'DISCONNECTED';
 }
 
-// ---- UI Update ----
+// ============================================================
+//  UI UPDATE & LOG RENDERING
+// ============================================================
+
 function updateUI() {
   // Badges
   const bp = document.getElementById('badgePower');
@@ -544,7 +584,7 @@ function updateUI() {
   // E-stop flash when enabled
   document.getElementById('btnEstop').className = armState.enabled ? 'estop flash' : 'estop';
 
-  // Joint sliders — guard against triggering input events, dead-band to prevent jitter
+  // Joint sliders — dead-band update to prevent jitter, guarded against feedback loops
   updatingFromState = true;
   const joints = armState.joints || [0,0,0,0,0,0];
   for (let i = 0; i < 6; i++) {
@@ -552,7 +592,6 @@ function updateUI() {
       const val = joints[i] || 0;
       const slider = document.getElementById(`js${i}`);
       const current = parseFloat(slider.value);
-      // Only update slider if value changed by more than half a step (0.25°)
       if (Math.abs(current - val) > 0.25) slider.value = val;
       const label = document.getElementById(`jv${i}`);
       const txt = val.toFixed(1) + '°';
@@ -560,7 +599,7 @@ function updateUI() {
     }
   }
 
-  // Gripper
+  // Gripper slider — same dead-band guard
   if (userDragging !== 6) {
     const gv = armState.gripper || 0;
     const current = parseFloat(gripSlider.value);
@@ -574,10 +613,8 @@ function updateUI() {
   renderLog();
 }
 
-// ---- Log rendering ----
 let lastLogHash = '';
 function renderLog() {
-  // Merge server log + local log, sort by time string
   const serverEntries = (armState.log || []).map(e => ({
     ts_str: e.ts_str, action: e.action, details: e.details, level: e.level, src: 's'
   }));
@@ -595,9 +632,11 @@ function renderLog() {
   ).join('');
   el.scrollTop = el.scrollHeight;
 }
-function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-// ---- Arm Visualization ----
+// ============================================================
+//  ARM VISUALIZATION (Canvas FK)
+// ============================================================
+
 const canvas = document.getElementById('armCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -610,7 +649,7 @@ function drawArm() {
   for (let i = 0; i < 6; i++) {
     const diff = rawJoints[i] - vizJoints[i];
     if (Math.abs(diff) > 0.05) {
-      vizJoints[i] += diff * 0.4; // smooth factor
+      vizJoints[i] += diff * 0.4;
     } else {
       vizJoints[i] = rawJoints[i];
     }
@@ -618,14 +657,13 @@ function drawArm() {
   const joints = vizJoints;
   const deg2rad = Math.PI / 180;
 
-  // --- Grid ---
+  // Grid
   ctx.strokeStyle = 'rgba(42,74,124,0.12)';
   ctx.lineWidth = 1;
   for (let y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
   for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
 
-  // --- Side view FK (using J1, J2, J4 as pitch joints) ---
-  // Scale: convert mm to pixels. Canvas ~500px tall, arm reach ~590mm. Use 0.65 px/mm
+  // Side view FK (using J1, J2, J4 as pitch joints)
   const scale = Math.min(W, H) / 900;
   const baseX = W * 0.35, baseY = H * 0.85;
 
@@ -637,23 +675,14 @@ function drawArm() {
   ctx.fillRect(baseX - bw, baseY, bw * 2, bh);
   ctx.strokeRect(baseX - bw, baseY, bw * 2, bh);
 
-  // FK chain: base(80mm up) -> shoulder(170mm, J1 pitch) -> elbow(170mm, J2 pitch) -> wrist1(60mm, J4 pitch) -> wrist2(60mm) -> end(50mm)
-  // Pitch angles: positive = forward/down from vertical start
+  // FK chain
   const linkLengths = [LINKS_MM.base, LINKS_MM.shoulder, LINKS_MM.elbow, LINKS_MM.wrist1, LINKS_MM.wrist2, LINKS_MM.end];
-  // Which joint angle controls each segment's pitch:
-  // segment 0 (base): straight up, no joint
-  // segment 1 (shoulder): J1
-  // segment 2 (elbow): J2
-  // segment 3 (wrist1): no pitch joint (J3 is roll), carry forward
-  // segment 4 (wrist2): J4
-  // segment 5 (end): no pitch joint (J5 is roll), carry forward
 
   let cumAngle = -Math.PI / 2; // start pointing up
   let pts = [{ x: baseX, y: baseY }];
 
   // Segment 0: base (straight up)
   pts.push({ x: baseX, y: baseY - linkLengths[0] * scale });
-  // cumAngle stays -PI/2
 
   // Segment 1: shoulder — J1 pitch (with DH offset)
   cumAngle += (joints[1] + JOINT_VIZ_OFFSETS[1]) * deg2rad;
@@ -697,17 +726,12 @@ function drawArm() {
   }
 
   // Draw joints
-  const jointMapping = [-1, 1, 2, 3, 4, 5]; // which joint index corresponds to each point (after base)
   for (let i = 0; i < pts.length; i++) {
     const r = (i === 0 ? 10 : i === pts.length - 1 ? 5 : 7) * scale;
-
-    // Glow
     ctx.beginPath();
     ctx.arc(pts[i].x, pts[i].y, r + 3 * scale, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(15,52,96,0.3)';
     ctx.fill();
-
-    // Joint circle
     ctx.beginPath();
     ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
     ctx.fillStyle = '#16213e';
@@ -717,27 +741,27 @@ function drawArm() {
     ctx.stroke();
   }
 
-  // --- Roll joint rotation indicators (V2: larger, color-coded, with degree labels) ---
-  const rollColor = '#e8a838';  // orange-gold for roll joints
-  const pitchColor = '#4a90d9'; // blue for pitch joints
+  // Roll joint rotation indicators
+  const rollColor = '#e8a838';
+  const pitchColor = '#4a90d9';
 
-  function drawRotationIndicator(cx, cy, radius, angleDeg, label, offsetX, offsetY) {
+  function drawRotationIndicator(cx, cy, radius, angleDeg, label) {
     const a = angleDeg * deg2rad;
     const r = radius * scale;
-    // Arc background ring
+    // Background ring
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(232,168,56,0.15)';
     ctx.lineWidth = 3 * scale;
     ctx.stroke();
-    // Zero tick mark (top)
+    // Zero tick
     ctx.beginPath();
     ctx.moveTo(cx, cy - r + 2 * scale);
     ctx.lineTo(cx, cy - r - 3 * scale);
     ctx.strokeStyle = 'rgba(232,168,56,0.4)';
     ctx.lineWidth = 1.5 * scale;
     ctx.stroke();
-    // Filled arc showing angle
+    // Filled arc
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0);
@@ -757,13 +781,12 @@ function drawArm() {
     ctx.arc(ex, ey, 4 * scale, 0, Math.PI * 2);
     ctx.fillStyle = Math.abs(angleDeg) > 100 ? '#e94560' : rollColor;
     ctx.fill();
-    // Label with degree value
+    // Label
+    const lx = cx + (r + 6 * scale);
+    const ly = cy + (4 * scale);
     ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
     ctx.fillStyle = rollColor;
-    const lx = cx + (offsetX || (r + 6 * scale));
-    const ly = cy + (offsetY || (4 * scale));
     ctx.fillText(`${label} ${angleDeg.toFixed(1)}°`, lx, ly);
-    // "roll" sub-label
     ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
     ctx.fillStyle = 'rgba(232,168,56,0.5)';
     ctx.fillText('roll', lx, ly + 10 * scale);
@@ -772,7 +795,6 @@ function drawArm() {
   // J0 base rotation — top-down mini view in upper-right corner
   const j0Angle = joints[0] || 0;
   const j0cx = W - 50 * scale, j0cy = 50 * scale, j0r = 30 * scale;
-  // Background circle
   ctx.beginPath();
   ctx.arc(j0cx, j0cy, j0r + 2 * scale, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(26,39,68,0.6)';
@@ -790,23 +812,20 @@ function drawArm() {
     ctx.lineWidth = 1 * scale;
     ctx.stroke();
   }
-  // Arm direction indicator (top-down: line pointing "forward" rotated by J0)
+  // Direction line
   const j0a = j0Angle * deg2rad;
-  // Filled sweep
   ctx.beginPath();
   ctx.moveTo(j0cx, j0cy);
   ctx.arc(j0cx, j0cy, j0r, -Math.PI / 2, -Math.PI / 2 + j0a, j0a < 0);
   ctx.closePath();
   ctx.fillStyle = Math.abs(j0Angle) > 100 ? 'rgba(233,69,96,0.2)' : 'rgba(232,168,56,0.15)';
   ctx.fill();
-  // Direction line
   ctx.beginPath();
   ctx.moveTo(j0cx, j0cy);
   ctx.lineTo(j0cx + Math.sin(j0a) * j0r * 0.85, j0cy - Math.cos(j0a) * j0r * 0.85);
   ctx.strokeStyle = Math.abs(j0Angle) > 100 ? '#e94560' : rollColor;
   ctx.lineWidth = 3 * scale;
   ctx.stroke();
-  // Center dot
   ctx.beginPath();
   ctx.arc(j0cx, j0cy, 3 * scale, 0, Math.PI * 2);
   ctx.fillStyle = rollColor;
@@ -821,27 +840,25 @@ function drawArm() {
   ctx.fillText('base rotation (top view)', j0cx, j0cy + j0r + 24 * scale);
   ctx.textAlign = 'left';
 
-  // J3 indicator at forearm (pt index 3) — larger
+  // J3 & J5 roll indicators
   drawRotationIndicator(pts[3].x, pts[3].y, 22, joints[3] || 0, 'J3');
-  // J5 indicator at wrist (pt index 5) — larger
   drawRotationIndicator(pts[5].x, pts[5].y, 18, joints[5] || 0, 'J5');
 
-  // --- Joint angle labels for pitch joints (V1: verified correct mapping) ---
+  // Pitch joint labels (J1, J2, J4)
   ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = pitchColor;
-  // J1 at shoulder (pt 1 is top of base, label there)
   ctx.fillText(`J1 ${(joints[1]||0).toFixed(1)}°`, pts[1].x - 55 * scale, pts[1].y - 12 * scale);
   ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(74,144,217,0.5)';
   ctx.fillText('pitch', pts[1].x - 55 * scale, pts[1].y - 2 * scale);
-  // J2 at elbow
+
   ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = pitchColor;
   ctx.fillText(`J2 ${(joints[2]||0).toFixed(1)}°`, pts[2].x + 12 * scale, pts[2].y - 12 * scale);
   ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(74,144,217,0.5)';
   ctx.fillText('pitch', pts[2].x + 12 * scale, pts[2].y - 2 * scale);
-  // J4 at wrist
+
   ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = pitchColor;
   ctx.fillText(`J4 ${(joints[4]||0).toFixed(1)}°`, pts[4].x + 12 * scale, pts[4].y - 12 * scale);
@@ -849,7 +866,7 @@ function drawArm() {
   ctx.fillStyle = 'rgba(74,144,217,0.5)';
   ctx.fillText('pitch', pts[4].x + 12 * scale, pts[4].y - 2 * scale);
 
-  // --- Gripper visualization (V3: two fingers with color-coded open/close) ---
+  // Gripper visualization
   const tip = pts[pts.length - 1];
   const gAngle = cumAngle;
   const gripMM = armState.gripper != null ? armState.gripper : 0;
@@ -857,7 +874,6 @@ function drawArm() {
   const gOpen = gripRatio * 12 * scale;
   const fingerLen = 20 * scale;
   const fingerWid = 4 * scale;
-  // Color: closed=orange, open=green, smooth gradient
   const gR = Math.round(233 - gripRatio * 150);
   const gG = Math.round(120 + gripRatio * 95);
   const gB = Math.round(56 + gripRatio * 50);
@@ -870,7 +886,6 @@ function drawArm() {
     const fy1 = tip.y + perpY;
     const fx2 = fx1 + Math.cos(gAngle) * fingerLen;
     const fy2 = fy1 + Math.sin(gAngle) * fingerLen;
-    // Finger body
     ctx.beginPath();
     ctx.moveTo(fx1, fy1);
     ctx.lineTo(fx2, fy2);
@@ -878,7 +893,6 @@ function drawArm() {
     ctx.lineWidth = fingerWid;
     ctx.lineCap = 'round';
     ctx.stroke();
-    // Fingertip inner edge (small inward nub)
     const tipNubX = fx2 + Math.cos(gAngle + Math.PI / 2) * (-side) * 3 * scale;
     const tipNubY = fy2 + Math.sin(gAngle + Math.PI / 2) * (-side) * 3 * scale;
     ctx.beginPath();
@@ -896,20 +910,22 @@ function drawArm() {
   ctx.fillStyle = gripRatio > 0.5 ? 'rgba(83,215,105,0.6)' : 'rgba(233,69,96,0.6)';
   ctx.fillText(gripRatio > 0.7 ? 'open' : gripRatio < 0.15 ? 'closed' : 'partial', tip.x + 20 * scale, tip.y + 28 * scale);
 
-  // --- Title ---
+  // Title
   ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(136,146,164,0.5)';
   ctx.fillText('D1 Arm (blue=pitch, gold=roll)', 8, 16 * scale);
 
-  // --- Telemetry overlay ---
-  const telY = H - 8 * scale;
+  // Telemetry overlay
   ctx.font = `${8 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(136,146,164,0.4)';
   const jStr = joints.map(v => v.toFixed(1)).join(', ');
-  ctx.fillText(`src:${jointSource} ws#${wsUpdateCount} [${jStr}]`, 8, telY);
+  ctx.fillText(`src:${jointSource} ws#${wsUpdateCount} [${jStr}]`, 8, H - 8 * scale);
 }
 
-// Animation loop — only redraw when state changes
+// ============================================================
+//  ANIMATION & RESIZE
+// ============================================================
+
 function animLoop() {
   if (vizDirty) {
     vizDirty = false;
@@ -929,13 +945,15 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 
-// Camera toggle
+// ============================================================
+//  CAMERA TOGGLE
+// ============================================================
+
 document.getElementById('btnCamToggle').addEventListener('click', () => {
   const feeds = document.getElementById('cameraFeeds');
   const btn = document.getElementById('btnCamToggle');
   const hidden = feeds.classList.toggle('hidden');
   btn.textContent = hidden ? '👁 SHOW' : '👁 HIDE';
-  // Stop/start streams to save bandwidth
   const imgs = feeds.querySelectorAll('.cam-img');
   imgs.forEach((img, i) => {
     if (hidden) { img.dataset.src = img.src; img.src = ''; }
@@ -944,14 +962,15 @@ document.getElementById('btnCamToggle').addEventListener('click', () => {
   setTimeout(resizeCanvas, 50);
 });
 
-// ---- Debug Telemetry ----
+// ============================================================
+//  DEBUG TELEMETRY PANEL
+// ============================================================
+
 let debugOn = false;
 let debugInterval = null;
 let wsLastMsgTs = 0;
 let wsRxIntervalMs = 0;
 
-// Track WS message timing for debug
-const origOnMessage = null;
 function hookWsDebug() {
   if (!ws) return;
   const origHandler = ws.onmessage;
@@ -999,10 +1018,8 @@ async function pollDebug() {
       updateDebugPipeline(tel.events || tel);
       renderDebugEvents(tel.events || tel);
     }
-  } catch(e) { /* endpoints may not exist */ }
-  // Always update client-side WS timing
+  } catch(e) {}
   document.getElementById('dsWsRxInt').textContent = wsRxIntervalMs > 0 ? wsRxIntervalMs + 'ms' : 'N/A';
-  // UI stage always active when debug is on
   const uiStage = document.querySelector('.pipe-stage[data-stage="UI"]');
   if (uiStage) { uiStage.className = 'pipe-stage active'; }
 }
@@ -1037,7 +1054,7 @@ function updateDebugPipeline(events) {
   }
   document.querySelectorAll('.pipe-stage').forEach(el => {
     const stage = el.dataset.stage;
-    if (stage === 'UI') return; // handled separately
+    if (stage === 'UI') return;
     if (errorTypes.has(stage)) el.className = 'pipe-stage error';
     else if (recentTypes.has(stage)) el.className = 'pipe-stage active';
     else el.className = 'pipe-stage';
@@ -1057,7 +1074,10 @@ function renderDebugEvents(events) {
   container.scrollTop = container.scrollHeight;
 }
 
-// Start
+// ============================================================
+//  INIT
+// ============================================================
+
 connectWS();
 setTimeout(() => { resizeCanvas(); animLoop(); }, 50);
 </script>
