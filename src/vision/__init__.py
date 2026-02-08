@@ -18,6 +18,7 @@ try:
     from .dimension_estimator import ObjectDimensionEstimator, DimensionEstimate
     from .world_model import WorldModel, WorldModelSnapshot, WorldObject
     from .startup_scanner import StartupScanner, StartupScanReport
+    from .ascii_converter import AsciiConverter
 except ImportError:
     ObjectDetector = None  # type: ignore[assignment,misc]
     WorkspaceMapper = None  # type: ignore[assignment,misc]
@@ -36,6 +37,7 @@ except ImportError:
     WorldObject = None  # type: ignore[assignment,misc]
     StartupScanner = None  # type: ignore[assignment,misc]
     StartupScanReport = None  # type: ignore[assignment,misc]
+    AsciiConverter = None  # type: ignore[assignment,misc]
 
 __all__ = [
     "ObjectDetector",
@@ -55,4 +57,5 @@ __all__ = [
     "WorldObject",
     "StartupScanner",
     "StartupScanReport",
+    "AsciiConverter",
 ]
