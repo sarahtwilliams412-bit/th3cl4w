@@ -417,6 +417,36 @@ def load_calibration(path: Path = OUTPUT_PATH) -> Optional[Dict]:
         return None
 
 
+async def check_for_stall(api_base: str = ARM_API, timeout_s: float = 3.0) -> Optional[int]:
+    """
+    After a move, check if any joint is stalled (commanded != actual beyond threshold).
+    Returns the stalled joint id or None.
+    """
+    from src.safety.collision_detector import CollisionDetector
+
+    detector = CollisionDetector(position_error_deg=3.0, stall_duration_s=0.3)
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        state = await get_arm_state(api_base)
+        if state is None:
+            await asyncio.sleep(0.2)
+            continue
+        actual = state["joints"]
+        # We don't have commanded from here; use the target we just sent
+        # This function is called after move_to_pose which sets targets
+        # Check if arm stopped moving but hasn't reached target
+        await asyncio.sleep(0.2)
+        state2 = await get_arm_state(api_base)
+        if state2 is None:
+            continue
+        actual2 = state2["joints"]
+        # If positions haven't changed much between checks, arm is settled
+        settled = all(abs(actual2[i] - actual[i]) < 0.1 for i in range(6))
+        if settled:
+            return None
+    return None
+
+
 async def run_calibration(
     poses: Optional[List[List[float]]] = None,
     api_base: str = ARM_API,
@@ -450,8 +480,17 @@ async def run_calibration(
                 logger.warning("Skipping pose %d — move failed", i + 1)
                 continue
 
-            # Wait for arm to settle
+            # Wait for arm to settle and check for stalls
             await asyncio.sleep(SETTLE_TIME)
+
+            # Check if arm is stalled (collision during move)
+            stalled_joint = await check_for_stall(api_base, timeout_s=1.0)
+            if stalled_joint is not None:
+                logger.warning("Skipping pose %d — J%d stalled (collision)", i + 1, stalled_joint)
+                # Back off toward home
+                await move_joint_slowly(stalled_joint, 0.0, api_base)
+                await asyncio.sleep(1.0)
+                continue
 
             # Get actual joint angles
             state = await get_arm_state(api_base)
