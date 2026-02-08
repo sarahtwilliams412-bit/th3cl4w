@@ -173,7 +173,9 @@ class FeedbackGenerator:
         n_cams = len(episode.camera_refs)
         connected_cams = set(c.camera_id for c in episode.camera_refs if c.connected)
         if n_cams:
-            parts.append(f"Camera data: {n_cams} frames from {len(connected_cams)} active camera(s).")
+            parts.append(
+                f"Camera data: {n_cams} frames from {len(connected_cams)} active camera(s)."
+            )
         else:
             parts.append("No camera data was available during this episode.")
 
@@ -228,9 +230,7 @@ class FeedbackGenerator:
 
         # Note the workspace margin for future reference
         margin = motion_summary.get("min_workspace_margin_m", 0.0)
-        fb.strategy_notes.append(
-            f"Minimum workspace margin: {margin * 1000:.1f}mm from boundary."
-        )
+        fb.strategy_notes.append(f"Minimum workspace margin: {margin * 1000:.1f}mm from boundary.")
 
         fb.suggestions.append(
             "This execution was successful. Store these parameters as a known-good "
@@ -369,26 +369,30 @@ class FeedbackGenerator:
                 "Reduce command smoother step size to improve tracking accuracy. "
                 "Current error suggests the arm is lagging behind commands."
             )
-            fb.parameter_adjustments.append({
-                "target": "command_smoother",
-                "parameter": "max_step_deg",
-                "direction": "decrease",
-                "reason": f"tracking error {np.degrees(err):.2f}° exceeds limit",
-                "suggested_factor": 0.7,
-            })
+            fb.parameter_adjustments.append(
+                {
+                    "target": "command_smoother",
+                    "parameter": "max_step_deg",
+                    "direction": "decrease",
+                    "reason": f"tracking error {np.degrees(err):.2f}° exceeds limit",
+                    "suggested_factor": 0.7,
+                }
+            )
 
         if "motion_smoothness" in failed_names:
             fb.suggestions.append(
                 "Increase the trajectory interpolation density (more waypoints) "
                 "or reduce the maximum speed factor to improve smoothness."
             )
-            fb.parameter_adjustments.append({
-                "target": "motion_planner",
-                "parameter": "speed_factor",
-                "direction": "decrease",
-                "reason": "motion was too jerky",
-                "suggested_factor": 0.8,
-            })
+            fb.parameter_adjustments.append(
+                {
+                    "target": "motion_planner",
+                    "parameter": "speed_factor",
+                    "direction": "decrease",
+                    "reason": "motion was too jerky",
+                    "suggested_factor": 0.8,
+                }
+            )
 
         if "reached_target" in failed_names or "reached_target_pose" in failed_names:
             fb.suggestions.append(
@@ -396,13 +400,15 @@ class FeedbackGenerator:
                 "using forward kinematics. If the target is at the edge of the workspace, "
                 "consider using a closer intermediate target."
             )
-            fb.parameter_adjustments.append({
-                "target": "task_planner",
-                "parameter": "position_tolerance_deg",
-                "direction": "increase",
-                "reason": "target may be barely reachable",
-                "suggested_factor": 1.5,
-            })
+            fb.parameter_adjustments.append(
+                {
+                    "target": "task_planner",
+                    "parameter": "position_tolerance_deg",
+                    "direction": "increase",
+                    "reason": "target may be barely reachable",
+                    "suggested_factor": 1.5,
+                }
+            )
 
         if "workspace_bounds" in failed_names:
             fb.suggestions.append(
@@ -423,13 +429,15 @@ class FeedbackGenerator:
                 "range. The gripper_open_mm and gripper_close_mm parameters may "
                 "need wider separation."
             )
-            fb.parameter_adjustments.append({
-                "target": "task_planner",
-                "parameter": "gripper_open_mm",
-                "direction": "increase",
-                "reason": "gripper didn't actuate enough",
-                "suggested_factor": 1.3,
-            })
+            fb.parameter_adjustments.append(
+                {
+                    "target": "task_planner",
+                    "parameter": "gripper_open_mm",
+                    "direction": "increase",
+                    "reason": "gripper didn't actuate enough",
+                    "suggested_factor": 1.3,
+                }
+            )
 
         if not fb.suggestions:
             fb.suggestions.append(

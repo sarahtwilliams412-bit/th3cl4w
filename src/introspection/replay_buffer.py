@@ -201,9 +201,7 @@ class ReplayBuffer:
         angles = payload.get("angles", {})
         if not angles:
             return
-        positions = np.array([
-            angles.get(f"angle{i}", 0.0) or 0.0 for i in range(7)
-        ])
+        positions = np.array([angles.get(f"angle{i}", 0.0) or 0.0 for i in range(7)])
         # Velocities and torques come from the state, not always in DDS feedback.
         # Default to zeros if not present.
         velocities = np.zeros(7)
@@ -211,8 +209,11 @@ class ReplayBuffer:
         gripper = positions[6] if len(positions) > 6 else 0.0
 
         snap = JointSnapshot(
-            ts=ts, wall_ts=wall_ts,
-            positions=positions, velocities=velocities, torques=torques,
+            ts=ts,
+            wall_ts=wall_ts,
+            positions=positions,
+            velocities=velocities,
+            torques=torques,
             gripper=gripper,
         )
         with self._lock:
@@ -221,7 +222,8 @@ class ReplayBuffer:
 
     def _ingest_command(self, ts: float, wall_ts: float, payload: dict) -> None:
         snap = CommandSnapshot(
-            ts=ts, wall_ts=wall_ts,
+            ts=ts,
+            wall_ts=wall_ts,
             funcode=payload.get("funcode", 0),
             joint_id=payload.get("joint_id"),
             target_value=payload.get("target_value"),
@@ -233,7 +235,8 @@ class ReplayBuffer:
 
     def _ingest_camera(self, ts: float, wall_ts: float, payload: dict) -> None:
         ref = CameraFrameRef(
-            ts=ts, wall_ts=wall_ts,
+            ts=ts,
+            wall_ts=wall_ts,
             camera_id=payload.get("camera_id", ""),
             fps=payload.get("actual_fps"),
             motion_score=payload.get("motion_score"),
@@ -319,7 +322,8 @@ class ReplayBuffer:
         now_mono = time.monotonic()
         now_wall = time.time()
         snap = JointSnapshot(
-            ts=now_mono, wall_ts=now_wall,
+            ts=now_mono,
+            wall_ts=now_wall,
             positions=np.asarray(positions, dtype=float),
             velocities=np.asarray(velocities, dtype=float),
             torques=np.asarray(torques, dtype=float),
@@ -335,9 +339,12 @@ class ReplayBuffer:
         now_mono = time.monotonic()
         now_wall = time.time()
         snap = CommandSnapshot(
-            ts=now_mono, wall_ts=now_wall,
-            funcode=funcode, joint_id=joint_id,
-            target_value=target_value, data=None,
+            ts=now_mono,
+            wall_ts=now_wall,
+            funcode=funcode,
+            joint_id=joint_id,
+            target_value=target_value,
+            data=None,
         )
         with self._lock:
             self._cmd_buf.append(snap)

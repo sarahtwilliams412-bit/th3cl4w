@@ -17,10 +17,10 @@ from src.introspection.feedback_generator import FeedbackGenerator
 from src.introspection.code_improver import CodeImprover
 from src.introspection.manager import IntrospectionManager
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_joint_snapshot(ts: float, positions: np.ndarray | None = None) -> JointSnapshot:
     if positions is None:
@@ -56,6 +56,7 @@ def _fill_buffer_with_motion(buf: ReplayBuffer, n_steps: int = 50, duration: flo
 # ---------------------------------------------------------------------------
 # ReplayBuffer tests
 # ---------------------------------------------------------------------------
+
 
 class TestReplayBuffer:
     def test_create_buffer(self):
@@ -105,8 +106,12 @@ class TestReplayBuffer:
             "event_type": "dds_receive",
             "payload": {
                 "angles": {
-                    "angle0": 0.1, "angle1": 0.2, "angle2": 0.3,
-                    "angle3": 0.4, "angle4": 0.5, "angle5": 0.6,
+                    "angle0": 0.1,
+                    "angle1": 0.2,
+                    "angle2": 0.3,
+                    "angle3": 0.4,
+                    "angle4": 0.5,
+                    "angle5": 0.6,
                     "angle6": 0.0,
                 },
             },
@@ -118,6 +123,7 @@ class TestReplayBuffer:
 # ---------------------------------------------------------------------------
 # WorldModel tests
 # ---------------------------------------------------------------------------
+
 
 class TestWorldModel:
     def test_reconstruct_static(self):
@@ -167,6 +173,7 @@ class TestWorldModel:
 # EpisodeAnalyzer tests
 # ---------------------------------------------------------------------------
 
+
 class TestEpisodeAnalyzer:
     def test_analyze_generic_motion(self):
         buf = ReplayBuffer()
@@ -188,10 +195,12 @@ class TestEpisodeAnalyzer:
 
     def test_analyze_with_task_context(self):
         buf = ReplayBuffer()
-        buf.set_task_context(TaskContext(
-            task_name="go_home",
-            target_position=np.zeros(6),
-        ))
+        buf.set_task_context(
+            TaskContext(
+                task_name="go_home",
+                target_position=np.zeros(6),
+            )
+        )
         # Arm starts slightly off and moves to zero
         for i in range(20):
             frac = i / 19.0
@@ -216,6 +225,7 @@ class TestEpisodeAnalyzer:
 # ---------------------------------------------------------------------------
 # FeedbackGenerator tests
 # ---------------------------------------------------------------------------
+
 
 class TestFeedbackGenerator:
     def test_generate_feedback(self, tmp_path):
@@ -255,6 +265,7 @@ class TestFeedbackGenerator:
 # CodeImprover tests
 # ---------------------------------------------------------------------------
 
+
 class TestCodeImprover:
     def test_process_feedback_adjusts_parameters(self, tmp_path):
         improver = CodeImprover(
@@ -263,17 +274,20 @@ class TestCodeImprover:
         )
 
         from src.introspection.feedback_generator import Feedback
+
         fb = Feedback(
             episode_id="test-001",
             verdict="failure",
             task_name="pick_and_place",
-            parameter_adjustments=[{
-                "target": "motion_planner",
-                "parameter": "speed_factor",
-                "direction": "decrease",
-                "reason": "motion was too jerky",
-                "suggested_factor": 0.8,
-            }],
+            parameter_adjustments=[
+                {
+                    "target": "motion_planner",
+                    "parameter": "speed_factor",
+                    "direction": "decrease",
+                    "reason": "motion was too jerky",
+                    "suggested_factor": 0.8,
+                }
+            ],
         )
 
         improvements = improver.process_feedback(fb)
@@ -292,16 +306,19 @@ class TestCodeImprover:
         )
 
         from src.introspection.feedback_generator import Feedback
+
         fb = Feedback(
             episode_id="test-002",
             verdict="failure",
-            parameter_adjustments=[{
-                "target": "motion_planner",
-                "parameter": "speed_factor",
-                "direction": "decrease",
-                "reason": "test",
-                "suggested_factor": 0.001,  # extreme reduction
-            }],
+            parameter_adjustments=[
+                {
+                    "target": "motion_planner",
+                    "parameter": "speed_factor",
+                    "direction": "decrease",
+                    "reason": "test",
+                    "suggested_factor": 0.001,  # extreme reduction
+                }
+            ],
         )
 
         improvements = improver.process_feedback(fb)
@@ -317,16 +334,19 @@ class TestCodeImprover:
         )
 
         from src.introspection.feedback_generator import Feedback
+
         fb = Feedback(
             episode_id="test-003",
             verdict="failure",
-            parameter_adjustments=[{
-                "target": "motion_planner",
-                "parameter": "speed_factor",
-                "direction": "decrease",
-                "reason": "test",
-                "suggested_factor": 0.8,
-            }],
+            parameter_adjustments=[
+                {
+                    "target": "motion_planner",
+                    "parameter": "speed_factor",
+                    "direction": "decrease",
+                    "reason": "test",
+                    "suggested_factor": 0.8,
+                }
+            ],
         )
 
         improver.process_feedback(fb)
@@ -341,6 +361,7 @@ class TestCodeImprover:
 # ---------------------------------------------------------------------------
 # IntrospectionManager integration tests
 # ---------------------------------------------------------------------------
+
 
 class TestIntrospectionManager:
     def test_full_pipeline(self):
@@ -358,9 +379,7 @@ class TestIntrospectionManager:
             frac = i / 29.0
             positions = np.zeros(7)
             positions[1] = 0.3 * (1 - frac)
-            manager.replay_buffer.push_joint_state(
-                positions, np.zeros(7), np.zeros(7)
-            )
+            manager.replay_buffer.push_joint_state(positions, np.zeros(7), np.zeros(7))
 
         # End task triggers introspection
         report = manager.end_task()
@@ -374,9 +393,7 @@ class TestIntrospectionManager:
         manager = IntrospectionManager(auto_introspect=False)
 
         for _ in range(10):
-            manager.replay_buffer.push_joint_state(
-                np.zeros(7), np.zeros(7), np.zeros(7)
-            )
+            manager.replay_buffer.push_joint_state(np.zeros(7), np.zeros(7), np.zeros(7))
 
         report = manager.introspect(lookback_seconds=5.0)
         assert report.episode is not None
@@ -391,8 +408,6 @@ class TestIntrospectionManager:
     def test_quick_introspect(self):
         manager = IntrospectionManager()
         for _ in range(10):
-            manager.replay_buffer.push_joint_state(
-                np.zeros(7), np.zeros(7), np.zeros(7)
-            )
+            manager.replay_buffer.push_joint_state(np.zeros(7), np.zeros(7), np.zeros(7))
         narrative = manager.quick_introspect(lookback_seconds=5.0)
         assert isinstance(narrative, str)

@@ -183,16 +183,21 @@ class CodeImprover:
         try:
             self.history_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.history_path, "a") as f:
-                f.write(json.dumps({
-                    "timestamp": improvement.timestamp,
-                    "episode_id": improvement.episode_id,
-                    "target": improvement.target,
-                    "parameter": improvement.parameter,
-                    "old_value": improvement.old_value,
-                    "new_value": improvement.new_value,
-                    "reason": improvement.reason,
-                    "applied": improvement.applied,
-                }) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "timestamp": improvement.timestamp,
+                            "episode_id": improvement.episode_id,
+                            "target": improvement.target,
+                            "parameter": improvement.parameter,
+                            "old_value": improvement.old_value,
+                            "new_value": improvement.new_value,
+                            "reason": improvement.reason,
+                            "applied": improvement.applied,
+                        }
+                    )
+                    + "\n"
+                )
         except Exception as e:
             logger.error("Failed to log improvement history: %s", e)
 
@@ -220,9 +225,7 @@ class CodeImprover:
         self._save()
         return improvements
 
-    def _apply_parameter_adjustment(
-        self, adj: dict, episode_id: str
-    ) -> Improvement | None:
+    def _apply_parameter_adjustment(self, adj: dict, episode_id: str) -> Improvement | None:
         """Apply a single parameter adjustment with safety bounds."""
         target = adj.get("target", "")
         param = adj.get("parameter", "")
@@ -287,7 +290,11 @@ class CodeImprover:
 
         logger.info(
             "Applied improvement: %s.%s: %.4f -> %.4f (%s)",
-            target, param, current, new_value, imp.reason,
+            target,
+            param,
+            current,
+            new_value,
+            imp.reason,
         )
 
         return imp
@@ -317,9 +324,7 @@ class CodeImprover:
         if feedback.verdict == "success" and feedback.parameter_adjustments:
             for adj in feedback.parameter_adjustments:
                 key = f"{adj.get('target', '')}.{adj.get('parameter', '')}"
-                val = self.parameters.get(adj.get("target", ""), {}).get(
-                    adj.get("parameter", "")
-                )
+                val = self.parameters.get(adj.get("target", ""), {}).get(adj.get("parameter", ""))
                 if val is not None:
                     strategy.parameters[key] = val
 
@@ -333,31 +338,35 @@ class CodeImprover:
         if feedback.verdict == "failure":
             for cause in feedback.root_causes:
                 if "collision memory" in cause.lower():
-                    self.pending_patches.append({
-                        "timestamp": time.time(),
-                        "episode_id": feedback.episode_id,
-                        "type": "strategy_change",
-                        "description": (
-                            "Consider adding pre-execution collision preview "
-                            "that checks the planned trajectory against collision "
-                            "memory before sending commands."
-                        ),
-                        "target_file": "src/planning/motion_planner.py",
-                        "priority": "medium",
-                    })
+                    self.pending_patches.append(
+                        {
+                            "timestamp": time.time(),
+                            "episode_id": feedback.episode_id,
+                            "type": "strategy_change",
+                            "description": (
+                                "Consider adding pre-execution collision preview "
+                                "that checks the planned trajectory against collision "
+                                "memory before sending commands."
+                            ),
+                            "target_file": "src/planning/motion_planner.py",
+                            "priority": "medium",
+                        }
+                    )
                 elif "tracking error" in cause.lower() and "pid" in cause.lower():
-                    self.pending_patches.append({
-                        "timestamp": time.time(),
-                        "episode_id": feedback.episode_id,
-                        "type": "parameter_tune",
-                        "description": (
-                            "Consider implementing adaptive PID gains that "
-                            "increase proportional gain when tracking error "
-                            "exceeds threshold for more than 200ms."
-                        ),
-                        "target_file": "src/control/joint_controller.py",
-                        "priority": "high",
-                    })
+                    self.pending_patches.append(
+                        {
+                            "timestamp": time.time(),
+                            "episode_id": feedback.episode_id,
+                            "type": "parameter_tune",
+                            "description": (
+                                "Consider implementing adaptive PID gains that "
+                                "increase proportional gain when tracking error "
+                                "exceeds threshold for more than 200ms."
+                            ),
+                            "target_file": "src/control/joint_controller.py",
+                            "priority": "high",
+                        }
+                    )
 
     # -- Query interface --
 

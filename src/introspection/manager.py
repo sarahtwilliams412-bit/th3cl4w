@@ -241,9 +241,7 @@ class IntrospectionManager:
         tracking_error = self.world_model.compute_tracking_error(episode, reconstruction)
 
         # Step 3: Analyze
-        assessment = self.analyzer.analyze(
-            episode, reconstruction, motion_summary, tracking_error
-        )
+        assessment = self.analyzer.analyze(episode, reconstruction, motion_summary, tracking_error)
         report.assessment = assessment
         logger.info(
             "Assessment: %s (score=%.2f, %d/%d criteria passed)",
@@ -271,7 +269,11 @@ class IntrospectionManager:
             report.duration_ms,
             report.verdict,
             len(improvements),
-            feedback.narrative[:500] + "..." if len(feedback.narrative) > 500 else feedback.narrative,
+            (
+                feedback.narrative[:500] + "..."
+                if len(feedback.narrative) > 500
+                else feedback.narrative
+            ),
         )
 
         return report
@@ -294,9 +296,7 @@ class IntrospectionManager:
 
         return {
             "total_introspections": n_reports,
-            "session_verdicts": {
-                v: verdicts.count(v) for v in set(verdicts)
-            } if verdicts else {},
+            "session_verdicts": {v: verdicts.count(v) for v in set(verdicts)} if verdicts else {},
             "session_success_rate": (
                 verdicts.count("success") / len(verdicts) if verdicts else 0.0
             ),
@@ -305,7 +305,9 @@ class IntrospectionManager:
             "buffer_stats": self.replay_buffer.stats(),
         }
 
-    def get_learned_parameter(self, target: str, param: str, default: float | None = None) -> float | None:
+    def get_learned_parameter(
+        self, target: str, param: str, default: float | None = None
+    ) -> float | None:
         """Get a learned parameter value from the code improver."""
         return self.improver.get_parameter(target, param, default)
 
