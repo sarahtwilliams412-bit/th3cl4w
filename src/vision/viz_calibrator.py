@@ -367,7 +367,7 @@ def solve_calibration(observations: List[PoseObservation],
     ]
 
     result = minimize(residuals, x0, method='L-BFGS-B', bounds=bounds,
-                      options={'maxiter': 5000, 'ftol': 1e-10})
+                      options={'maxiter': 50000, 'maxfun': 200000, 'ftol': 1e-12})
 
     p = result.x
     links_mm = {name: round(float(p[i]), 1) for i, name in enumerate(link_names)}
