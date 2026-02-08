@@ -321,49 +321,54 @@ let LINKS_MM = {
   base: 80, shoulder: 170, elbow: 170, wrist1: 60, wrist2: 60, end: 50
 };
 
-// DH geometric offsets (degrees) — maps D1 DDS zero convention to viz geometry.
-let JOINT_VIZ_OFFSETS = [0, 90, 90, 0, 0, 0];
-
-// --- 3D FK + Camera Projection (v2 calibration) ---
-// DH parameters (d in meters, alpha in radians)
-const DH_D = [0.1215, 0.0, 0.2085, 0.0, 0.2085, 0.0, 0.1130];
-const DH_A = [0, 0, 0, 0, 0, 0, 0];
-const DH_ALPHA = [-Math.PI/2, Math.PI/2, -Math.PI/2, Math.PI/2, -Math.PI/2, Math.PI/2, 0];
-
-let DH_THETA_OFFSETS_DEG = [0, 0, 0, 0, 0, 0, 0];
 let CAM_PARAMS = null; // {fx, fy, cx, cy, rx, ry, rz, tx, ty, tz}
-let USE_3D_PROJECTION = false; // true when v2 calibration is loaded
+let USE_3D_PROJECTION = false; // true when camera calibration is loaded
 
-function dhTransform(d, a, alpha, theta) {
-  const ct = Math.cos(theta), st = Math.sin(theta);
-  const ca = Math.cos(alpha), sa = Math.sin(alpha);
-  // Returns [4][4] row-major
-  return [
-    [ct, -st*ca,  st*sa, a*ct],
-    [st,  ct*ca, -ct*sa, a*st],
-    [0,       sa,     ca,    d],
-    [0,        0,      0,    1]
-  ];
-}
+// --- Geometric FK (empirically verified against real D1 arm) ---
+// Returns 5 key positions [x,y,z] in meters: base, shoulder, elbow, wrist, EE
+// Coordinate frame: Z=up, X=forward (arm extends +X at home), Y=left
+// Joint conventions (from empirical mapping):
+//   J0: base yaw (+CCW from above)
+//   J1: shoulder pitch (+UP/backward, applied as -Ry)
+//   J2: elbow pitch (+straightens arm, applied as -Ry from 90° home bend)
+//   J3: forearm roll (+CW looking down arm)
+//   J4: wrist pitch (+gripper down, applied as +Ry)
+//   J5: gripper roll (+CW from above)
+function fkPositions(jointsDeg) {
+  const D = Math.PI / 180;
+  const j = jointsDeg.map(v => (v || 0) * D);
+  const d0 = 0.1215, L1 = 0.2085, L2 = 0.2085, L3 = 0.1130;
 
-function mat4mul(A, B) {
-  const C = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
-  for (let i=0;i<4;i++) for (let j=0;j<4;j++) for (let k=0;k<4;k++) C[i][j]+=A[i][k]*B[k][j];
-  return C;
-}
-
-function fk3dPositions(jointsDeg) {
-  // Returns 8 positions [x,y,z] in meters: base + 7 joint frames
-  const angles = jointsDeg.slice(0, 6).concat([0]); // pad to 7
-  let T = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
-  const positions = [[T[0][3], T[1][3], T[2][3]]];
-  for (let i = 0; i < 7; i++) {
-    const theta = angles[i] * Math.PI/180 + DH_THETA_OFFSETS_DEG[i] * Math.PI/180;
-    const Ti = dhTransform(DH_D[i], DH_A[i], DH_ALPHA[i], theta);
-    T = mat4mul(T, Ti);
-    positions.push([T[0][3], T[1][3], T[2][3]]);
+  // Rotation helpers (return 3x3 as flat [9])
+  function rz(a) { const c=Math.cos(a),s=Math.sin(a); return [c,-s,0, s,c,0, 0,0,1]; }
+  function ry(a) { const c=Math.cos(a),s=Math.sin(a); return [c,0,s, 0,1,0, -s,0,c]; }
+  function mul(A,B) {
+    const C = new Array(9);
+    for (let r=0;r<3;r++) for (let c=0;c<3;c++)
+      C[r*3+c] = A[r*3]*B[c] + A[r*3+1]*B[3+c] + A[r*3+2]*B[6+c];
+    return C;
   }
-  return positions;
+  function apply(R, v) {
+    return [R[0]*v[0]+R[1]*v[1]+R[2]*v[2],
+            R[3]*v[0]+R[4]*v[1]+R[5]*v[2],
+            R[6]*v[0]+R[7]*v[1]+R[8]*v[2]];
+  }
+  function vadd(a,b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+
+  const base = [0, 0, 0];
+  const shoulder = [0, 0, d0];
+
+  let R = mul(rz(j[0]), ry(-j[1]));               // J0 yaw + J1 pitch
+  const elbow = vadd(shoulder, apply(R, [0,0,L1]));
+
+  R = mul(R, ry(Math.PI/2 - j[2]));               // 90° home bend + J2
+  const wrist = vadd(elbow, apply(R, [0,0,L2]));
+
+  R = mul(R, rz(j[3]));                           // J3 forearm roll
+  R = mul(R, ry(j[4]));                           // J4 wrist pitch
+  const ee = vadd(wrist, apply(R, [0,0,L3]));
+
+  return [base, shoulder, elbow, wrist, ee];
 }
 
 function rodrigues(rv) {
@@ -391,36 +396,18 @@ function projectPoint3D(p3d, cam) {
   return [cam.fx * pc[0]/pc[2] + cam.cx, cam.fy * pc[1]/pc[2] + cam.cy];
 }
 
-// Load calibration data if available
+// Load camera calibration if available (for 3D projection mode)
 (async function loadVizCalibration() {
   try {
     const resp = await fetch('/api/viz/calibration');
     if (resp.ok) {
       const data = await resp.json();
-      if (data.ok) {
-        // v2 calibration (3D FK + projection)
-        if (data.version === 2 && data.dh_theta_offsets_deg && data.camera_params) {
-          // Sanity check: reject if theta offsets are too large (bad calibration)
-          const maxOffset = Math.max(...data.dh_theta_offsets_deg.map(Math.abs));
-          const cam = data.camera_params.cam1;
-          const fxfyRatio = cam ? Math.max(cam.fx, cam.fy) / Math.min(cam.fx, cam.fy) : 999;
-          if (maxOffset > 15) {
-            console.warn('Viz calibration rejected: theta offsets too large (max=' + maxOffset.toFixed(1) + '°)');
-          } else if (fxfyRatio > 2) {
-            console.warn('Viz calibration rejected: fx/fy ratio too skewed (' + fxfyRatio.toFixed(1) + ')');
-          } else {
-            DH_THETA_OFFSETS_DEG = data.dh_theta_offsets_deg;
-            CAM_PARAMS = cam || null;
-            if (CAM_PARAMS) USE_3D_PROJECTION = true;
-            console.log('Viz calibration v2 loaded (3D FK + projection):', data);
-          }
-        }
-        // Legacy v1 / fallback
-        if (data.links_mm) {
-          LINKS_MM = data.links_mm;
-        }
-        if (data.joint_viz_offsets) {
-          JOINT_VIZ_OFFSETS = data.joint_viz_offsets;
+      if (data.ok && data.camera_params) {
+        const cam = data.camera_params.cam1 || data.camera_params.cam0;
+        if (cam) {
+          CAM_PARAMS = cam;
+          USE_3D_PROJECTION = true;
+          console.log('Camera calibration loaded for 3D projection:', cam);
         }
       }
     }
@@ -802,12 +789,8 @@ function drawArm() {
 
   let pts;
 
-  // Always use proper DH-based FK for accurate joint positions
-  const fkPosAll = fk3dPositions(joints);  // 8 positions [x,y,z] in meters
-  // DH frames: [0]=base, [1]=J1, [2]=J2, [3]=J3, [4]=J4, [5]=J5, [6]=J6, [7]=EE
-  // Pairs [1]≡[2], [3]≡[4], [5]≡[6] overlap (d=0 joints). Keep distinct points only:
-  // [0]=base, [1]=shoulder, [3]=elbow, [5]=wrist, [7]=end-effector
-  const fkPos = [fkPosAll[0], fkPosAll[1], fkPosAll[3], fkPosAll[5], fkPosAll[7]];
+  // Geometric FK — empirically verified against real D1 arm
+  const fkPos = fkPositions(joints);  // 5 positions: base, shoulder, elbow, wrist, EE
 
   if (USE_3D_PROJECTION && CAM_PARAMS) {
     // --- 3D FK + Camera Projection (v2) ---
@@ -1115,13 +1098,10 @@ document.getElementById('btnCalibrateViz').addEventListener('click', async () =>
     const resp = await fetch('/api/viz/calibrate', { method: 'POST' });
     const data = await resp.json();
     if (data.ok) {
-      if (data.version === 2 && data.dh_theta_offsets_deg && data.camera_params) {
-        DH_THETA_OFFSETS_DEG = data.dh_theta_offsets_deg;
-        CAM_PARAMS = data.camera_params.cam1 || null;
+      if (data.camera_params) {
+        CAM_PARAMS = data.camera_params.cam1 || data.camera_params.cam0 || null;
         if (CAM_PARAMS) USE_3D_PROJECTION = true;
       }
-      if (data.links_mm) LINKS_MM = data.links_mm;
-      if (data.joint_viz_offsets) JOINT_VIZ_OFFSETS = data.joint_viz_offsets;
       alert(`Calibration complete! ${data.n_observations} observations, residual: ${data.residual}`);
     } else {
       alert('Calibration failed: ' + (data.error || data.message || 'Unknown error'));
