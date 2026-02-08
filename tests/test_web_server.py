@@ -36,11 +36,20 @@ def reset_server(tmp_path):
     tmp_collector.enable()
     _tc_mod._collector = tmp_collector
 
-    from web.server import SimulatedArm, action_log
+    from web.server import SimulatedArm, action_log, CommandSmoother
     import web.server as srv
     srv.arm = SimulatedArm()
+    srv.smoother = CommandSmoother(srv.arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=15.0)
+    srv.smoother.sync_from_feedback([0.0] * 6, 0.0)
     srv._prev_state = {}
+    srv._active_task = None
     action_log._entries.clear()
+
+    # Initialize task planner if available
+    if srv._HAS_PLANNING:
+        from src.planning.task_planner import TaskPlanner
+        srv.task_planner = TaskPlanner()
+
     yield
 
     tmp_collector.close()
@@ -391,3 +400,110 @@ class TestResponseFormat:
     def test_set_gripper_response_has_state(self, enabled_client):
         r = enabled_client.post("/api/command/set-gripper", json={"position": 10.0})
         assert "state" in r.json()
+
+
+# --- Telemetry query endpoints ---
+
+class TestTelemetryQuery:
+    def test_query_summary(self, client):
+        r = client.get("/api/query/summary")
+        assert r.status_code == 200
+        d = r.json()
+        assert "total_commands" in d
+        assert "total_events" in d
+        assert "duration_s" in d
+
+    def test_query_db_stats(self, client):
+        r = client.get("/api/query/db-stats")
+        assert r.status_code == 200
+        d = r.json()
+        assert "dds_commands" in d
+        assert "system_events" in d
+
+    def test_query_system_events(self, client):
+        r = client.get("/api/query/system-events")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_query_web_latency(self, client):
+        # Generate some requests first
+        client.get("/api/state")
+        r = client.get("/api/query/web-latency")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_query_command_rate(self, client):
+        r = client.get("/api/query/command-rate")
+        assert r.status_code == 200
+        d = r.json()
+        assert "rate_hz" in d
+
+    def test_query_joint_history_valid(self, client):
+        r = client.get("/api/query/joint-history/0")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_query_joint_history_invalid(self, client):
+        r = client.get("/api/query/joint-history/9")
+        assert r.status_code == 400
+
+    def test_query_tracking_error(self, client):
+        r = client.get("/api/query/tracking-error/0")
+        assert r.status_code == 200
+        d = r.json()
+        assert "mean_error_deg" in d
+
+    def test_query_smoother(self, client):
+        r = client.get("/api/query/smoother")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+
+# --- Task / planning endpoints ---
+
+class TestTasks:
+    def test_task_home_requires_enable(self, client):
+        r = client.post("/api/task/home")
+        assert r.status_code == 409
+        assert r.json()["ok"] is False
+
+    def test_task_ready_requires_enable(self, client):
+        r = client.post("/api/task/ready")
+        assert r.status_code == 409
+
+    def test_task_wave_requires_enable(self, client):
+        r = client.post("/api/task/wave")
+        assert r.status_code == 409
+
+    def test_task_stop_always_ok(self, client):
+        r = client.post("/api/task/stop")
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+
+    def test_task_home_when_enabled(self, enabled_client):
+        r = enabled_client.post("/api/task/home", json={"speed": 0.5})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["ok"] is True
+        assert d["action"] == "TASK_HOME"
+        assert "points" in d
+        assert "duration_s" in d
+
+    def test_task_ready_when_enabled(self, enabled_client):
+        r = enabled_client.post("/api/task/ready")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["ok"] is True
+        assert d["action"] == "TASK_READY"
+
+    def test_task_wave_when_enabled(self, enabled_client):
+        r = enabled_client.post("/api/task/wave", json={"speed": 0.5, "waves": 2})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["ok"] is True
+        assert d["action"] == "TASK_WAVE"
+
+    def test_task_wave_default_params(self, enabled_client):
+        r = enabled_client.post("/api/task/wave")
+        assert r.status_code == 200
+        assert r.json()["ok"] is True

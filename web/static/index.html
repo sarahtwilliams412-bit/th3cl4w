@@ -204,7 +204,16 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           <button class="btn" id="btnPowerOff">Power Off</button>
           <button class="btn" id="btnEnable">Enable</button>
           <button class="btn" id="btnDisable">Disable</button>
-          <button class="btn" id="btnHome">Home</button>
+        </div>
+      </div>
+
+      <div style="margin-top:6px">
+        <div class="section-title">Tasks</div>
+        <div class="btn-row">
+          <button class="btn" id="btnTaskHome">Home</button>
+          <button class="btn" id="btnTaskReady">Ready</button>
+          <button class="btn" id="btnTaskWave">Wave</button>
+          <button class="btn" id="btnTaskStop" style="border-color:var(--warning);color:var(--warning)">Stop Task</button>
         </div>
       </div>
 
@@ -401,12 +410,31 @@ async function sendGripper(pos) {
   } catch(e) { logLocal('SET_GRIPPER', `✗ ${e.message}`, 'error'); }
 }
 
-// Button wiring
+// Button wiring — system commands
 document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
 document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
 document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
 document.getElementById('btnDisable').addEventListener('click', () => cmd('disable'));
-document.getElementById('btnHome').addEventListener('click', () => cmd('reset'));
+
+// Task buttons — use planning module for smooth trajectories
+async function runTask(name, body = {}) {
+  logLocal('TASK', `Starting task: ${name}`, 'info');
+  try {
+    const resp = await fetch(`/api/task/${name}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      logLocal('TASK', `${name}: ${data.points} pts, ${data.duration_s}s`, 'info');
+    } else {
+      logLocal('TASK', `${name}: ${data.error || 'failed'}`, 'error');
+    }
+  } catch(e) { logLocal('TASK', `${name}: ${e.message}`, 'error'); }
+}
+document.getElementById('btnTaskHome').addEventListener('click', () => runTask('home'));
+document.getElementById('btnTaskReady').addEventListener('click', () => runTask('ready'));
+document.getElementById('btnTaskWave').addEventListener('click', () => runTask('wave'));
+document.getElementById('btnTaskStop').addEventListener('click', () => runTask('stop'));
 document.getElementById('btnEstop').addEventListener('click', () => cmd('stop'));
 
 // Raw command

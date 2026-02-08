@@ -2,15 +2,18 @@
 Tests for the stereo vision module (Phase 1).
 
 Uses synthetic data and mocks — no real cameras required.
+Requires opencv-python (cv2) — skipped if not installed.
 """
 
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import cv2
 import numpy as np
 import pytest
+
+# Skip entire module if cv2 is not available (MagicMock doesn't count)
+cv2 = pytest.importorskip("cv2", reason="opencv-python (cv2) not installed")
 
 from src.vision.calibration import StereoCalibrator
 from src.vision.stereo_depth import StereoDepthEstimator

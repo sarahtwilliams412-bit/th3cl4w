@@ -28,6 +28,21 @@ try:
 except ImportError:
     _HAS_TELEMETRY = False
 
+try:
+    from src.telemetry.query import TelemetryQuery
+    _HAS_QUERY = True
+except ImportError:
+    _HAS_QUERY = False
+
+import numpy as np
+
+try:
+    from src.planning.task_planner import TaskPlanner, TaskStatus
+    from src.planning.motion_planner import Waypoint
+    _HAS_PLANNING = True
+except ImportError:
+    _HAS_PLANNING = False
+
 _web_dir = str(Path(__file__).resolve().parent)
 if _web_dir not in sys.path:
     sys.path.insert(0, _web_dir)
@@ -188,6 +203,7 @@ class SimulatedArm:
 
 arm: Any = None
 smoother: Optional[CommandSmoother] = None
+task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -233,6 +249,11 @@ async def lifespan(app: FastAPI):
         smoother = CommandSmoother(arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=15.0, collector=tc_ref)
         await smoother.start()
         action_log.add("SYSTEM", f"Command smoother started (10Hz, α=0.35, synced={smoother.synced})", "info")
+
+    # Initialize task planner for pre-built motion sequences
+    if _HAS_PLANNING:
+        task_planner = TaskPlanner()
+        action_log.add("SYSTEM", "Task planner initialized", "info")
 
     yield
 
@@ -684,6 +705,265 @@ async def ws_telemetry(ws: WebSocket):
         pass
     finally:
         tc.unsubscribe(on_event)
+
+
+# ---------------------------------------------------------------------------
+# Telemetry query endpoints — expose TelemetryQuery (SQLite read-only) data
+# ---------------------------------------------------------------------------
+
+def _get_query() -> "TelemetryQuery | None":
+    """Open a read-only TelemetryQuery against the active database."""
+    if not _HAS_QUERY:
+        return None
+    db_path = Path(__file__).resolve().parent.parent / "data" / "telemetry.db"
+    if not db_path.exists():
+        return None
+    try:
+        return TelemetryQuery(str(db_path))
+    except Exception:
+        return None
+
+
+@app.get("/api/query/summary")
+async def query_summary():
+    """Session summary: total commands, feedback, events, rates, errors."""
+    q = _get_query()
+    if q is None:
+        return JSONResponse({"error": "telemetry query not available"}, status_code=501)
+    try:
+        return q.summary()
+    finally:
+        q.close()
+
+
+@app.get("/api/query/db-stats")
+async def query_db_stats():
+    """Row counts per telemetry table."""
+    q = _get_query()
+    if q is None:
+        return JSONResponse({"error": "telemetry query not available"}, status_code=501)
+    try:
+        return q.get_db_stats()
+    finally:
+        q.close()
+
+
+@app.get("/api/query/joint-history/{joint}")
+async def query_joint_history(joint: int, limit: int = 500):
+    """Feedback angle history for a single joint."""
+    if not (0 <= joint <= 6):
+        return JSONResponse({"error": "joint must be 0-6"}, status_code=400)
+    q = _get_query()
+    if q is None:
+        return JSONResponse({"error": "telemetry query not available"}, status_code=501)
+    try:
+        return q.get_joint_history(joint, limit=limit)
+    finally:
+        q.close()
+
+
+@app.get("/api/query/tracking-error/{joint}")
+async def query_tracking_error(joint: int):
+    """Command vs feedback tracking error for a joint."""
+    if not (0 <= joint <= 5):
+        return JSONResponse({"error": "joint must be 0-5"}, status_code=400)
+    q = _get_query()
+    if q is None:
+        return JSONResponse({"error": "telemetry query not available"}, status_code=501)
+    try:
+        return q.get_tracking_error(joint)
+    finally:
+        q.close()
+
+
+@app.get("/api/query/command-rate")
+async def query_command_rate(window: float = 10.0):
+    """DDS command rate over a time window."""
+    q = _get_query()
+    if q is None:
+        return JSONResponse({"error": "telemetry query not available"}, status_code=501)
+    try:
+        return q.get_command_rate(window)
+    finally:
+        q.close()
+
+
+@app.get("/api/query/web-latency")
+async def query_web_latency(endpoint: str | None = None, limit: int = 100):
+    """Web request latency history."""
+    q = _get_query()
+    if q is None:
+        return JSONResponse({"error": "telemetry query not available"}, status_code=501)
+    try:
+        return q.get_web_request_latency(endpoint=endpoint, limit=limit)
+    finally:
+        q.close()
+
+
+@app.get("/api/query/system-events")
+async def query_system_events(event_type: str | None = None, limit: int = 100):
+    """System event log."""
+    q = _get_query()
+    if q is None:
+        return JSONResponse({"error": "telemetry query not available"}, status_code=501)
+    try:
+        return q.get_system_events(event_type=event_type, limit=limit)
+    finally:
+        q.close()
+
+
+@app.get("/api/query/smoother")
+async def query_smoother_state(joint: int | None = None, limit: int = 500):
+    """Smoother state (target vs current vs sent per joint)."""
+    q = _get_query()
+    if q is None:
+        return JSONResponse({"error": "telemetry query not available"}, status_code=501)
+    try:
+        return q.get_smoother_state(joint=joint, limit=limit)
+    finally:
+        q.close()
+
+
+# ---------------------------------------------------------------------------
+# Planning endpoints — execute pre-built tasks through the smoother
+# ---------------------------------------------------------------------------
+
+_active_task: Optional[asyncio.Task] = None
+
+
+async def _execute_trajectory(trajectory, label: str) -> None:
+    """Feed trajectory points into the smoother at their scheduled times.
+
+    Runs as a background asyncio task so the HTTP endpoint returns immediately.
+    """
+    if smoother is None or not smoother.arm_enabled:
+        action_log.add("TASK", f"{label} — arm not enabled, aborting", "error")
+        return
+
+    action_log.add("TASK", f"Executing {label} ({len(trajectory.points)} points, {trajectory.duration:.1f}s)", "info")
+    t0 = time.monotonic()
+
+    for pt in trajectory.points:
+        if smoother is None or not smoother.arm_enabled:
+            action_log.add("TASK", f"{label} — aborted (arm disabled)", "error")
+            return
+
+        angles = [float(a) for a in pt.positions[:6]]
+        smoother.set_all_joints_target(angles)
+        if pt.gripper_mm is not None:
+            smoother.set_gripper_target(pt.gripper_mm)
+
+        # Wait until this point's scheduled time
+        elapsed = time.monotonic() - t0
+        wait = pt.time - elapsed
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+    action_log.add("TASK", f"{label} complete ({time.monotonic() - t0:.1f}s)", "info")
+
+
+class TaskRequest(BaseModel):
+    speed: float = Field(default=0.6, ge=0.1, le=1.0)
+
+
+@app.post("/api/task/home")
+async def task_home(req: TaskRequest = TaskRequest()):
+    """Plan and execute a smooth return to home position."""
+    global _active_task
+    if not _HAS_PLANNING:
+        return JSONResponse({"ok": False, "error": "planning module not available"}, status_code=501)
+    if not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
+
+    current = _get_current_joints()
+    gripper = armState_gripper()
+    result = task_planner.go_home(current, speed_factor=req.speed, gripper_mm=gripper)
+    if result.status != TaskStatus.SUCCESS:
+        return JSONResponse({"ok": False, "error": result.message}, status_code=500)
+
+    if _active_task and not _active_task.done():
+        _active_task.cancel()
+    _active_task = asyncio.create_task(_execute_trajectory(result.trajectory, "Go Home"))
+    action_log.add("TASK", f"Home planned: {len(result.trajectory.points)} pts, {result.trajectory.duration:.1f}s", "info")
+    return {"ok": True, "action": "TASK_HOME", "points": len(result.trajectory.points), "duration_s": round(result.trajectory.duration, 1)}
+
+
+@app.post("/api/task/ready")
+async def task_ready(req: TaskRequest = TaskRequest()):
+    """Plan and execute move to ready/neutral position."""
+    global _active_task
+    if not _HAS_PLANNING:
+        return JSONResponse({"ok": False, "error": "planning module not available"}, status_code=501)
+    if not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
+
+    current = _get_current_joints()
+    gripper = armState_gripper()
+    result = task_planner.go_ready(current, speed_factor=req.speed, gripper_mm=gripper)
+    if result.status != TaskStatus.SUCCESS:
+        return JSONResponse({"ok": False, "error": result.message}, status_code=500)
+
+    if _active_task and not _active_task.done():
+        _active_task.cancel()
+    _active_task = asyncio.create_task(_execute_trajectory(result.trajectory, "Go Ready"))
+    action_log.add("TASK", f"Ready planned: {len(result.trajectory.points)} pts, {result.trajectory.duration:.1f}s", "info")
+    return {"ok": True, "action": "TASK_READY", "points": len(result.trajectory.points), "duration_s": round(result.trajectory.duration, 1)}
+
+
+class WaveRequest(BaseModel):
+    speed: float = Field(default=0.8, ge=0.1, le=1.0)
+    waves: int = Field(default=3, ge=1, le=10)
+
+
+@app.post("/api/task/wave")
+async def task_wave(req: WaveRequest = WaveRequest()):
+    """Plan and execute a wave gesture."""
+    global _active_task
+    if not _HAS_PLANNING:
+        return JSONResponse({"ok": False, "error": "planning module not available"}, status_code=501)
+    if not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
+
+    current = _get_current_joints()
+    result = task_planner.wave(current, n_waves=req.waves, speed_factor=req.speed)
+    if result.status != TaskStatus.SUCCESS:
+        return JSONResponse({"ok": False, "error": result.message}, status_code=500)
+
+    if _active_task and not _active_task.done():
+        _active_task.cancel()
+    _active_task = asyncio.create_task(_execute_trajectory(result.trajectory, f"Wave ({req.waves}x)"))
+    action_log.add("TASK", f"Wave planned: {len(result.trajectory.points)} pts, {result.trajectory.duration:.1f}s", "info")
+    return {"ok": True, "action": "TASK_WAVE", "points": len(result.trajectory.points), "duration_s": round(result.trajectory.duration, 1)}
+
+
+@app.post("/api/task/stop")
+async def task_stop():
+    """Cancel any running task (does NOT e-stop the arm)."""
+    global _active_task
+    if _active_task and not _active_task.done():
+        _active_task.cancel()
+        action_log.add("TASK", "Task cancelled by user", "warning")
+        return {"ok": True, "action": "TASK_STOP"}
+    return {"ok": True, "action": "TASK_STOP", "detail": "No task running"}
+
+
+def _get_current_joints():
+    """Get current joint angles as numpy array for the planner."""
+    if arm is None:
+        return np.zeros(6)
+    angles_raw = arm.get_joint_angles()
+    if angles_raw is not None and len(angles_raw) >= 6:
+        return np.array([float(a) for a in angles_raw[:6]])
+    return np.zeros(6)
+
+
+def armState_gripper() -> float:
+    """Get current gripper position in mm."""
+    if arm is None:
+        return 0.0
+    if hasattr(arm, "get_gripper_position"):
+        return float(arm.get_gripper_position())
+    return 0.0
 
 
 # ---------------------------------------------------------------------------
