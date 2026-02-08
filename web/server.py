@@ -2944,7 +2944,14 @@ if v2_dir.is_dir():
     app.mount("/v2", StaticFiles(directory=str(v2_dir), html=True), name="static-v2")
 if v3_dir.is_dir():
     app.mount("/v3", StaticFiles(directory=str(v3_dir), html=True), name="static-v3")
-app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+app.mount("/ui", StaticFiles(directory=str(static_dir), html=True), name="static")
+
+
+@app.get("/")
+async def serve_root():
+    """Redirect root to /ui/."""
+    from starlette.responses import RedirectResponse
+    return RedirectResponse(url="/ui/")
 
 # ---------------------------------------------------------------------------
 # Main
