@@ -329,8 +329,8 @@ let USE_3D_PROJECTION = false; // true when camera calibration is loaded
 // Coordinate frame: Z=up, X=forward (arm extends +X at home), Y=left
 // Joint conventions (from empirical mapping):
 //   J0: base yaw (+CCW from above)
-//   J1: elbow pitch (+straightens arm, applied as -Ry from 90° home bend)
-//   J2: shoulder pitch (+UP/backward, applied as -Ry)
+//   J1: shoulder pitch (+UP/backward, applied as -Ry)
+//   J2: elbow pitch (+straightens arm, applied as -Ry from 90° home bend)
 //   J3: forearm roll (+CW looking down arm)
 //   J4: wrist pitch (+gripper down, applied as +Ry)
 //   J5: gripper roll (+CW from above)
@@ -358,10 +358,10 @@ function fkPositions(jointsDeg) {
   const base = [0, 0, 0];
   const shoulder = [0, 0, d0];
 
-  let R = mul(rz(j[0]), ry(-j[2]));               // J0 yaw + J2 shoulder pitch
+  let R = mul(rz(j[0]), ry(-j[1]));               // J0 yaw + J1 pitch
   const elbow = vadd(shoulder, apply(R, [0,0,L1]));
 
-  R = mul(R, ry(Math.PI/2 - j[1]));               // 90° home bend + J1 elbow pitch
+  R = mul(R, ry(Math.PI/2 - j[2]));               // 90° home bend + J2
   const wrist = vadd(elbow, apply(R, [0,0,L2]));
 
   R = mul(R, rz(j[3]));                           // J3 forearm roll
