@@ -2130,15 +2130,51 @@ async def run_viz_calibration():
         def _sanitize(v):
             if isinstance(v, float) and (math.isinf(v) or math.isnan(v)):
                 return None
+            if isinstance(v, (list, tuple)):
+                return [_sanitize(x) for x in v]
+            if isinstance(v, dict):
+                return {k: _sanitize(vv) for k, vv in v.items()}
             return v
-        return {
+        
+        # Build response — v2 3D calibration format
+        resp_data = {
             "ok": result.success,
-            "links_mm": {k: _sanitize(v) for k, v in result.links_mm.items()},
-            "joint_viz_offsets": [_sanitize(v) for v in result.joint_viz_offsets],
+            "version": 2,
+            "projection": "pinhole_3d",
             "residual": _sanitize(result.residual),
             "n_observations": result.n_observations,
+            "n_constraints": getattr(result, 'n_constraints', 0),
             "message": result.message,
         }
+        
+        # Camera params (v2) — convert R matrix to Rodrigues for JS
+        def _cam_to_js(cp):
+            """Convert {R, t, fx, fy, cx, cy} to {rx, ry, rz, tx, ty, tz, fx, fy, cx, cy}."""
+            if not cp:
+                return cp
+            import numpy as _np
+            if 'R' in cp and 'rx' not in cp:
+                R = _np.array(cp['R']).reshape(3, 3)
+                rvec, _ = cv2.Rodrigues(R)
+                return {
+                    'fx': cp['fx'], 'fy': cp['fy'], 'cx': cp['cx'], 'cy': cp['cy'],
+                    'rx': float(rvec[0, 0]), 'ry': float(rvec[1, 0]), 'rz': float(rvec[2, 0]),
+                    'tx': float(cp['t'][0]), 'ty': float(cp['t'][1]), 'tz': float(cp['t'][2]),
+                }
+            return cp
+
+        if hasattr(result, 'cam1_params') and result.cam1_params:
+            resp_data["camera_params"] = {"cam1": _sanitize(_cam_to_js(result.cam1_params))}
+            if hasattr(result, 'cam0_params') and result.cam0_params:
+                resp_data["camera_params"]["cam0"] = _sanitize(_cam_to_js(result.cam0_params))
+        
+        # Theta offsets in degrees for JS
+        if hasattr(result, 'theta_offsets') and result.theta_offsets:
+            resp_data["dh_theta_offsets_deg"] = [
+                _sanitize(round(math.degrees(o), 2)) for o in result.theta_offsets
+            ]
+        
+        return resp_data
     except Exception as e:
         action_log.add("VIZ_CALIB", f"Error: {e}", "error")
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)

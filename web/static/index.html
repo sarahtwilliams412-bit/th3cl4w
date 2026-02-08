@@ -316,15 +316,80 @@ const JOINT_SPECS = [
   { name: 'J5', min: -135, max: 135, label: 'Wrist Roll',  type: 'roll'  },
 ];
 
-// D1 link lengths in mm for side-view FK
+// D1 link lengths in mm for side-view FK (legacy fallback)
 let LINKS_MM = {
   base: 80, shoulder: 170, elbow: 170, wrist1: 60, wrist2: 60, end: 50
 };
 
 // DH geometric offsets (degrees) — maps D1 DDS zero convention to viz geometry.
-// The D1's zero-angle config has the arm extended forward (not straight up).
-// At DDS [0, -90, 90, 0, 0, 0] the arm is folded/compact (up then back down).
 let JOINT_VIZ_OFFSETS = [0, 90, 90, 0, 0, 0];
+
+// --- 3D FK + Camera Projection (v2 calibration) ---
+// DH parameters (d in meters, alpha in radians)
+const DH_D = [0.1215, 0.0, 0.2085, 0.0, 0.2085, 0.0, 0.1130];
+const DH_A = [0, 0, 0, 0, 0, 0, 0];
+const DH_ALPHA = [-Math.PI/2, Math.PI/2, -Math.PI/2, Math.PI/2, -Math.PI/2, Math.PI/2, 0];
+
+let DH_THETA_OFFSETS_DEG = [0, 0, 0, 0, 0, 0, 0];
+let CAM_PARAMS = null; // {fx, fy, cx, cy, rx, ry, rz, tx, ty, tz}
+let USE_3D_PROJECTION = false; // true when v2 calibration is loaded
+
+function dhTransform(d, a, alpha, theta) {
+  const ct = Math.cos(theta), st = Math.sin(theta);
+  const ca = Math.cos(alpha), sa = Math.sin(alpha);
+  // Returns [4][4] row-major
+  return [
+    [ct, -st*ca,  st*sa, a*ct],
+    [st,  ct*ca, -ct*sa, a*st],
+    [0,       sa,     ca,    d],
+    [0,        0,      0,    1]
+  ];
+}
+
+function mat4mul(A, B) {
+  const C = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+  for (let i=0;i<4;i++) for (let j=0;j<4;j++) for (let k=0;k<4;k++) C[i][j]+=A[i][k]*B[k][j];
+  return C;
+}
+
+function fk3dPositions(jointsDeg) {
+  // Returns 8 positions [x,y,z] in meters: base + 7 joint frames
+  const angles = jointsDeg.slice(0, 6).concat([0]); // pad to 7
+  let T = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+  const positions = [[T[0][3], T[1][3], T[2][3]]];
+  for (let i = 0; i < 7; i++) {
+    const theta = angles[i] * Math.PI/180 + DH_THETA_OFFSETS_DEG[i] * Math.PI/180;
+    const Ti = dhTransform(DH_D[i], DH_A[i], DH_ALPHA[i], theta);
+    T = mat4mul(T, Ti);
+    positions.push([T[0][3], T[1][3], T[2][3]]);
+  }
+  return positions;
+}
+
+function rodrigues(rv) {
+  // Rodrigues vector [rx,ry,rz] -> 3x3 rotation matrix
+  const angle = Math.sqrt(rv[0]*rv[0]+rv[1]*rv[1]+rv[2]*rv[2]);
+  if (angle < 1e-8) return [[1,0,0],[0,1,0],[0,0,1]];
+  const k = [rv[0]/angle, rv[1]/angle, rv[2]/angle];
+  const c = Math.cos(angle), s = Math.sin(angle), v = 1-c;
+  return [
+    [k[0]*k[0]*v+c,       k[0]*k[1]*v-k[2]*s, k[0]*k[2]*v+k[1]*s],
+    [k[1]*k[0]*v+k[2]*s,  k[1]*k[1]*v+c,       k[1]*k[2]*v-k[0]*s],
+    [k[2]*k[0]*v-k[1]*s,  k[2]*k[1]*v+k[0]*s,  k[2]*k[2]*v+c      ]
+  ];
+}
+
+function projectPoint3D(p3d, cam) {
+  // p3d: [x,y,z], cam: {fx,fy,cx,cy,rx,ry,rz,tx,ty,tz}
+  const R = rodrigues([cam.rx, cam.ry, cam.rz]);
+  const pc = [
+    R[0][0]*p3d[0]+R[0][1]*p3d[1]+R[0][2]*p3d[2]+cam.tx,
+    R[1][0]*p3d[0]+R[1][1]*p3d[1]+R[1][2]*p3d[2]+cam.ty,
+    R[2][0]*p3d[0]+R[2][1]*p3d[1]+R[2][2]*p3d[2]+cam.tz
+  ];
+  if (pc[2] <= 0) return null;
+  return [cam.fx * pc[0]/pc[2] + cam.cx, cam.fy * pc[1]/pc[2] + cam.cy];
+}
 
 // Load calibration data if available
 (async function loadVizCalibration() {
@@ -332,10 +397,22 @@ let JOINT_VIZ_OFFSETS = [0, 90, 90, 0, 0, 0];
     const resp = await fetch('/api/viz/calibration');
     if (resp.ok) {
       const data = await resp.json();
-      if (data.ok && data.links_mm) {
-        LINKS_MM = data.links_mm;
-        JOINT_VIZ_OFFSETS = data.joint_viz_offsets;
-        console.log('Viz calibration loaded:', data);
+      if (data.ok) {
+        // v2 calibration (3D FK + projection)
+        if (data.version === 2 && data.dh_theta_offsets_deg && data.camera_params) {
+          DH_THETA_OFFSETS_DEG = data.dh_theta_offsets_deg;
+          // Use cam1 params for the side-view canvas (already in rx/ry/rz format)
+          CAM_PARAMS = data.camera_params.cam1 || null;
+          if (CAM_PARAMS) USE_3D_PROJECTION = true;
+          console.log('Viz calibration v2 loaded (3D FK + projection):', data);
+        }
+        // Legacy v1 / fallback
+        if (data.links_mm) {
+          LINKS_MM = data.links_mm;
+        }
+        if (data.joint_viz_offsets) {
+          JOINT_VIZ_OFFSETS = data.joint_viz_offsets;
+        }
       }
     }
   } catch (e) { console.log('No viz calibration available'); }
@@ -702,7 +779,7 @@ function drawArm() {
   for (let y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
   for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
 
-  // Side view FK (using J1, J2, J4 as pitch joints)
+  // FK chain — either 3D projection (v2) or legacy 2D side-view
   const scale = Math.min(W, H) / 900;
   const baseX = W * 0.35, baseY = H * 0.85;
 
@@ -714,42 +791,60 @@ function drawArm() {
   ctx.fillRect(baseX - bw, baseY, bw * 2, bh);
   ctx.strokeRect(baseX - bw, baseY, bw * 2, bh);
 
-  // FK chain
-  const linkLengths = [LINKS_MM.base, LINKS_MM.shoulder, LINKS_MM.elbow, LINKS_MM.wrist1, LINKS_MM.wrist2, LINKS_MM.end];
+  let pts;
 
-  let cumAngle = -Math.PI / 2; // start pointing up
-  let pts = [{ x: baseX, y: baseY }];
+  if (USE_3D_PROJECTION && CAM_PARAMS) {
+    // --- 3D FK + Camera Projection (v2) ---
+    const fkPos = fk3dPositions(joints);
+    // Project all 8 DH frame positions to 2D
+    const projected = fkPos.map(p => projectPoint3D(p, CAM_PARAMS));
+    // Map to canvas coords: camera pixels → canvas pixels (scale to canvas size)
+    // Assume camera image is 1920x1080, map proportionally
+    const camW = 1920, camH = 1080;
+    pts = projected.map(p => {
+      if (!p) return { x: baseX, y: baseY }; // fallback
+      return { x: p[0] * (W / camW), y: p[1] * (H / camH) };
+    });
+    // Use key joint positions: [0]=base, [1]=J1, [3]=J3(shoulder-elbow), [5]=J5(elbow-wrist), [7]=EE
+    // Simplify to 7 drawable points matching the link structure
+    pts = [pts[0], pts[1], pts[3], pts[5], pts[6], pts[7], pts[7]];
+  } else {
+    // --- Legacy 2D side-view FK ---
+    const linkLengths = [LINKS_MM.base, LINKS_MM.shoulder, LINKS_MM.elbow, LINKS_MM.wrist1, LINKS_MM.wrist2, LINKS_MM.end];
+    let cumAngle = -Math.PI / 2;
+    pts = [{ x: baseX, y: baseY }];
 
-  // Segment 0: base (straight up)
-  pts.push({ x: baseX, y: baseY - linkLengths[0] * scale });
+    // Segment 0: base (straight up)
+    pts.push({ x: baseX, y: baseY - linkLengths[0] * scale });
 
-  // Segment 1: shoulder — J1 pitch (with DH offset)
-  cumAngle += (joints[1] + JOINT_VIZ_OFFSETS[1]) * deg2rad;
-  let px = pts[1].x + Math.cos(cumAngle) * linkLengths[1] * scale;
-  let py = pts[1].y + Math.sin(cumAngle) * linkLengths[1] * scale;
-  pts.push({ x: px, y: py });
+    // Segment 1: shoulder — J1 pitch (with DH offset)
+    cumAngle += (joints[1] + JOINT_VIZ_OFFSETS[1]) * deg2rad;
+    let px = pts[1].x + Math.cos(cumAngle) * linkLengths[1] * scale;
+    let py = pts[1].y + Math.sin(cumAngle) * linkLengths[1] * scale;
+    pts.push({ x: px, y: py });
 
-  // Segment 2: elbow — J2 pitch
-  cumAngle += (joints[2] + JOINT_VIZ_OFFSETS[2]) * deg2rad;
-  px = pts[2].x + Math.cos(cumAngle) * linkLengths[2] * scale;
-  py = pts[2].y + Math.sin(cumAngle) * linkLengths[2] * scale;
-  pts.push({ x: px, y: py });
+    // Segment 2: elbow — J2 pitch
+    cumAngle += (joints[2] + JOINT_VIZ_OFFSETS[2]) * deg2rad;
+    px = pts[2].x + Math.cos(cumAngle) * linkLengths[2] * scale;
+    py = pts[2].y + Math.sin(cumAngle) * linkLengths[2] * scale;
+    pts.push({ x: px, y: py });
 
-  // Segment 3: wrist1 — J3 is roll, no pitch change
-  px = pts[3].x + Math.cos(cumAngle) * linkLengths[3] * scale;
-  py = pts[3].y + Math.sin(cumAngle) * linkLengths[3] * scale;
-  pts.push({ x: px, y: py });
+    // Segment 3: wrist1 — J3 is roll, no pitch change
+    px = pts[3].x + Math.cos(cumAngle) * linkLengths[3] * scale;
+    py = pts[3].y + Math.sin(cumAngle) * linkLengths[3] * scale;
+    pts.push({ x: px, y: py });
 
-  // Segment 4: wrist2 — J4 pitch
-  cumAngle += (joints[4] + JOINT_VIZ_OFFSETS[4]) * deg2rad;
-  px = pts[4].x + Math.cos(cumAngle) * linkLengths[4] * scale;
-  py = pts[4].y + Math.sin(cumAngle) * linkLengths[4] * scale;
-  pts.push({ x: px, y: py });
+    // Segment 4: wrist2 — J4 pitch
+    cumAngle += (joints[4] + JOINT_VIZ_OFFSETS[4]) * deg2rad;
+    px = pts[4].x + Math.cos(cumAngle) * linkLengths[4] * scale;
+    py = pts[4].y + Math.sin(cumAngle) * linkLengths[4] * scale;
+    pts.push({ x: px, y: py });
 
-  // Segment 5: end — J5 is roll, no pitch change
-  px = pts[5].x + Math.cos(cumAngle) * linkLengths[5] * scale;
-  py = pts[5].y + Math.sin(cumAngle) * linkLengths[5] * scale;
-  pts.push({ x: px, y: py });
+    // Segment 5: end — J5 is roll, no pitch change
+    px = pts[5].x + Math.cos(cumAngle) * linkLengths[5] * scale;
+    py = pts[5].y + Math.sin(cumAngle) * linkLengths[5] * scale;
+    pts.push({ x: px, y: py });
+  }
 
   // Draw links
   const linkColors = ['#2a4a7c', '#4a90d9', '#4a90d9', '#3a7abd', '#3a7abd', '#2a6aad'];
@@ -1030,8 +1125,13 @@ document.getElementById('btnCalibrateViz').addEventListener('click', async () =>
     const resp = await fetch('/api/viz/calibrate', { method: 'POST' });
     const data = await resp.json();
     if (data.ok) {
-      LINKS_MM = data.links_mm;
-      JOINT_VIZ_OFFSETS = data.joint_viz_offsets;
+      if (data.version === 2 && data.dh_theta_offsets_deg && data.camera_params) {
+        DH_THETA_OFFSETS_DEG = data.dh_theta_offsets_deg;
+        CAM_PARAMS = data.camera_params.cam1 || null;
+        if (CAM_PARAMS) USE_3D_PROJECTION = true;
+      }
+      if (data.links_mm) LINKS_MM = data.links_mm;
+      if (data.joint_viz_offsets) JOINT_VIZ_OFFSETS = data.joint_viz_offsets;
       alert(`Calibration complete! ${data.n_observations} observations, residual: ${data.residual}`);
     } else {
       alert('Calibration failed: ' + (data.error || data.message || 'Unknown error'));

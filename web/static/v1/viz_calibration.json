@@ -1,17 +1,28 @@
 {
   "links_mm": {
-    "base": 121.5,
-    "shoulder": 208.5,
-    "elbow": 208.5,
-    "wrist1": 60,
-    "wrist2": 60,
-    "end": 113.0
+    "base": 292.8,
+    "shoulder": 50.0,
+    "elbow": 50.0,
+    "wrist1": 10.0,
+    "wrist2": 17.7,
+    "end": 17.3
   },
-  "joint_viz_offsets": [0, 90, 90, 0, 0, 0],
-  "residual": 0,
-  "n_observations": 0,
-  "camera_params": null,
+  "joint_viz_offsets": [
+    0,
+    171.5,
+    160.3,
+    0,
+    180.0,
+    0
+  ],
+  "residual": 121.07,
+  "n_observations": 20,
+  "camera_params": {
+    "sx": 0.1,
+    "sy": 0.1,
+    "tx": 1853.1,
+    "ty": 26.5
+  },
   "success": true,
-  "source": "DH parameters (manual)",
-  "timestamp": 1770537600
+  "timestamp": 1770537796.8101926
 }
