@@ -56,3 +56,6 @@ Thumbs.db
 install/
 log/
 data/collisions/
+data/learning_log.jsonl
+data/improvements.json
+data/improvement_history.jsonl
