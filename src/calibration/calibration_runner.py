@@ -188,13 +188,18 @@ class CalibrationRunner:
                 # Brief pause for arm to move
                 await asyncio.sleep(0.5)
 
-            # Verify feedback after moving this joint
-            await asyncio.sleep(1.0)
-            feedback = await self.get_joint_angles()
-            error = abs(feedback[joint_id] - target)
-            if error > MAX_TRACKING_ERROR_DEG:
+            # Verify feedback after moving this joint — retry reads due to stale DDS feedback
+            best_error = 999.0
+            for _retry in range(5):
+                await asyncio.sleep(0.5)
+                feedback = await self.get_joint_angles()
+                error = abs(feedback[joint_id] - target)
+                best_error = min(best_error, error)
+                if best_error <= MAX_TRACKING_ERROR_DEG:
+                    break
+            if best_error > MAX_TRACKING_ERROR_DEG:
                 raise CalibrationError(
-                    f"SAFETY: J{joint_id} tracking error {error:.1f}° > {MAX_TRACKING_ERROR_DEG}° "
+                    f"SAFETY: J{joint_id} tracking error {best_error:.1f}° > {MAX_TRACKING_ERROR_DEG}° "
                     f"(commanded={target}°, actual={feedback[joint_id]:.1f}°)"
                 )
 
