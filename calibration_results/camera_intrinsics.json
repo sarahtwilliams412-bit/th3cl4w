@@ -1,22 +1,43 @@
 {
-  "cam0": {
-    "fx": 1200.0,
-    "fy": 1200.0,
-    "cx": 960.0,
-    "cy": 540.0,
-    "dist_coeffs": [0.0, 0.0, 0.0, 0.0, 0.0],
+  "cam0_front": {
     "image_size": [1920, 1080],
-    "source": "estimated_logitech_brio_90deg_dfov",
-    "note": "Estimated from Logitech BRIO specs at 1080p wide-angle (~78deg HFOV). Run scripts/calibrate_intrinsics.py with a checkerboard for precise values."
+    "camera_matrix": {
+      "fx": 1350.0,
+      "fy": 1350.0,
+      "cx": 960.0,
+      "cy": 540.0
+    },
+    "distortion_coefficients": {
+      "k1": -0.12,
+      "k2": 0.05,
+      "p1": 0.0,
+      "p2": 0.0,
+      "k3": 0.0
+    },
+    "estimated_fov_diagonal_deg": 78,
+    "confidence": "medium",
+    "notes": "BRIO 4K at 1080p, assumed 78 deg diagonal FOV (default mode)"
   },
-  "cam1": {
-    "fx": 1200.0,
-    "fy": 1200.0,
-    "cx": 960.0,
-    "cy": 540.0,
-    "dist_coeffs": [0.0, 0.0, 0.0, 0.0, 0.0],
+  "cam1_overhead": {
     "image_size": [1920, 1080],
-    "source": "estimated_logitech_brio_90deg_dfov",
-    "note": "Estimated from Logitech BRIO specs at 1080p wide-angle (~78deg HFOV). Run scripts/calibrate_intrinsics.py with a checkerboard for precise values."
-  }
+    "camera_matrix": {
+      "fx": 1100.0,
+      "fy": 1100.0,
+      "cx": 960.0,
+      "cy": 540.0
+    },
+    "distortion_coefficients": {
+      "k1": -0.18,
+      "k2": 0.08,
+      "p1": 0.0,
+      "p2": 0.0,
+      "k3": 0.0
+    },
+    "estimated_fov_diagonal_deg": 90,
+    "confidence": "medium",
+    "notes": "BRIO 4K at 1080p, assumed 90 deg diagonal FOV (wide mode, based on visible scene extent)"
+  },
+  "method": "spec_based_with_visual_validation",
+  "date": "2026-02-08",
+  "recommendation": "Run proper OpenCV checkerboard calibration for ground truth. Query BRIO FOV setting via v4l2-ctl to confirm FOV mode."
 }
