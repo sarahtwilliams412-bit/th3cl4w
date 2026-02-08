@@ -358,10 +358,10 @@ function fkPositions(jointsDeg) {
   const base = [0, 0, 0];
   const shoulder = [0, 0, d0];
 
-  let R = mul(rz(j[0]), ry(-j[1]));               // J0 yaw + J1 pitch
+  let R = mul(rz(j[0]), ry(j[1]));                // J0 yaw + J1 pitch (sign flipped)
   const elbow = vadd(shoulder, apply(R, [0,0,L1]));
 
-  R = mul(R, ry(Math.PI/2 - j[2]));               // 90° home bend + J2
+  R = mul(R, ry(Math.PI/2 + j[2]));               // 90° home bend + J2 (sign flipped)
   const wrist = vadd(elbow, apply(R, [0,0,L2]));
 
   R = mul(R, rz(j[3]));                           // J3 forearm roll
