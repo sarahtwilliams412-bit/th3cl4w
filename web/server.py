@@ -94,6 +94,19 @@ try:
 except ImportError:
     _HAS_COLLISION = False
 
+try:
+    from src.vision.ascii_converter import (
+        AsciiConverter,
+        CHARSET_STANDARD,
+        CHARSET_DETAILED,
+        CHARSET_BLOCKS,
+        CHARSET_MINIMAL,
+    )
+
+    _HAS_ASCII = True
+except ImportError:
+    _HAS_ASCII = False
+
 _web_dir = str(Path(__file__).resolve().parent)
 if _web_dir not in sys.path:
     sys.path.insert(0, _web_dir)
@@ -2290,6 +2303,128 @@ async def telemetry_page():
     from fastapi.responses import FileResponse
 
     return FileResponse(Path(__file__).parent / "static" / "telemetry.html")
+
+
+# ---------------------------------------------------------------------------
+# ASCII video viewer page route + WebSocket stream
+# ---------------------------------------------------------------------------
+
+_ASCII_CHARSETS = {
+    "standard": CHARSET_STANDARD if _HAS_ASCII else " .:-=+*#%@",
+    "detailed": CHARSET_DETAILED if _HAS_ASCII else " .:-=+*#%@",
+    "blocks": CHARSET_BLOCKS if _HAS_ASCII else " .:-=+*#%@",
+    "minimal": CHARSET_MINIMAL if _HAS_ASCII else " .:-=+*#%@",
+}
+
+
+@app.get("/ascii")
+async def ascii_page():
+    from fastapi.responses import FileResponse
+
+    return FileResponse(Path(__file__).parent / "static" / "ascii.html")
+
+
+@app.websocket("/ws/ascii")
+async def ws_ascii(ws: WebSocket):
+    """Stream ASCII-converted camera frames to the browser.
+
+    The client sends JSON settings messages to control camera selection,
+    charset, dimensions, color mode, and invert mode.  The server fetches
+    JPEG frames from the camera server, converts them via AsciiConverter,
+    and pushes the result back over the WebSocket.
+    """
+    await ws.accept()
+
+    # Defaults
+    cam_id = 0
+    charset_name = "standard"
+    width = 120
+    height = 40
+    color = False
+    invert = True
+    converter = None
+
+    def _build_converter():
+        nonlocal converter
+        if not _HAS_ASCII:
+            converter = None
+            return
+        cs = _ASCII_CHARSETS.get(charset_name, _ASCII_CHARSETS["standard"])
+        converter = AsciiConverter(
+            width=width, height=height, charset=cs, invert=invert, color=color
+        )
+
+    _build_converter()
+
+    try:
+        import httpx
+
+        while True:
+            # Check for incoming settings messages (non-blocking)
+            try:
+                msg = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
+                data = json.loads(msg)
+                if data.get("type") == "settings":
+                    cam_id = int(data.get("cam", cam_id))
+                    charset_name = data.get("charset", charset_name)
+                    width = max(20, min(300, int(data.get("width", width))))
+                    height = max(10, min(120, int(data.get("height", height))))
+                    color = bool(data.get("color", color))
+                    invert = bool(data.get("invert", invert))
+                    _build_converter()
+            except asyncio.TimeoutError:
+                pass
+            except Exception:
+                pass
+
+            if converter is None:
+                await ws.send_json(
+                    {"type": "frame", "lines": ["ASCII converter not available"], "width": 40, "height": 1}
+                )
+                await asyncio.sleep(1.0)
+                continue
+
+            # Fetch a JPEG snapshot from the camera server
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+                    if resp.status_code == 200:
+                        jpeg_bytes = resp.content
+                    else:
+                        jpeg_bytes = None
+            except Exception:
+                jpeg_bytes = None
+
+            if jpeg_bytes is None:
+                await ws.send_json(
+                    {"type": "frame", "lines": ["No camera feed available"], "width": 30, "height": 1}
+                )
+                await asyncio.sleep(0.5)
+                continue
+
+            # Convert to ASCII
+            try:
+                if color:
+                    result = converter.decode_jpeg_to_color_data(jpeg_bytes)
+                    await ws.send_json({"type": "frame", **result})
+                else:
+                    text = converter.decode_jpeg_to_ascii(jpeg_bytes)
+                    lines = text.split("\n")
+                    await ws.send_json(
+                        {"type": "frame", "lines": lines, "width": width, "height": height}
+                    )
+            except Exception:
+                await ws.send_json(
+                    {"type": "frame", "lines": ["Frame conversion error"], "width": 25, "height": 1}
+                )
+
+            # ~10 fps target for ASCII stream
+            await asyncio.sleep(0.1)
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
