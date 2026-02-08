@@ -400,11 +400,20 @@ function projectPoint3D(p3d, cam) {
       if (data.ok) {
         // v2 calibration (3D FK + projection)
         if (data.version === 2 && data.dh_theta_offsets_deg && data.camera_params) {
-          DH_THETA_OFFSETS_DEG = data.dh_theta_offsets_deg;
-          // Use cam1 params for the side-view canvas (already in rx/ry/rz format)
-          CAM_PARAMS = data.camera_params.cam1 || null;
-          if (CAM_PARAMS) USE_3D_PROJECTION = true;
-          console.log('Viz calibration v2 loaded (3D FK + projection):', data);
+          // Sanity check: reject if theta offsets are too large (bad calibration)
+          const maxOffset = Math.max(...data.dh_theta_offsets_deg.map(Math.abs));
+          const cam = data.camera_params.cam1;
+          const fxfyRatio = cam ? Math.max(cam.fx, cam.fy) / Math.min(cam.fx, cam.fy) : 999;
+          if (maxOffset > 15) {
+            console.warn('Viz calibration rejected: theta offsets too large (max=' + maxOffset.toFixed(1) + '°)');
+          } else if (fxfyRatio > 2) {
+            console.warn('Viz calibration rejected: fx/fy ratio too skewed (' + fxfyRatio.toFixed(1) + ')');
+          } else {
+            DH_THETA_OFFSETS_DEG = data.dh_theta_offsets_deg;
+            CAM_PARAMS = cam || null;
+            if (CAM_PARAMS) USE_3D_PROJECTION = true;
+            console.log('Viz calibration v2 loaded (3D FK + projection):', data);
+          }
         }
         // Legacy v1 / fallback
         if (data.links_mm) {
