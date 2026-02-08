@@ -63,6 +63,14 @@ try:
 except ImportError:
     _HAS_BIFOCAL = False
 
+try:
+    from src.vision.scene_analyzer import SceneAnalyzer
+    from src.planning.vision_task_planner import VisionTaskPlanner
+
+    _HAS_VISION_PLANNING = True
+except ImportError:
+    _HAS_VISION_PLANNING = False
+
 _web_dir = str(Path(__file__).resolve().parent)
 if _web_dir not in sys.path:
     sys.path.insert(0, _web_dir)
@@ -235,6 +243,8 @@ smoother: Optional[CommandSmoother] = None
 task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
 workspace_mapper: Any = None  # WorkspaceMapper for bifocal vision
 collision_preview: Any = None  # CollisionPreview for path checking
+vision_task_planner: Any = None  # VisionTaskPlanner for camera-guided planning
+scene_analyzer: Any = None  # SceneAnalyzer for scene understanding
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -314,6 +324,13 @@ async def lifespan(app: FastAPI):
         action_log.add(
             "SYSTEM", "Bifocal workspace mapper initialized (disabled by default)", "info"
         )
+
+    # Initialize vision task planner for camera-guided planning
+    global vision_task_planner, scene_analyzer
+    if _HAS_VISION_PLANNING and _HAS_PLANNING:
+        scene_analyzer = SceneAnalyzer()
+        vision_task_planner = VisionTaskPlanner(task_planner=task_planner)
+        action_log.add("SYSTEM", "Vision task planner initialized", "info")
 
     yield
 
@@ -1389,6 +1406,146 @@ async def bifocal_preview_target(req: SetAllJointsRequest):
         "checked": result.checked_points,
         "elapsed_ms": result.elapsed_ms,
     }
+
+
+# ---------------------------------------------------------------------------
+# Vision Task Planning endpoints — look at camera, build a plan
+# ---------------------------------------------------------------------------
+
+
+class VisionPlanRequest(BaseModel):
+    instruction: str = Field(
+        ..., min_length=1, max_length=500, description="What to do, e.g. 'pick up the red object'"
+    )
+    camera: int = Field(default=0, ge=0, le=1, description="Camera index to use (0 or 1)")
+    execute: bool = Field(default=False, description="Execute the plan immediately if True")
+
+
+@app.post("/api/vision/plan")
+async def vision_plan(req: VisionPlanRequest):
+    """Analyze camera feed and build a task plan from an instruction.
+
+    Takes a natural-language instruction (e.g. 'pick up the red object'),
+    captures a frame from the camera, analyzes the scene, reasons about
+    what to do, and produces an executable plan.
+    """
+    if not _HAS_VISION_PLANNING or vision_task_planner is None or scene_analyzer is None:
+        return JSONResponse(
+            {"ok": False, "error": "Vision planning module not available"}, status_code=501
+        )
+
+    # Capture a frame from the camera server
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"http://localhost:8081/snap/{req.camera}")
+        if resp.status_code != 200:
+            return JSONResponse(
+                {"ok": False, "error": f"Camera {req.camera} snapshot failed"}, status_code=502
+            )
+
+        import cv2
+
+        frame = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode camera frame"}, status_code=502
+            )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"Camera error: {e}"}, status_code=502)
+
+    # Analyze the scene
+    import time as _time
+
+    scene = scene_analyzer.analyze(frame, timestamp=_time.time())
+    action_log.add(
+        "VISION",
+        f"Scene analyzed: {scene.object_count} objects from camera {req.camera}",
+        "info",
+    )
+
+    # Build the plan
+    current = _get_current_joints()
+    plan = vision_task_planner.plan(req.instruction, scene, current)
+
+    action_log.add(
+        "VISION",
+        f"Plan: {plan.action.value} -> {'OK' if plan.success else 'FAILED'}: "
+        + (plan.error or (plan.task_result.message if plan.task_result else "")),
+        "info" if plan.success else "warning",
+    )
+
+    # Execute if requested
+    global _active_task
+    if req.execute and plan.success and plan.trajectory:
+        if not (smoother and smoother.arm_enabled):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "Arm not enabled — plan created but not executed",
+                    "plan": plan.to_dict(),
+                    "scene": scene.to_dict(),
+                },
+                status_code=409,
+            )
+        if _active_task and not _active_task.done():
+            _active_task.cancel()
+        _active_task = asyncio.create_task(
+            _execute_trajectory(plan.trajectory, f"Vision: {plan.action.value}")
+        )
+        action_log.add("VISION", f"Executing vision plan: {plan.action.value}", "info")
+
+    return {
+        "ok": plan.success,
+        "plan": plan.to_dict(),
+        "scene": scene.to_dict(),
+        "executed": req.execute and plan.success,
+    }
+
+
+@app.post("/api/vision/analyze")
+async def vision_analyze(camera: int = 0):
+    """Analyze the current camera view and return a scene description.
+
+    Returns detected objects, their positions, spatial relationships,
+    and a human-readable summary — without planning any actions.
+    """
+    if not _HAS_VISION_PLANNING or scene_analyzer is None:
+        return JSONResponse(
+            {"ok": False, "error": "Vision planning module not available"}, status_code=501
+        )
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"http://localhost:8081/snap/{camera}")
+        if resp.status_code != 200:
+            return JSONResponse(
+                {"ok": False, "error": f"Camera {camera} snapshot failed"}, status_code=502
+            )
+
+        import cv2
+
+        frame = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode camera frame"}, status_code=502
+            )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"Camera error: {e}"}, status_code=502)
+
+    import time as _time
+
+    scene = scene_analyzer.analyze(frame, timestamp=_time.time())
+    action_log.add(
+        "VISION",
+        f"Scene analysis: {scene.object_count} objects from camera {camera}",
+        "info",
+    )
+
+    return {"ok": True, "scene": scene.to_dict()}
 
 
 # ---------------------------------------------------------------------------
