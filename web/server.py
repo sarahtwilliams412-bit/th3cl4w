@@ -55,7 +55,6 @@ except ImportError:
     _HAS_PLANNING = False
 
 try:
-    from src.vision.calibration import StereoCalibrator
     from src.vision.workspace_mapper import WorkspaceMapper
     from src.planning.collision_preview import CollisionPreview
 
@@ -321,18 +320,8 @@ async def lifespan(app: FastAPI):
 
     # Initialize bifocal workspace mapper and collision preview
     global workspace_mapper, collision_preview
-    calibrator = None
     if _HAS_BIFOCAL:
-        calibrator = StereoCalibrator()
-        # Try to load existing calibration
-        calib_path = Path(__file__).resolve().parent.parent / "calibration" / "stereo.npz"
-        if calib_path.exists():
-            try:
-                calibrator.load(calib_path)
-                action_log.add("SYSTEM", "Stereo calibration loaded", "info")
-            except Exception as e:
-                action_log.add("SYSTEM", f"Calibration load failed: {e}", "warning")
-        workspace_mapper = WorkspaceMapper(calibrator)
+        workspace_mapper = WorkspaceMapper()
         collision_preview = CollisionPreview()
         action_log.add(
             "SYSTEM", "Bifocal workspace mapper initialized (disabled by default)", "info"
@@ -340,8 +329,8 @@ async def lifespan(app: FastAPI):
 
     # Initialize visual pick system (arm tracker + grasp planner + pick executor)
     global arm_tracker, grasp_planner, pick_executor
-    if _HAS_VISUAL_PICK and calibrator is not None:
-        arm_tracker = DualCameraArmTracker(calibrator)
+    if _HAS_VISUAL_PICK:
+        arm_tracker = DualCameraArmTracker()
         grasp_planner = VisualGraspPlanner()
         pick_executor = PickExecutor(task_planner=task_planner if _HAS_PLANNING else None)
         action_log.add("SYSTEM", "Visual pick system initialized (tracker + grasp planner)", "info")

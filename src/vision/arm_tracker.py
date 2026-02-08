@@ -1,46 +1,41 @@
 """
-Dual-Camera Arm Tracker — Locates the robotic arm and objects in 3D space.
+Dual-Camera Arm Tracker — Independent camera views for 3D localization.
 
-Uses both cameras simultaneously to:
-1. Detect objects (e.g. Red Bull can) via color segmentation
-2. Triangulate object positions using stereo depth
-3. Transform camera-frame coordinates into arm-base-frame coordinates
-4. Track the arm's end-effector position visually for verification
+Uses two independent cameras (no stereo pair):
+- cam0 (front/side): Detects objects, estimates height (Z) from vertical position.
+- cam1 (overhead): Detects objects, gives X/Y workspace position.
 
-Requires stereo calibration data and an extrinsic transform from
-camera frame to arm base frame (camera-to-arm transform).
+Cross-references detections by label and workspace geometry to produce
+3D positions without stereo triangulation.
 """
 
 import logging
 import time
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import cv2
 import numpy as np
 
-from .calibration import StereoCalibrator
-from .stereo_depth import StereoDepthEstimator
-from .object_detection import ObjectDetector, DetectedObject, ColorRange, COLOR_PRESETS
+from .calibration import CameraCalibration
+from .object_detection import ObjectDetector, DetectedObject, COLOR_PRESETS
 
 logger = logging.getLogger("th3cl4w.vision.arm_tracker")
 
 
 @dataclass
 class TrackedObject:
-    """An object tracked in 3D space from dual cameras."""
+    """An object tracked in 3D workspace coordinates from dual cameras."""
 
     label: str
-    position_mm: np.ndarray  # (3,) XYZ in arm-base frame (mm)
-    position_cam_mm: np.ndarray  # (3,) XYZ in camera frame (mm)
-    size_mm: tuple[float, float, float]  # estimated (width, height, depth) in mm
+    position_mm: np.ndarray  # (3,) XYZ in workspace/arm-base frame (mm)
     confidence: float  # 0-1
-    bbox_left: tuple[int, int, int, int]  # bounding box in left camera
-    bbox_right: Optional[tuple[int, int, int, int]]  # bounding box in right camera
-    centroid_left: tuple[int, int]  # pixel centroid in left camera
-    centroid_right: Optional[tuple[int, int]]  # pixel centroid in right camera
-    depth_mm: float  # stereo depth estimate
+    bbox_cam0: Optional[tuple[int, int, int, int]] = None  # bbox in front camera
+    bbox_cam1: Optional[tuple[int, int, int, int]] = None  # bbox in overhead camera
+    centroid_cam0: Optional[tuple[int, int]] = None  # pixel centroid in front camera
+    centroid_cam1: Optional[tuple[int, int]] = None  # pixel centroid in overhead camera
+    source: str = "both"  # "cam0", "cam1", or "both"
     timestamp: float = 0.0
 
     def __post_init__(self):
@@ -53,246 +48,247 @@ class ArmTrackingResult:
     """Result of a dual-camera tracking pass."""
 
     objects: list[TrackedObject]
-    depth_map: Optional[np.ndarray]  # depth map from stereo pair
-    left_frame: Optional[np.ndarray]  # annotated left frame
-    right_frame: Optional[np.ndarray]  # annotated right frame
+    cam0_frame: Optional[np.ndarray]  # annotated front camera frame
+    cam1_frame: Optional[np.ndarray]  # annotated overhead camera frame
     elapsed_ms: float
     status: str  # "ok", "no_calibration", "no_frames", "error"
     message: str = ""
 
 
 class DualCameraArmTracker:
-    """Track arm and objects using synchronized dual camera views.
+    """Track arm and objects using two independent camera views.
 
-    The tracker uses the left camera as the reference view for stereo depth,
-    and cross-validates detections against the right camera for robustness.
+    Architecture:
+    - Overhead camera (cam1) gives X/Y position on the workspace plane.
+    - Front camera (cam0) gives rough Z (height) from vertical pixel position.
+    - Objects matched between views by label and spatial consistency.
     """
 
-    # Default camera-to-arm extrinsic: identity (cameras aligned with arm base).
-    # In practice this needs to be calibrated for the specific setup.
-    # This transform converts from camera frame (Z forward, X right, Y down)
-    # to arm base frame (X forward, Y left, Z up).
-    DEFAULT_CAM_TO_ARM = np.array([
-        [0.0, 0.0, 1.0, 0.0],   # arm X = cam Z (forward)
-        [-1.0, 0.0, 0.0, 0.0],  # arm Y = -cam X (left)
-        [0.0, -1.0, 0.0, 0.0],  # arm Z = -cam Y (up)
-        [0.0, 0.0, 0.0, 1.0],
-    ], dtype=np.float64)
+    # Default: arm base is at workspace origin.
+    # cam0 looks from the front, cam1 looks from above.
+    DEFAULT_TABLE_HEIGHT_MM = 0.0  # table surface = Z=0
 
     def __init__(
         self,
-        calibrator: StereoCalibrator,
-        depth_estimator: Optional[StereoDepthEstimator] = None,
-        cam_to_arm: Optional[np.ndarray] = None,
+        cal_cam0: Optional[CameraCalibration] = None,
+        cal_cam1: Optional[CameraCalibration] = None,
+        table_height_mm: float = 0.0,
         target_labels: Optional[list[str]] = None,
     ):
-        self.calibrator = calibrator
-        self._depth_est = depth_estimator
-        self.cam_to_arm = cam_to_arm if cam_to_arm is not None else self.DEFAULT_CAM_TO_ARM.copy()
+        self.cal_cam0 = cal_cam0
+        self.cal_cam1 = cal_cam1
+        self.table_height_mm = table_height_mm
 
-        # Build object detectors for specific targets
         self._build_detectors(target_labels)
 
-        # Tracking state
         self._lock = threading.Lock()
         self._last_result: Optional[ArmTrackingResult] = None
         self._tracking_count = 0
 
     def _build_detectors(self, target_labels: Optional[list[str]] = None):
-        """Set up object detectors for specified targets.
-
-        Default targets include Red Bull can detection (red + blue/silver).
-        """
+        """Set up color-based object detectors."""
         if target_labels is None:
-            target_labels = ["redbull", "red", "blue"]
+            target_labels = ["red", "blue", "green"]
 
         self._detectors: dict[str, ObjectDetector] = {}
 
-        # Red Bull can: primarily red with blue/silver accents
-        # The can has distinctive red body and blue/silver top
+        from .object_detection import ColorRange
+
+        # Red Bull can
         redbull_colors = [
             ColorRange("redbull", np.array([0, 120, 80]), np.array([10, 255, 255])),
             ColorRange("redbull", np.array([160, 120, 80]), np.array([180, 255, 255])),
         ]
         self._detectors["redbull"] = ObjectDetector(
-            color_ranges=redbull_colors,
-            min_area=800,
-            max_area=150000,
-            morph_iterations=2,
+            color_ranges=redbull_colors, min_area=800, max_area=150000, morph_iterations=2,
         )
-
-        # Generic red object detector
         self._detectors["red"] = ObjectDetector(
             color_ranges=[COLOR_PRESETS["red_low"], COLOR_PRESETS["red_high"]],
-            min_area=500,
-            max_area=150000,
+            min_area=500, max_area=150000,
         )
-
-        # Generic blue object detector
         self._detectors["blue"] = ObjectDetector(
-            color_ranges=[COLOR_PRESETS["blue"]],
-            min_area=500,
-            max_area=150000,
+            color_ranges=[COLOR_PRESETS["blue"]], min_area=500, max_area=150000,
         )
-
-        # All-color detector for general scene understanding
+        self._detectors["green"] = ObjectDetector(
+            color_ranges=[COLOR_PRESETS["green"]], min_area=500, max_area=150000,
+        )
         self._detectors["all"] = ObjectDetector(min_area=500)
-
         self._active_labels = target_labels
 
-    def _ensure_depth_estimator(self):
-        """Lazy-create depth estimator from calibrator."""
-        if self._depth_est is None and self.calibrator.is_calibrated:
-            self._depth_est = StereoDepthEstimator(
-                self.calibrator,
-                num_disparities=128,
-                block_size=5,
-            )
-
-    def cam_point_to_arm_frame(self, point_cam_mm: np.ndarray) -> np.ndarray:
-        """Transform a 3D point from camera frame to arm base frame.
-
-        Args:
-            point_cam_mm: (3,) point in camera frame [X_right, Y_down, Z_forward] in mm.
-
-        Returns:
-            (3,) point in arm base frame in mm.
-        """
-        p_hom = np.array([point_cam_mm[0], point_cam_mm[1], point_cam_mm[2], 1.0])
-        p_arm = self.cam_to_arm @ p_hom
-        return p_arm[:3]
-
-    def set_cam_to_arm_transform(self, transform: np.ndarray):
-        """Update the camera-to-arm extrinsic transform."""
-        self.cam_to_arm = np.asarray(transform, dtype=np.float64).reshape(4, 4)
-
-    def calibrate_cam_to_arm_from_known_point(
+    def set_calibration(
         self,
-        cam_point_mm: np.ndarray,
-        arm_point_mm: np.ndarray,
+        cal_cam0: Optional[CameraCalibration] = None,
+        cal_cam1: Optional[CameraCalibration] = None,
     ):
-        """Rough calibration: given a known point in both frames, compute translation offset.
+        """Update camera calibrations."""
+        if cal_cam0 is not None:
+            self.cal_cam0 = cal_cam0
+        if cal_cam1 is not None:
+            self.cal_cam1 = cal_cam1
 
-        This assumes the rotation part of cam_to_arm is already approximately correct
-        (from mounting knowledge) and only adjusts the translation.
-        """
-        p_cam_hom = np.array([cam_point_mm[0], cam_point_mm[1], cam_point_mm[2], 1.0])
-        p_arm_from_cam = self.cam_to_arm @ p_cam_hom
-        translation_correction = arm_point_mm - p_arm_from_cam[:3]
-        self.cam_to_arm[:3, 3] += translation_correction
-        logger.info(
-            "Camera-to-arm translation updated: offset=%s",
-            [round(float(x), 1) for x in translation_correction],
+    def _estimate_xy_from_overhead(
+        self, det: DetectedObject
+    ) -> Optional[np.ndarray]:
+        """Get X/Y workspace position from overhead camera detection."""
+        if self.cal_cam1 is None or self.cal_cam1.cam_to_workspace is None:
+            return None
+        cx, cy = det.centroid_2d
+        pos = self.cal_cam1.pixel_to_workspace(
+            float(cx), float(cy), known_z=self.table_height_mm
         )
+        return pos
+
+    def _estimate_z_from_front(
+        self, det: DetectedObject, default_depth_mm: float = 400.0
+    ) -> float:
+        """Estimate object height (Z) from front camera vertical position.
+
+        Objects higher in the image (smaller v) are higher in the workspace.
+        Uses the calibrated front camera if available, otherwise heuristic.
+        """
+        if self.cal_cam0 is not None and self.cal_cam0.cam_to_workspace is not None:
+            cx, cy = det.centroid_2d
+            # Project onto a vertical plane at an assumed distance
+            pos = self.cal_cam0.pixel_to_workspace(
+                float(cx), float(cy), known_z=self.table_height_mm
+            )
+            if pos is not None:
+                return float(pos[2])
+
+        # Heuristic fallback: linear mapping from pixel row to height
+        # Bottom of image (v=480) = table surface (Z=0)
+        # Top of image (v=0) = ~300mm above table
+        _, cy = det.centroid_2d
+        image_h = self.cal_cam0.image_size[1] if self.cal_cam0 else 480
+        z_mm = (1.0 - cy / image_h) * 300.0
+        return max(0.0, z_mm)
+
+    def _match_detections(
+        self,
+        dets_cam0: list[DetectedObject],
+        dets_cam1: list[DetectedObject],
+    ) -> list[TrackedObject]:
+        """Match detections between cameras and produce 3D tracked objects.
+
+        Strategy:
+        1. Use cam1 (overhead) for X/Y position on table plane.
+        2. Use cam0 (front) for Z (height) estimation.
+        3. Match by label. If only one camera sees it, use partial info.
+        """
+        tracked: list[TrackedObject] = []
+        used_cam0: set[int] = set()
+        used_cam1: set[int] = set()
+
+        # Try to match by label
+        for i, d1 in enumerate(dets_cam1):
+            best_j = None
+            best_score = float("inf")
+            for j, d0 in enumerate(dets_cam0):
+                if j in used_cam0:
+                    continue
+                if d0.label != d1.label:
+                    continue
+                # Simple area-ratio score (both should see similar-sized object)
+                ratio = min(d0.area, d1.area) / max(d0.area, d1.area)
+                score = 1.0 - ratio
+                if score < best_score:
+                    best_score = score
+                    best_j = j
+
+            xy_pos = self._estimate_xy_from_overhead(d1)
+            if xy_pos is None:
+                xy_pos = np.array([0.0, 0.0, 0.0])
+
+            if best_j is not None:
+                d0 = dets_cam0[best_j]
+                z = self._estimate_z_from_front(d0)
+                used_cam0.add(best_j)
+                used_cam1.add(i)
+                pos = np.array([xy_pos[0], xy_pos[1], z])
+                tracked.append(TrackedObject(
+                    label=d1.label,
+                    position_mm=pos,
+                    confidence=min(1.0, (d0.confidence + d1.confidence) / 2 * 1.3),
+                    bbox_cam0=d0.bbox,
+                    bbox_cam1=d1.bbox,
+                    centroid_cam0=d0.centroid_2d,
+                    centroid_cam1=d1.centroid_2d,
+                    source="both",
+                ))
+            else:
+                # Only overhead camera saw it — assume on table
+                used_cam1.add(i)
+                pos = np.array([xy_pos[0], xy_pos[1], self.table_height_mm])
+                tracked.append(TrackedObject(
+                    label=d1.label,
+                    position_mm=pos,
+                    confidence=d1.confidence * 0.7,
+                    bbox_cam1=d1.bbox,
+                    centroid_cam1=d1.centroid_2d,
+                    source="cam1",
+                ))
+
+        # Objects only seen in front camera
+        for j, d0 in enumerate(dets_cam0):
+            if j in used_cam0:
+                continue
+            z = self._estimate_z_from_front(d0)
+            pos = np.array([0.0, 0.0, z])  # X/Y unknown
+            tracked.append(TrackedObject(
+                label=d0.label,
+                position_mm=pos,
+                confidence=d0.confidence * 0.5,
+                bbox_cam0=d0.bbox,
+                centroid_cam0=d0.centroid_2d,
+                source="cam0",
+            ))
+
+        return tracked
 
     def track(
         self,
-        left_frame: np.ndarray,
-        right_frame: np.ndarray,
-        target_label: str = "redbull",
+        cam0_frame: np.ndarray,
+        cam1_frame: np.ndarray,
+        target_label: str = "red",
         annotate: bool = True,
     ) -> ArmTrackingResult:
-        """Run a full tracking pass on a stereo frame pair.
+        """Run a full tracking pass on both camera frames.
 
         Args:
-            left_frame: BGR image from left camera.
-            right_frame: BGR image from right camera.
-            target_label: Which detector to use ("redbull", "red", "blue", "all").
-            annotate: Whether to draw annotations on the frames.
+            cam0_frame: BGR image from front camera.
+            cam1_frame: BGR image from overhead camera.
+            target_label: Which detector to use.
+            annotate: Whether to draw annotations.
 
         Returns:
             ArmTrackingResult with detected and localized objects.
         """
         t0 = time.monotonic()
 
-        if not self.calibrator.is_calibrated:
-            return ArmTrackingResult(
-                objects=[],
-                depth_map=None,
-                left_frame=left_frame if annotate else None,
-                right_frame=right_frame if annotate else None,
-                elapsed_ms=0.0,
-                status="no_calibration",
-                message="Stereo calibration required before tracking",
-            )
-
-        self._ensure_depth_estimator()
-        if self._depth_est is None:
-            return ArmTrackingResult(
-                objects=[],
-                depth_map=None,
-                left_frame=left_frame,
-                right_frame=right_frame,
-                elapsed_ms=0.0,
-                status="error",
-                message="Depth estimator could not be initialized",
-            )
-
-        # Compute stereo depth
-        disparity, depth_map = self._depth_est.compute_depth(left_frame, right_frame, rectify=True)
-
-        # Select detector
         detector = self._detectors.get(target_label, self._detectors.get("all"))
         if detector is None:
             detector = self._detectors["all"]
 
-        # Detect in left camera (reference view for depth)
-        left_detections = detector.detect(
-            left_frame, depth_map=depth_map, Q=self.calibrator.Q
-        )
+        # Detect independently in each camera
+        dets_cam0 = detector.detect(cam0_frame)
+        dets_cam1 = detector.detect(cam1_frame)
 
-        # Detect in right camera (for cross-validation)
-        right_detections = detector.detect(right_frame)
+        # Match and fuse
+        tracked = self._match_detections(dets_cam0, dets_cam1)
 
-        # Build tracked objects with 3D positions
-        tracked: list[TrackedObject] = []
-        for det in left_detections:
-            if det.centroid_3d is None or det.depth_mm <= 0:
-                continue
-
-            cam_pos = np.array(det.centroid_3d, dtype=np.float64)
-            arm_pos = self.cam_point_to_arm_frame(cam_pos)
-
-            # Estimate object size from bounding box and depth
-            x, y, w, h = det.bbox
-            size_mm = self._estimate_object_size(w, h, det.depth_mm)
-
-            # Find matching detection in right camera
-            right_match = self._find_matching_detection(det, right_detections)
-
-            confidence = det.confidence
-            if right_match is not None:
-                # Cross-validated: boost confidence
-                confidence = min(1.0, confidence * 1.3)
-
-            obj = TrackedObject(
-                label=det.label,
-                position_mm=arm_pos,
-                position_cam_mm=cam_pos,
-                size_mm=size_mm,
-                confidence=confidence,
-                bbox_left=det.bbox,
-                bbox_right=right_match.bbox if right_match else None,
-                centroid_left=det.centroid_2d,
-                centroid_right=right_match.centroid_2d if right_match else None,
-                depth_mm=det.depth_mm,
-            )
-            tracked.append(obj)
-
-        # Annotate frames
-        vis_left = left_frame
-        vis_right = right_frame
+        # Annotate
+        vis0 = cam0_frame
+        vis1 = cam1_frame
         if annotate and tracked:
-            vis_left = self._annotate_frame(left_frame.copy(), tracked, "L")
-            vis_right = self._annotate_frame(right_frame.copy(), tracked, "R")
+            vis0 = self._annotate_frame(cam0_frame.copy(), tracked, "cam0")
+            vis1 = self._annotate_frame(cam1_frame.copy(), tracked, "cam1")
 
         elapsed_ms = (time.monotonic() - t0) * 1000
 
         result = ArmTrackingResult(
             objects=tracked,
-            depth_map=depth_map,
-            left_frame=vis_left if annotate else None,
-            right_frame=vis_right if annotate else None,
+            cam0_frame=vis0 if annotate else None,
+            cam1_frame=vis1 if annotate else None,
             elapsed_ms=round(elapsed_ms, 1),
             status="ok",
             message=f"Tracked {len(tracked)} object(s)",
@@ -304,116 +300,40 @@ class DualCameraArmTracker:
 
         return result
 
-    def _estimate_object_size(
-        self, bbox_w_px: int, bbox_h_px: int, depth_mm: float
-    ) -> tuple[float, float, float]:
-        """Estimate real-world object size from bounding box and depth.
-
-        Uses pinhole camera model: real_size = pixel_size * depth / focal_length
-        """
-        if self.calibrator.camera_matrix_left is not None:
-            fx = self.calibrator.camera_matrix_left[0, 0]
-            fy = self.calibrator.camera_matrix_left[1, 1]
-        else:
-            fx = fy = 500.0  # fallback
-
-        width_mm = bbox_w_px * depth_mm / fx
-        height_mm = bbox_h_px * depth_mm / fy
-        # Estimate depth dimension as average of width and height (rough)
-        depth_dim = (width_mm + height_mm) / 2.0
-
-        return (round(width_mm, 1), round(height_mm, 1), round(depth_dim, 1))
-
-    def _find_matching_detection(
-        self,
-        target: DetectedObject,
-        candidates: list[DetectedObject],
-        max_y_diff: int = 50,
-        min_area_ratio: float = 0.3,
-    ) -> Optional[DetectedObject]:
-        """Find a matching detection in the other camera view.
-
-        Matching criteria:
-        - Same label
-        - Similar vertical position (epipolar constraint)
-        - Similar area (within ratio bounds)
-        """
-        best = None
-        best_score = float("inf")
-
-        for cand in candidates:
-            if cand.label != target.label:
-                continue
-
-            # Epipolar: y coordinates should be similar in rectified images
-            y_diff = abs(cand.centroid_2d[1] - target.centroid_2d[1])
-            if y_diff > max_y_diff:
-                continue
-
-            # Area similarity
-            area_ratio = min(cand.area, target.area) / max(cand.area, target.area)
-            if area_ratio < min_area_ratio:
-                continue
-
-            # Score: lower is better (prefer close y + similar area)
-            score = y_diff + (1.0 - area_ratio) * 100
-            if score < best_score:
-                best_score = score
-                best = cand
-
-        return best
-
     def _annotate_frame(
-        self,
-        frame: np.ndarray,
-        objects: list[TrackedObject],
-        cam_label: str,
+        self, frame: np.ndarray, objects: list[TrackedObject], cam: str,
     ) -> np.ndarray:
         """Draw tracking annotations on a camera frame."""
         for obj in objects:
-            if cam_label == "L":
-                bbox = obj.bbox_left
-                centroid = obj.centroid_left
-            else:
-                bbox = obj.bbox_right
-                centroid = obj.centroid_right
-                if bbox is None or centroid is None:
-                    continue
+            bbox = obj.bbox_cam0 if cam == "cam0" else obj.bbox_cam1
+            centroid = obj.centroid_cam0 if cam == "cam0" else obj.centroid_cam1
+            if bbox is None or centroid is None:
+                continue
 
             x, y, w, h = bbox
             color = (0, 255, 0)
-
-            # Bounding box
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-
-            # Centroid marker
             cv2.drawMarker(frame, centroid, (0, 0, 255), cv2.MARKER_CROSS, 15, 2)
 
-            # Label with 3D position
             pos = obj.position_mm
             label = f"{obj.label} ({pos[0]:.0f},{pos[1]:.0f},{pos[2]:.0f})mm"
             cv2.putText(
                 frame, label, (x, y - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
             )
-
-            # Depth info
-            depth_label = f"d={obj.depth_mm:.0f}mm conf={obj.confidence:.2f}"
+            info = f"src={obj.source} conf={obj.confidence:.2f}"
             cv2.putText(
-                frame, depth_label, (x, y + h + 15),
+                frame, info, (x, y + h + 15),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 200, 0), 1, cv2.LINE_AA,
             )
 
-        # Camera label
         cv2.putText(
-            frame, f"CAM {cam_label}", (10, 25),
+            frame, cam.upper(), (10, 25),
             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA,
         )
-
         return frame
 
     def get_last_result(self) -> Optional[ArmTrackingResult]:
-        """Get the most recent tracking result."""
         with self._lock:
             return self._last_result
 

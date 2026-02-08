@@ -1,22 +1,19 @@
 """
-th3cl4w Vision Module — Stereo Vision + Workspace Mapping + Arm Tracking
+th3cl4w Vision Module — Independent Camera Views + Object Detection
 
-Provides stereo camera calibration, depth estimation, object detection,
-bifocal workspace mapping, dual-camera arm tracking, and visual grasp planning.
+Provides object detection, workspace mapping, dual-camera arm tracking,
+visual grasp planning, and scene analysis.
+Each camera operates independently (no stereo pair).
 Requires opencv-python (cv2) which may not be installed in all environments.
 """
 
 try:
-    from .calibration import StereoCalibrator
-    from .stereo_depth import StereoDepthEstimator
     from .object_detection import ObjectDetector
     from .workspace_mapper import WorkspaceMapper
     from .arm_tracker import DualCameraArmTracker, TrackedObject
     from .grasp_planner import VisualGraspPlanner, GraspPlan
     from .scene_analyzer import SceneAnalyzer, SceneDescription, SceneObject
 except ImportError:
-    StereoCalibrator = None  # type: ignore[assignment,misc]
-    StereoDepthEstimator = None  # type: ignore[assignment,misc]
     ObjectDetector = None  # type: ignore[assignment,misc]
     WorkspaceMapper = None  # type: ignore[assignment,misc]
     DualCameraArmTracker = None  # type: ignore[assignment,misc]
@@ -28,8 +25,6 @@ except ImportError:
     SceneObject = None  # type: ignore[assignment,misc]
 
 __all__ = [
-    "StereoCalibrator",
-    "StereoDepthEstimator",
     "ObjectDetector",
     "WorkspaceMapper",
     "DualCameraArmTracker",
