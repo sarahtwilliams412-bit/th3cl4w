@@ -216,6 +216,8 @@ class SimulatedArm:
 arm: Any = None
 smoother: Optional[CommandSmoother] = None
 task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
+_enable_snapshot: Optional[list] = None  # Joint angles captured at enable time
+_enable_gripper_snapshot: float = 0.0
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -224,7 +226,7 @@ task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global arm, smoother
+    global arm, smoother, task_planner
     # Start telemetry collector
     if _HAS_TELEMETRY:
         tc = get_collector()
@@ -524,6 +526,18 @@ async def cmd_enable():
         )
     if ok and smoother:
         smoother.set_arm_enabled(True)
+    # Capture current position so we can return here on disable
+    if ok:
+        global _enable_snapshot, _enable_gripper_snapshot
+        angles_raw = arm.get_joint_angles()
+        if angles_raw is not None and len(angles_raw) >= 6:
+            _enable_snapshot = [float(a) for a in angles_raw[:6]]
+            _enable_gripper_snapshot = (
+                float(arm.get_gripper_position()) if hasattr(arm, "get_gripper_position") else 0.0
+            )
+            action_log.add(
+                "ENABLE", f"Snapshot saved: {[round(a,1) for a in _enable_snapshot]}", "info"
+            )
     resp = cmd_response(ok, "ENABLE", correlation_id=cid)
     await broadcast_ack("ENABLE", ok)
     return resp
@@ -531,8 +545,32 @@ async def cmd_enable():
 
 @app.post("/api/command/disable")
 async def cmd_disable():
+    global _active_task, _enable_snapshot
     cid = _new_cid()
     _telem_cmd_sent("disable", {}, cid)
+
+    # If we have a saved enable-time snapshot, smoothly return first
+    if _enable_snapshot and smoother and smoother.arm_enabled and _HAS_PLANNING and task_planner:
+        current = _get_current_joints()
+        distance = sum(abs(a - b) for a, b in zip(current, _enable_snapshot))
+        if distance > 1.0:  # only return if we've moved meaningfully
+            target = np.array(_enable_snapshot)
+            result = task_planner.planner.linear_joint_trajectory(
+                current,
+                target,
+                0.4,
+                _enable_gripper_snapshot,
+                _enable_gripper_snapshot,
+            )
+            if result and len(result.points) > 0:
+                action_log.add("DISABLE", "Returning to enable position before disabling", "info")
+                if _active_task and not _active_task.done():
+                    _active_task.cancel()
+                _active_task = asyncio.create_task(_return_then_disable(result, cid))
+                _enable_snapshot = None
+                return cmd_response(True, "DISABLE", "Returning to start position", cid)
+
+    _enable_snapshot = None
     ok = arm.disable_motors(_correlation_id=cid) if arm else False
     if _HAS_TELEMETRY:
         get_collector().log_system_event(
@@ -543,6 +581,21 @@ async def cmd_disable():
     resp = cmd_response(ok, "DISABLE", correlation_id=cid)
     await broadcast_ack("DISABLE", ok)
     return resp
+
+
+async def _return_then_disable(trajectory, cid: str):
+    """Execute trajectory back to enable position, then disable motors."""
+    await _execute_trajectory(trajectory, "Return to start")
+    # Now actually disable
+    ok = arm.disable_motors(_correlation_id=cid) if arm else False
+    if _HAS_TELEMETRY:
+        get_collector().log_system_event(
+            "disable", "web", "Motors disabled after return", correlation_id=cid
+        )
+    if smoother:
+        smoother.set_arm_enabled(False)
+    action_log.add("DISABLE", "Motors disabled after return to start", "info")
+    await broadcast_ack("DISABLE", ok)
 
 
 @app.post("/api/command/power-on")

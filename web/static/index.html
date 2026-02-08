@@ -286,10 +286,11 @@ const LINKS_MM = {
 };
 
 // DH geometric offsets (degrees) — maps D1 DDS zero convention to viz geometry.
-// The D1's zero-angle config has the arm extended forward (not straight up).
-// At DDS [0, -90, 90, 0, 0, 0] the arm is folded/compact (up then back down).
-// These offsets are added to the DDS pitch angles before FK computation.
-const JOINT_VIZ_OFFSETS = [0, 90, 90, 0, 0, 0];
+// The D1's zero-angle config has the arm extended forward (horizontal).
+// The viz FK chain starts pointing up (-PI/2), so J1 needs +90° to point horizontal.
+// J2's angle is relative to J1, so at 0° the forearm continues in the same direction — no offset.
+// Similarly J4 (wrist pitch) is relative, so no offset needed.
+const JOINT_VIZ_OFFSETS = [0, 90, 0, 0, 0, 0];
 
 // ---- State ----
 let ws = null;
@@ -330,7 +331,7 @@ for (let i = 0; i < 6; i++) {
     if (!armSynced || updatingFromState) return; // SAFETY: don't send until synced
     throttledSendJoint(i, parseFloat(slider.value));
   });
-  const release = () => { if (userDragging === i) { sendJoint(i, parseFloat(slider.value)); userDragging = -1; } };
+  const release = () => { if (userDragging === i) { sendJoint(i, parseFloat(slider.value)); setTimeout(() => { userDragging = -1; }, 200); } };
   slider.addEventListener('mouseup', release);
   slider.addEventListener('touchend', release);
   slider.addEventListener('change', release);
@@ -345,7 +346,7 @@ gripSlider.addEventListener('input', () => {
   if (!armSynced || updatingFromState) return; // SAFETY: don't send until synced
   throttledSendGripper(parseFloat(gripSlider.value));
 });
-const gripRelease = () => { if (userDragging === 6) { sendGripper(parseFloat(gripSlider.value)); userDragging = -1; } };
+const gripRelease = () => { if (userDragging === 6) { sendGripper(parseFloat(gripSlider.value)); setTimeout(() => { userDragging = -1; }, 200); } };
 gripSlider.addEventListener('mouseup', gripRelease);
 gripSlider.addEventListener('touchend', gripRelease);
 gripSlider.addEventListener('change', gripRelease);
@@ -485,22 +486,41 @@ function updateConn(on) {
   document.getElementById('connLabel').textContent = on ? 'CONNECTED' : 'DISCONNECTED';
 }
 
-// ---- UI Update ----
+// ---- UI Update (dirty-checked to prevent flickering) ----
+// Track previous state to avoid redundant DOM writes that trigger CSS repaints
+let _prevPower = null, _prevEnabled = null, _prevError = null;
+
 function updateUI() {
-  // Badges
-  const bp = document.getElementById('badgePower');
-  bp.textContent = armState.power ? 'PWR ON' : 'PWR OFF';
-  bp.className = 'badge' + (armState.power ? ' active' : '');
+  // Badges — only touch DOM when values actually change
+  if (_prevPower !== armState.power) {
+    _prevPower = armState.power;
+    const bp = document.getElementById('badgePower');
+    bp.textContent = armState.power ? 'PWR ON' : 'PWR OFF';
+    bp.className = 'badge' + (armState.power ? ' active' : '');
+    // Button disabled/class only needs updating on power/enabled change
+    document.getElementById('btnPowerOn').disabled = armState.power;
+    document.getElementById('btnPowerOn').className = 'btn' + (armState.power ? ' on' : '');
+    document.getElementById('btnPowerOff').disabled = !armState.power;
+    document.getElementById('btnEnable').disabled = !armState.power || armState.enabled;
+  }
+  if (_prevEnabled !== armState.enabled) {
+    _prevEnabled = armState.enabled;
+    const be = document.getElementById('badgeEnabled');
+    be.textContent = armState.enabled ? 'ENABLED' : 'DISABLED';
+    be.className = 'badge' + (armState.enabled ? ' active' : '');
+    document.getElementById('btnEnable').disabled = !armState.power || armState.enabled;
+    document.getElementById('btnEnable').className = 'btn' + (armState.enabled ? ' on' : '');
+    document.getElementById('btnDisable').disabled = !armState.enabled;
+    document.getElementById('btnEstop').className = armState.enabled ? 'estop flash' : 'estop';
+  }
+  if (_prevError !== armState.error) {
+    _prevError = armState.error;
+    const berr = document.getElementById('badgeError');
+    if (armState.error) { berr.textContent = 'ERR ' + armState.error; berr.className = 'badge error'; }
+    else { berr.textContent = 'NO ERR'; berr.className = 'badge'; }
+  }
 
-  const be = document.getElementById('badgeEnabled');
-  be.textContent = armState.enabled ? 'ENABLED' : 'DISABLED';
-  be.className = 'badge' + (armState.enabled ? ' active' : '');
-
-  const berr = document.getElementById('badgeError');
-  if (armState.error) { berr.textContent = 'ERR ' + armState.error; berr.className = 'badge error'; }
-  else { berr.textContent = 'NO ERR'; berr.className = 'badge'; }
-
-  // Connection quality
+  // Connection quality (lightweight — only text, no className)
   if (lastStateTs > 0) {
     const age = Date.now() - lastStateTs;
     const q = document.getElementById('connQuality');
@@ -510,42 +530,30 @@ function updateUI() {
     q.style.color = age < 500 ? 'var(--success)' : age < 2000 ? 'var(--warning)' : 'var(--danger)';
   }
 
-  // Button states
-  document.getElementById('btnPowerOn').disabled = armState.power;
-  document.getElementById('btnPowerOn').className = 'btn' + (armState.power ? ' on' : '');
-  document.getElementById('btnPowerOff').disabled = !armState.power;
-  document.getElementById('btnEnable').disabled = !armState.power || armState.enabled;
-  document.getElementById('btnEnable').className = 'btn' + (armState.enabled ? ' on' : '');
-  document.getElementById('btnDisable').disabled = !armState.enabled;
-
-  // E-stop flash when enabled
-  document.getElementById('btnEstop').className = armState.enabled ? 'estop flash' : 'estop';
-
-  // Joint sliders — guard against triggering input events, skip if unchanged
-  updatingFromState = true;
-  const joints = armState.joints || [0,0,0,0,0,0];
-  for (let i = 0; i < 6; i++) {
-    if (userDragging !== i) {
+  // Joint sliders — skip ALL slider updates when user is dragging anything.
+  // This eliminates the snap-back feedback loop: user drags → command sent →
+  // server responds with smoothed value → slider resets → visual snaps.
+  const isUserDragging = userDragging >= 0;
+  if (!isUserDragging) {
+    updatingFromState = true;
+    const joints = armState.joints || [0,0,0,0,0,0];
+    for (let i = 0; i < 6; i++) {
       const val = joints[i] || 0;
       const slider = document.getElementById(`js${i}`);
-      const valStr = String(val);
-      if (slider.value !== valStr) slider.value = val;
+      // Compare as numbers — string comparison fails on "0" vs "0.00"
+      if (Math.abs(parseFloat(slider.value) - val) > 0.05) slider.value = val;
       const label = document.getElementById(`jv${i}`);
       const txt = val.toFixed(1) + '°';
       if (label.textContent !== txt) label.textContent = txt;
     }
-  }
-
-  // Gripper
-  if (userDragging !== 6) {
+    // Gripper
     const gv = armState.gripper || 0;
-    const gvStr = String(gv);
-    if (gripSlider.value !== gvStr) gripSlider.value = gv;
+    if (Math.abs(parseFloat(gripSlider.value) - gv) > 0.05) gripSlider.value = gv;
     const gLabel = document.getElementById('gripperValue');
     const gTxt = gv.toFixed(1) + ' mm';
     if (gLabel.textContent !== gTxt) gLabel.textContent = gTxt;
+    updatingFromState = false;
   }
-  updatingFromState = false;
 
   renderLog();
 }
@@ -593,7 +601,17 @@ function drawArm() {
   // --- Side view FK (using J1, J2, J4 as pitch joints) ---
   // Scale: convert mm to pixels. Canvas ~500px tall, arm reach ~590mm. Use 0.65 px/mm
   const scale = Math.min(W, H) / 900;
-  const baseX = W * 0.35, baseY = H * 0.85;
+  const baseX = W * 0.18, baseY = H * 0.75;
+
+  // Ground line
+  ctx.strokeStyle = 'rgba(42,74,124,0.25)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, baseY);
+  ctx.lineTo(W, baseY);
+  ctx.stroke();
+  ctx.setLineDash([]);
 
   // Base platform
   ctx.fillStyle = '#1a2744';
@@ -865,7 +883,7 @@ function drawArm() {
   // --- Title ---
   ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
   ctx.fillStyle = 'rgba(136,146,164,0.5)';
-  ctx.fillText('D1 Arm (blue=pitch, gold=roll)', 8, 16 * scale);
+  ctx.fillText('D1 Arm — Side View (blue=pitch, gold=roll)', 8, 16 * scale);
 }
 
 // Animation loop — only redraw when state changes

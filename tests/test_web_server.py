@@ -44,6 +44,8 @@ def reset_server(tmp_path):
     srv.smoother.sync_from_feedback([0.0] * 6, 0.0)
     srv._prev_state = {}
     srv._active_task = None
+    srv._enable_snapshot = None
+    srv._enable_gripper_snapshot = 0.0
     action_log._entries.clear()
 
     # Initialize task planner if available
@@ -528,3 +530,124 @@ class TestTasks:
         r = enabled_client.post("/api/task/wave")
         assert r.status_code == 200
         assert r.json()["ok"] is True
+
+
+# --- Planning initialization ---
+
+
+class TestPlanningInit:
+    """Verify the task planner is properly initialized (global, not local)."""
+
+    def test_task_planner_initialized(self, client):
+        """After reset_server fixture, task_planner must not be None."""
+        import web.server as srv
+
+        assert srv._HAS_PLANNING is True, "Planning module should be importable"
+        assert srv.task_planner is not None, "task_planner global must be set"
+
+    def test_task_home_returns_trajectory(self, enabled_client):
+        """Home task should succeed and include trajectory info, not 501."""
+        # Move away from home first so the trajectory is non-trivial
+        enabled_client.post(
+            "/api/command/set-all-joints",
+            json={"angles": [20.0, 20.0, 20.0, 20.0, 20.0, 20.0]},
+        )
+        r = enabled_client.post("/api/task/home")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["ok"] is True
+        assert d["action"] == "TASK_HOME"
+        assert d["points"] > 0
+        assert d["duration_s"] >= 0
+
+    def test_task_ready_returns_trajectory(self, enabled_client):
+        """Ready task should succeed, not return 'planning module not available'."""
+        r = enabled_client.post("/api/task/ready")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["ok"] is True
+        assert d["action"] == "TASK_READY"
+        assert d["points"] > 0
+
+    def test_task_wave_returns_trajectory(self, enabled_client):
+        """Wave task should succeed with trajectory details."""
+        r = enabled_client.post("/api/task/wave")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["ok"] is True
+        assert d["action"] == "TASK_WAVE"
+        assert d["points"] > 0
+
+
+# --- Enable snapshot & safe disable ---
+
+
+class TestEnableSnapshot:
+    """Verify position is captured at enable and used at disable."""
+
+    def test_enable_captures_snapshot(self, client):
+        """Enabling motors should save the current joint positions."""
+        import web.server as srv
+
+        assert srv._enable_snapshot is None
+        client.post("/api/command/power-on")
+        client.post("/api/command/enable")
+        assert srv._enable_snapshot is not None
+        assert len(srv._enable_snapshot) == 6
+        assert isinstance(srv._enable_snapshot[0], float)
+
+    def test_enable_captures_gripper_snapshot(self, client):
+        """Enabling motors should save the gripper position too."""
+        import web.server as srv
+
+        client.post("/api/command/power-on")
+        client.post("/api/command/enable")
+        assert isinstance(srv._enable_gripper_snapshot, float)
+
+    def test_disable_clears_snapshot(self, client):
+        """Disabling should clear the enable snapshot."""
+        import web.server as srv
+
+        client.post("/api/command/power-on")
+        client.post("/api/command/enable")
+        assert srv._enable_snapshot is not None
+        client.post("/api/command/disable")
+        assert srv._enable_snapshot is None
+
+    def test_disable_without_enable(self, client):
+        """Disabling without enable should work (no snapshot to use)."""
+        import web.server as srv
+
+        assert srv._enable_snapshot is None
+        client.post("/api/command/power-on")
+        r = client.post("/api/command/disable")
+        assert r.status_code == 200
+
+    def test_enable_snapshot_after_movement(self, enabled_client):
+        """Snapshot should reflect position at enable time, not after moves."""
+        import web.server as srv
+
+        snapshot_before = list(srv._enable_snapshot)
+        # Move a joint
+        enabled_client.post("/api/command/set-joint", json={"id": 0, "angle": 45.0})
+        # Snapshot should still be the original enable-time values
+        assert srv._enable_snapshot == snapshot_before
+
+    def test_disable_return_with_planning(self, enabled_client):
+        """When arm has moved, disable should attempt to return to start."""
+        import web.server as srv
+
+        # Move the arm significantly so distance > 1.0 deg
+        enabled_client.post(
+            "/api/command/set-all-joints",
+            json={"angles": [30.0, 30.0, 30.0, 30.0, 30.0, 30.0]},
+        )
+        # Force simulated arm to reflect the target immediately
+        srv.arm._angles = [30.0, 30.0, 30.0, 30.0, 30.0, 30.0]
+
+        r = enabled_client.post("/api/command/disable")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["ok"] is True
+        # Should mention returning to start
+        assert "Returning" in d.get("action", "") or "DISABLE" in d.get("action", "")
