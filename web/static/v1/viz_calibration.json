@@ -1,0 +1,28 @@
+{
+  "links_mm": {
+    "base": 286.9,
+    "shoulder": 50.0,
+    "elbow": 50.0,
+    "wrist1": 10.0,
+    "wrist2": 36.0,
+    "end": 36.7
+  },
+  "joint_viz_offsets": [
+    0,
+    180.0,
+    70.3,
+    0,
+    180.0,
+    0
+  ],
+  "residual": 266.76,
+  "n_observations": 20,
+  "camera_params": {
+    "sx": 0.1,
+    "sy": 0.1,
+    "tx": 1834.1,
+    "ty": 56.2
+  },
+  "success": true,
+  "timestamp": 1770536131.0968244
+}
