@@ -2797,6 +2797,137 @@ async def ws_arm3d(ws: WebSocket):
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Calibration endpoints
+# ---------------------------------------------------------------------------
+
+try:
+    from src.calibration.calibration_runner import CalibrationRunner, CalibrationSession
+
+    _HAS_CALIBRATION = True
+except ImportError:
+    _HAS_CALIBRATION = False
+
+_calibration_runner: Optional[CalibrationRunner] = None
+_calibration_task: Optional[asyncio.Task] = None
+_calibration_session: Optional[CalibrationSession] = None
+_calibration_error: Optional[str] = None
+
+
+@app.post("/api/calibration/start")
+async def calibration_start():
+    """Kick off the 20-pose calibration sequence."""
+    global _calibration_runner, _calibration_task, _calibration_session, _calibration_error
+    if not _HAS_CALIBRATION:
+        return JSONResponse({"ok": False, "error": "Calibration module not available"}, status_code=501)
+    if _calibration_task and not _calibration_task.done():
+        return JSONResponse({"ok": False, "error": "Calibration already running"}, status_code=409)
+
+    _calibration_runner = CalibrationRunner()
+    _calibration_session = None
+    _calibration_error = None
+
+    async def _run():
+        global _calibration_session, _calibration_error
+        try:
+            _calibration_session = await _calibration_runner.run_full_calibration()
+            action_log.add("CALIBRATION", f"Complete: {len(_calibration_session.captures)} poses", "info")
+        except Exception as e:
+            _calibration_error = str(e)
+            action_log.add("CALIBRATION", f"Failed: {e}", "error")
+
+    _calibration_task = asyncio.create_task(_run())
+    action_log.add("CALIBRATION", "Started", "info")
+    return {"ok": True, "session_id": _calibration_runner._session_id}
+
+
+@app.get("/api/calibration/status")
+async def calibration_status():
+    """Return calibration progress."""
+    if not _HAS_CALIBRATION or _calibration_runner is None:
+        return {"running": False, "current_pose": -1, "total_poses": 0}
+    progress = _calibration_runner.progress
+    if _calibration_error:
+        progress["error"] = _calibration_error
+    if _calibration_task:
+        progress["done"] = _calibration_task.done()
+    return progress
+
+
+@app.post("/api/calibration/stop")
+async def calibration_stop():
+    """Abort running calibration."""
+    if not _HAS_CALIBRATION or _calibration_runner is None:
+        return {"ok": False, "error": "No calibration running"}
+    _calibration_runner.abort()
+    action_log.add("CALIBRATION", "Abort requested", "warning")
+    return {"ok": True}
+
+
+@app.get("/api/calibration/results/{session_id}")
+async def calibration_results(session_id: str):
+    """Get calibration results (without raw images)."""
+    if not _HAS_CALIBRATION or _calibration_session is None:
+        return JSONResponse({"ok": False, "error": "No results available"}, status_code=404)
+    if _calibration_runner and _calibration_runner._session_id != session_id:
+        return JSONResponse({"ok": False, "error": "Session not found"}, status_code=404)
+    return {
+        "ok": True,
+        "start_time": _calibration_session.start_time,
+        "end_time": _calibration_session.end_time,
+        "total_poses": _calibration_session.total_poses,
+        "captures": [
+            {
+                "pose_index": c.pose_index,
+                "commanded_angles": list(c.commanded_angles),
+                "actual_angles": c.actual_angles,
+                "timestamp": c.timestamp,
+                "has_cam0": len(c.cam0_jpeg) > 0,
+                "has_cam1": len(c.cam1_jpeg) > 0,
+            }
+            for c in _calibration_session.captures
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Calibration Comparison Report endpoints
+# ---------------------------------------------------------------------------
+
+try:
+    from src.calibration.results_reporter import CalibrationReporter as _CalibReporter
+    _HAS_CALIB_REPORTER = True
+except ImportError:
+    _HAS_CALIB_REPORTER = False
+
+_calib_reporter_instance = _CalibReporter() if _HAS_CALIB_REPORTER else None
+_calib_comparison_reports: dict = {}  # session_id -> ComparisonReport
+
+
+@app.get("/api/calibration/report/{session_id}")
+async def calibration_report_md(session_id: str):
+    """Return markdown comparison report for a calibration session."""
+    if not _HAS_CALIB_REPORTER:
+        return JSONResponse({"ok": False, "error": "Reporter module not available"}, status_code=501)
+    report = _calib_comparison_reports.get(session_id)
+    if not report:
+        return JSONResponse({"ok": False, "error": "Report not found"}, status_code=404)
+    md = _calib_reporter_instance.generate_markdown(report)
+    return JSONResponse({"ok": True, "markdown": md})
+
+
+@app.get("/api/calibration/report/{session_id}/json")
+async def calibration_report_json(session_id: str):
+    """Return JSON comparison report for a calibration session."""
+    if not _HAS_CALIB_REPORTER:
+        return JSONResponse({"ok": False, "error": "Reporter module not available"}, status_code=501)
+    report = _calib_comparison_reports.get(session_id)
+    if not report:
+        return JSONResponse({"ok": False, "error": "Report not found"}, status_code=404)
+    return _calib_reporter_instance.generate_json(report)
+
+
+# ---------------------------------------------------------------------------
 # Static files — versioned UIs all pointing to the same server
 # /v1/ → V1 stable base, /v2/ → V2 Cartesian controls, / → V1 (default)
 # ---------------------------------------------------------------------------
