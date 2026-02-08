@@ -10,10 +10,10 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Minimal stub so tests run without cyclonedds installed
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class _FakeArmString:
@@ -50,6 +50,7 @@ class FakeDataWriter:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def fake_reader():
     return FakeDataReader()
@@ -80,6 +81,7 @@ def connection(fake_reader, fake_writer):
 # ---------------------------------------------------------------------------
 # JSON encoding / command tests
 # ---------------------------------------------------------------------------
+
 
 class TestCommands:
     def test_enable_motors(self, connection, fake_writer):
@@ -149,6 +151,7 @@ class TestCommands:
 # Feedback parsing tests
 # ---------------------------------------------------------------------------
 
+
 class TestFeedback:
     def _wait_for_cache(self, connection, attr="joint_angles", timeout=1.0):
         deadline = time.monotonic() + timeout
@@ -165,8 +168,13 @@ class TestFeedback:
             "address": 2,
             "funcode": 1,
             "data": {
-                "angle0": 0.7, "angle1": -90.4, "angle2": 92.1,
-                "angle3": -4.6, "angle4": -98.4, "angle5": 7.5, "angle6": -24.9,
+                "angle0": 0.7,
+                "angle1": -90.4,
+                "angle2": 92.1,
+                "angle3": -4.6,
+                "angle4": -98.4,
+                "angle5": 7.5,
+                "angle6": -24.9,
             },
         }
         fake_reader.inject(json.dumps(fb))
@@ -224,6 +232,7 @@ class TestFeedback:
 # Connection lifecycle
 # ---------------------------------------------------------------------------
 
+
 class TestLifecycle:
     def test_disconnect(self, connection):
         assert connection.is_connected
@@ -232,6 +241,7 @@ class TestLifecycle:
 
     def test_send_when_disconnected(self):
         from src.interface.d1_dds_connection import D1DDSConnection
+
         conn = D1DDSConnection()
         assert not conn.send_command({"funcode": 1})
 

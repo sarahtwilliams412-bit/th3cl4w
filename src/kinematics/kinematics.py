@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # DH Parameter container
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class DHParameters:
     """Standard DH parameters for a single revolute joint.
@@ -31,6 +32,7 @@ class DHParameters:
         alpha — link twist  (about x_{i})  [radians]
         theta_offset — fixed offset added to the joint variable [radians]
     """
+
     a: float
     d: float
     alpha: float
@@ -45,13 +47,13 @@ class DHParameters:
 #                 elbow_pitch, wrist_yaw, wrist_pitch, wrist_roll
 
 _D1_DH: list[DHParameters] = [
-    DHParameters(a=0.0,    d=0.1215, alpha=-np.pi / 2, theta_offset=0.0),   # J1
-    DHParameters(a=0.0,    d=0.0,    alpha= np.pi / 2, theta_offset=0.0),   # J2
-    DHParameters(a=0.0,    d=0.2085, alpha=-np.pi / 2, theta_offset=0.0),   # J3
-    DHParameters(a=0.0,    d=0.0,    alpha= np.pi / 2, theta_offset=0.0),   # J4
-    DHParameters(a=0.0,    d=0.2085, alpha=-np.pi / 2, theta_offset=0.0),   # J5
-    DHParameters(a=0.0,    d=0.0,    alpha= np.pi / 2, theta_offset=0.0),   # J6
-    DHParameters(a=0.0,    d=0.1130, alpha=0.0,         theta_offset=0.0),   # J7
+    DHParameters(a=0.0, d=0.1215, alpha=-np.pi / 2, theta_offset=0.0),  # J1
+    DHParameters(a=0.0, d=0.0, alpha=np.pi / 2, theta_offset=0.0),  # J2
+    DHParameters(a=0.0, d=0.2085, alpha=-np.pi / 2, theta_offset=0.0),  # J3
+    DHParameters(a=0.0, d=0.0, alpha=np.pi / 2, theta_offset=0.0),  # J4
+    DHParameters(a=0.0, d=0.2085, alpha=-np.pi / 2, theta_offset=0.0),  # J5
+    DHParameters(a=0.0, d=0.0, alpha=np.pi / 2, theta_offset=0.0),  # J6
+    DHParameters(a=0.0, d=0.1130, alpha=0.0, theta_offset=0.0),  # J7
 ]
 
 assert len(_D1_DH) == NUM_JOINTS, f"DH table length {len(_D1_DH)} != NUM_JOINTS {NUM_JOINTS}"
@@ -61,17 +63,20 @@ assert len(_D1_DH) == NUM_JOINTS, f"DH table length {len(_D1_DH)} != NUM_JOINTS 
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _dh_transform(dh: DHParameters, theta: float) -> np.ndarray:
     """Return the 4×4 homogeneous transform for a single DH frame."""
     t = theta + dh.theta_offset
     ct, st = np.cos(t), np.sin(t)
     ca, sa = np.cos(dh.alpha), np.sin(dh.alpha)
-    return np.array([
-        [ct, -st * ca,  st * sa, dh.a * ct],
-        [st,  ct * ca, -ct * sa, dh.a * st],
-        [0.0,     sa,       ca,      dh.d ],
-        [0.0,    0.0,      0.0,      1.0  ],
-    ])
+    return np.array(
+        [
+            [ct, -st * ca, st * sa, dh.a * ct],
+            [st, ct * ca, -ct * sa, dh.a * st],
+            [0.0, sa, ca, dh.d],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    )
 
 
 def _pose_error(T_target: np.ndarray, T_current: np.ndarray) -> np.ndarray:
@@ -87,6 +92,7 @@ def _pose_error(T_target: np.ndarray, T_current: np.ndarray) -> np.ndarray:
 # Main kinematics class
 # ---------------------------------------------------------------------------
 
+
 class D1Kinematics:
     """Kinematics solver for the Unitree D1 7-DOF arm."""
 
@@ -99,9 +105,9 @@ class D1Kinematics:
     def forward_kinematics(self, joint_angles: np.ndarray) -> np.ndarray:
         """Compute the 4×4 end-effector pose from joint angles."""
         joint_angles = np.asarray(joint_angles, dtype=float)
-        assert joint_angles.shape == (self.n_joints,), (
-            f"Expected {self.n_joints} angles, got {joint_angles.shape}"
-        )
+        assert joint_angles.shape == (
+            self.n_joints,
+        ), f"Expected {self.n_joints} angles, got {joint_angles.shape}"
         T = np.eye(4)
         for dh, q in zip(self.dh_params, joint_angles):
             T = T @ _dh_transform(dh, q)
@@ -133,10 +139,10 @@ class D1Kinematics:
         p_ee = transforms[-1][:3, 3]
         J = np.zeros((6, self.n_joints))
         for i in range(self.n_joints):
-            z_i = transforms[i][:3, 2]          # z-axis of frame i
-            p_i = transforms[i][:3, 3]          # origin of frame i
+            z_i = transforms[i][:3, 2]  # z-axis of frame i
+            p_i = transforms[i][:3, 3]  # origin of frame i
             J[:3, i] = np.cross(z_i, p_ee - p_i)  # linear velocity
-            J[3:, i] = z_i                         # angular velocity
+            J[3:, i] = z_i  # angular velocity
         return J
 
     # ----- inverse kinematics (damped least-squares) -----
@@ -175,9 +181,11 @@ class D1Kinematics:
 
             J = self.jacobian(q)
             # DLS: dq = J^T (J J^T + λ²I)^{-1} e
-            JJt = J @ J.T + (damping ** 2) * np.eye(6)
+            JJt = J @ J.T + (damping**2) * np.eye(6)
             dq = J.T @ np.linalg.solve(JJt, err)
             q = q + dq
 
-        logger.warning("IK did not converge after %d iterations (err=%.4e)", max_iter, np.linalg.norm(err))
+        logger.warning(
+            "IK did not converge after %d iterations (err=%.4e)", max_iter, np.linalg.norm(err)
+        )
         return q

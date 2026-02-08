@@ -16,6 +16,7 @@ def _parse_time(t: float | str | None) -> float | None:
         return float(t)
     # ISO format
     from datetime import datetime, timezone
+
     try:
         dt = datetime.fromisoformat(t)
         if dt.tzinfo is None:
@@ -25,7 +26,9 @@ def _parse_time(t: float | str | None) -> float | None:
         return float(t)
 
 
-def _time_range(start: float | str | None, end: float | str | None) -> tuple[float | None, float | None]:
+def _time_range(
+    start: float | str | None, end: float | str | None
+) -> tuple[float | None, float | None]:
     return _parse_time(start), _parse_time(end)
 
 
@@ -68,7 +71,10 @@ class TelemetryQuery:
 
     # -- Joint history --
     def get_joint_history(
-        self, joint: int, start: float | str | None = None, end: float | str | None = None,
+        self,
+        joint: int,
+        start: float | str | None = None,
+        end: float | str | None = None,
         limit: int = 5000,
     ) -> list[dict]:
         s, e = _time_range(start, end)
@@ -82,7 +88,10 @@ class TelemetryQuery:
 
     # -- Tracking error --
     def get_tracking_error(
-        self, joint: int, start: float | str | None = None, end: float | str | None = None,
+        self,
+        joint: int,
+        start: float | str | None = None,
+        end: float | str | None = None,
         delay_s: float = 0.2,
     ) -> dict:
         s, e = _time_range(start, end)
@@ -104,10 +113,14 @@ class TelemetryQuery:
             )
             if fb:
                 err = abs(cmd["target_value"] - fb[0]["angle"])
-                errors.append({
-                    "ts": cmd["ts"], "target": cmd["target_value"],
-                    "actual": fb[0]["angle"], "error": err,
-                })
+                errors.append(
+                    {
+                        "ts": cmd["ts"],
+                        "target": cmd["target_value"],
+                        "actual": fb[0]["angle"],
+                        "error": err,
+                    }
+                )
         if not errors:
             return {"mean_error_deg": 0.0, "max_error_deg": 0.0, "samples": 0, "errors": []}
         errs = [e["error"] for e in errors]
@@ -127,20 +140,27 @@ class TelemetryQuery:
         )
         total = sum(r["cnt"] for r in rows)
         by_funcode = {r["funcode"]: r["cnt"] / window_seconds for r in rows}
-        return {"total_commands": total, "rate_hz": total / window_seconds, "by_funcode": by_funcode}
+        return {
+            "total_commands": total,
+            "rate_hz": total / window_seconds,
+            "by_funcode": by_funcode,
+        }
 
     # -- Feedback rate --
     def get_feedback_rate(self, window_seconds: float = 10.0) -> dict:
         cutoff = time.time() - window_seconds
         rows = self._fetchall(
-            "SELECT COUNT(*) AS cnt FROM dds_feedback WHERE ts >= ?", (cutoff,),
+            "SELECT COUNT(*) AS cnt FROM dds_feedback WHERE ts >= ?",
+            (cutoff,),
         )
         total = rows[0]["cnt"] if rows else 0
         return {"total_feedback": total, "rate_hz": total / window_seconds}
 
     # -- Gripper log --
     def get_gripper_log(
-        self, start: float | str | None = None, end: float | str | None = None,
+        self,
+        start: float | str | None = None,
+        end: float | str | None = None,
         limit: int = 1000,
     ) -> list[dict]:
         s, e = _time_range(start, end)
@@ -158,8 +178,11 @@ class TelemetryQuery:
 
     # -- System events --
     def get_system_events(
-        self, event_type: str | None = None, start: float | str | None = None,
-        end: float | str | None = None, limit: int = 500,
+        self,
+        event_type: str | None = None,
+        start: float | str | None = None,
+        end: float | str | None = None,
+        limit: int = 500,
     ) -> list[dict]:
         s, e = _time_range(start, end)
         sql = "SELECT * FROM system_events WHERE 1=1"
@@ -174,8 +197,11 @@ class TelemetryQuery:
 
     # -- Camera health --
     def get_camera_health(
-        self, camera_id: str | None = None, start: float | str | None = None,
-        end: float | str | None = None, limit: int = 500,
+        self,
+        camera_id: str | None = None,
+        start: float | str | None = None,
+        end: float | str | None = None,
+        limit: int = 500,
     ) -> list[dict]:
         s, e = _time_range(start, end)
         sql = "SELECT * FROM camera_health WHERE 1=1"
@@ -190,8 +216,11 @@ class TelemetryQuery:
 
     # -- Web request latency --
     def get_web_request_latency(
-        self, endpoint: str | None = None, start: float | str | None = None,
-        end: float | str | None = None, limit: int = 500,
+        self,
+        endpoint: str | None = None,
+        start: float | str | None = None,
+        end: float | str | None = None,
+        limit: int = 500,
     ) -> list[dict]:
         s, e = _time_range(start, end)
         sql = "SELECT * FROM web_requests WHERE 1=1"
@@ -206,8 +235,11 @@ class TelemetryQuery:
 
     # -- Smoother state --
     def get_smoother_state(
-        self, joint: int | None = None, start: float | str | None = None,
-        end: float | str | None = None, limit: int = 2000,
+        self,
+        joint: int | None = None,
+        start: float | str | None = None,
+        end: float | str | None = None,
+        limit: int = 2000,
     ) -> list[dict]:
         s, e = _time_range(start, end)
         sql = "SELECT * FROM smoother_state WHERE 1=1"
@@ -229,7 +261,9 @@ class TelemetryQuery:
 
     # -- Command count --
     def get_command_count(
-        self, start: float | str | None = None, end: float | str | None = None,
+        self,
+        start: float | str | None = None,
+        end: float | str | None = None,
     ) -> int:
         s, e = _time_range(start, end)
         sql = "SELECT COUNT(*) AS cnt FROM dds_commands WHERE 1=1"
@@ -252,7 +286,9 @@ class TelemetryQuery:
 
     # -- Summary --
     def summary(
-        self, start: float | str | None = None, end: float | str | None = None,
+        self,
+        start: float | str | None = None,
+        end: float | str | None = None,
     ) -> dict:
         s, e = _time_range(start, end)
 
@@ -310,8 +346,12 @@ class TelemetryQuery:
 
     def get_db_stats(self) -> dict:
         tables = [
-            "dds_commands", "dds_feedback", "smoother_state",
-            "web_requests", "camera_health", "system_events",
+            "dds_commands",
+            "dds_feedback",
+            "smoother_state",
+            "web_requests",
+            "camera_health",
+            "system_events",
         ]
         stats: dict[str, int] = {}
         for t in tables:

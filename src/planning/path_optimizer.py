@@ -14,8 +14,11 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 
 from src.planning.motion_planner import (
-    Trajectory, TrajectoryPoint, NUM_ARM_JOINTS,
-    DEFAULT_MAX_JOINT_SPEED, DEFAULT_MAX_JOINT_ACCEL,
+    Trajectory,
+    TrajectoryPoint,
+    NUM_ARM_JOINTS,
+    DEFAULT_MAX_JOINT_SPEED,
+    DEFAULT_MAX_JOINT_ACCEL,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,8 +32,16 @@ class PathOptimizer:
         max_joint_speed: np.ndarray | None = None,
         max_joint_accel: np.ndarray | None = None,
     ):
-        self.max_joint_speed = np.array(max_joint_speed) if max_joint_speed is not None else DEFAULT_MAX_JOINT_SPEED.copy()
-        self.max_joint_accel = np.array(max_joint_accel) if max_joint_accel is not None else DEFAULT_MAX_JOINT_ACCEL.copy()
+        self.max_joint_speed = (
+            np.array(max_joint_speed)
+            if max_joint_speed is not None
+            else DEFAULT_MAX_JOINT_SPEED.copy()
+        )
+        self.max_joint_accel = (
+            np.array(max_joint_accel)
+            if max_joint_accel is not None
+            else DEFAULT_MAX_JOINT_ACCEL.copy()
+        )
 
     # ------------------------------------------------------------------
     # Trajectory smoothing via cubic spline
@@ -61,11 +72,11 @@ class PathOptimizer:
         # Fit cubic spline per joint
         splines = []
         for j in range(NUM_ARM_JOINTS):
-            cs = CubicSpline(times, positions[:, j], bc_type='clamped')
+            cs = CubicSpline(times, positions[:, j], bc_type="clamped")
             splines.append(cs)
 
         # Gripper spline
-        gripper_spline = CubicSpline(times, grippers, bc_type='clamped')
+        gripper_spline = CubicSpline(times, grippers, bc_type="clamped")
 
         # Resample
         duration = times[-1] - times[0]
@@ -79,13 +90,15 @@ class PathOptimizer:
             acc = np.array([splines[j](t, 2) for j in range(NUM_ARM_JOINTS)])
             g = float(gripper_spline(t))
 
-            new_points.append(TrajectoryPoint(
-                time=float(t),
-                positions=pos,
-                velocities=vel,
-                accelerations=acc,
-                gripper_mm=g,
-            ))
+            new_points.append(
+                TrajectoryPoint(
+                    time=float(t),
+                    positions=pos,
+                    velocities=vel,
+                    accelerations=acc,
+                    gripper_mm=g,
+                )
+            )
 
         return Trajectory(points=new_points, label=trajectory.label + "_smoothed")
 
@@ -192,13 +205,15 @@ class PathOptimizer:
                 else:
                     acc = np.zeros(NUM_ARM_JOINTS)
 
-            new_points.append(TrajectoryPoint(
-                time=new_times[i],
-                positions=positions[i].copy(),
-                velocities=vel,
-                accelerations=acc,
-                gripper_mm=grippers[i],
-            ))
+            new_points.append(
+                TrajectoryPoint(
+                    time=new_times[i],
+                    positions=positions[i].copy(),
+                    velocities=vel,
+                    accelerations=acc,
+                    gripper_mm=grippers[i],
+                )
+            )
 
         return Trajectory(points=new_points, label=trajectory.label + "_timeopt")
 

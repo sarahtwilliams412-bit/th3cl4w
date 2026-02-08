@@ -28,6 +28,7 @@ COMMAND_PACKET_SIZE = struct.calcsize(COMMAND_PACKET_FORMAT)
 @dataclass
 class D1State:
     """Current state of the D1 arm."""
+
     joint_positions: np.ndarray  # 7 joints (6 arm + 1 gripper)
     joint_velocities: np.ndarray
     joint_torques: np.ndarray
@@ -38,6 +39,7 @@ class D1State:
 @dataclass
 class D1Command:
     """Command to send to the D1 arm."""
+
     mode: int  # 0=idle, 1=position, 2=velocity, 3=torque
     joint_positions: Optional[np.ndarray] = None
     joint_velocities: Optional[np.ndarray] = None
@@ -169,11 +171,11 @@ class D1Connection:
 
         values = struct.unpack(STATE_PACKET_FORMAT, data[:STATE_PACKET_SIZE])
         idx = 0
-        joint_positions = np.array(values[idx:idx + NUM_JOINTS], dtype=np.float64)
+        joint_positions = np.array(values[idx : idx + NUM_JOINTS], dtype=np.float64)
         idx += NUM_JOINTS
-        joint_velocities = np.array(values[idx:idx + NUM_JOINTS], dtype=np.float64)
+        joint_velocities = np.array(values[idx : idx + NUM_JOINTS], dtype=np.float64)
         idx += NUM_JOINTS
-        joint_torques = np.array(values[idx:idx + NUM_JOINTS], dtype=np.float64)
+        joint_torques = np.array(values[idx : idx + NUM_JOINTS], dtype=np.float64)
         idx += NUM_JOINTS
         gripper_position = float(values[idx])
         idx += 1
@@ -198,7 +200,9 @@ class D1Connection:
           1 float   — gripper position
         """
         positions = cmd.joint_positions if cmd.joint_positions is not None else np.zeros(NUM_JOINTS)
-        velocities = cmd.joint_velocities if cmd.joint_velocities is not None else np.zeros(NUM_JOINTS)
+        velocities = (
+            cmd.joint_velocities if cmd.joint_velocities is not None else np.zeros(NUM_JOINTS)
+        )
         torques = cmd.joint_torques if cmd.joint_torques is not None else np.zeros(NUM_JOINTS)
         gripper = cmd.gripper_position if cmd.gripper_position is not None else 0.0
 

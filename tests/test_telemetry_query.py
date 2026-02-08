@@ -119,10 +119,15 @@ def _create_test_db(path: str) -> None:
     )
 
     # System events
-    for i, (etype, level) in enumerate([
-        ("power_on", "info"), ("enable", "info"), ("error", "error"),
-        ("connect", "info"), ("disconnect", "warning"),
-    ]):
+    for i, (etype, level) in enumerate(
+        [
+            ("power_on", "info"),
+            ("enable", "info"),
+            ("error", "error"),
+            ("connect", "info"),
+            ("disconnect", "warning"),
+        ]
+    ):
         conn.execute(
             "INSERT INTO system_events (ts, event_type, source, detail, level) VALUES (?,?,?,?,?)",
             (NOW - 4 + i, etype, "dds", f"Test event {i}", level),
@@ -274,7 +279,9 @@ class TestCLI(unittest.TestCase):
     def _run(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, self.cli, "--db", self.db_path, *args],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
 
     def test_summary(self) -> None:

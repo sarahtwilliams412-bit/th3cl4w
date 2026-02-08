@@ -231,6 +231,7 @@ class TestSmootherAsync:
             await asyncio.sleep(0.15)
             await s.stop()
             assert not s.running
+
         asyncio.run(_run())
 
     def test_smoothing_over_time(self, mock_arm):
@@ -242,6 +243,7 @@ class TestSmootherAsync:
             await asyncio.sleep(0.3)
             await s.stop()
             assert s._current[0] == pytest.approx(90.0, abs=1.0)
+
         asyncio.run(_run())
 
 

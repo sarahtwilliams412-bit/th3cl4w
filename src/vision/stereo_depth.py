@@ -38,8 +38,8 @@ class StereoDepthEstimator:
         self.min_disparity = min_disparity
         self.num_disparities = num_disparities
         self.block_size = block_size
-        self.p1 = p1 if p1 is not None else 8 * cn * block_size ** 2
-        self.p2 = p2 if p2 is not None else 32 * cn * block_size ** 2
+        self.p1 = p1 if p1 is not None else 8 * cn * block_size**2
+        self.p2 = p2 if p2 is not None else 32 * cn * block_size**2
 
         self.stereo = cv2.StereoSGBM_create(
             minDisparity=min_disparity,
@@ -143,7 +143,11 @@ class StereoDepthEstimator:
         points_3d = cv2.reprojectImageTo3D(disparity, self.calibrator.Q, handleMissingValues=True)
 
         # Filter invalid points
-        mask = np.isfinite(points_3d[:, :, 2]) & (points_3d[:, :, 2] > 0) & (points_3d[:, :, 2] < 10000)
+        mask = (
+            np.isfinite(points_3d[:, :, 2])
+            & (points_3d[:, :, 2] > 0)
+            & (points_3d[:, :, 2] < 10000)
+        )
 
         points = points_3d[mask]
 

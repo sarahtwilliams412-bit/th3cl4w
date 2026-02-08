@@ -31,9 +31,7 @@ class CameraHealthMonitor:
 
     # -- ingest ----------------------------------------------------------
 
-    def on_frame(
-        self, resolution: tuple[int, int], connected: bool = True
-    ) -> None:
+    def on_frame(self, resolution: tuple[int, int], connected: bool = True) -> None:
         now = time.monotonic()
         self._connected = connected
         self._resolution = resolution
