@@ -419,7 +419,15 @@ class D1DDSConnection:
             for sample in samples:
                 _fb_count += 1
                 if _fb_count <= 3 or _fb_count % 100 == 0:
-                    logger.info("Feedback sample #%d received, data_=%s", _fb_count, getattr(sample, 'data_', 'N/A')[:100] if hasattr(sample, 'data_') else 'no data_')
+                    logger.info(
+                        "Feedback sample #%d received, data_=%s",
+                        _fb_count,
+                        (
+                            getattr(sample, "data_", "N/A")[:100]
+                            if hasattr(sample, "data_")
+                            else "no data_"
+                        ),
+                    )
                 try:
                     self._process_feedback(sample)
                 except Exception as e:
