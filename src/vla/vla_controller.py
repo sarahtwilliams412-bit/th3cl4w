@@ -18,6 +18,7 @@ import httpx
 
 from src.vla.vla_model import VLABackend, GeminiVLABackend, Observation, ActionPlan
 from src.vla.action_decoder import ActionDecoder, ArmAction, ActionType
+from src.control.contact_detector import GripperContactDetector
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,8 @@ class VLAController:
         self._abort = False
         self._current_task: Optional[str] = None
         self._history: List[str] = []
+        self._contact_detector = GripperContactDetector(api_base=ARM_API)
+        self._use_adaptive_grip = True  # use contact detection for grips
 
     @property
     def state(self) -> TaskState:
@@ -156,7 +159,33 @@ class VLAController:
         return True
 
     async def _execute_gripper(self, position_mm: float) -> bool:
-        """Send a gripper command and wait."""
+        """Send a gripper command with optional contact detection.
+
+        For closing actions (position < 30mm), uses adaptive grip with
+        contact detection. For opening actions, sends raw command.
+        """
+        is_closing = position_mm < 30.0
+
+        if is_closing and self._use_adaptive_grip:
+            logger.info("Using adaptive grip (target=%.0fmm)", position_mm)
+            result = await self._contact_detector.adaptive_grip(
+                initial_mm=position_mm,
+                object_min_mm=25.0,
+            )
+            if result.contacted:
+                logger.info(
+                    "Contact detected at %.1fmm after %d steps",
+                    result.final_mm, result.steps_taken,
+                )
+                self._history.append(
+                    f"CONTACT at {result.final_mm:.1f}mm"
+                )
+            else:
+                logger.warning("No contact detected — gripper closed to %.1fmm", result.final_mm)
+                self._history.append("NO_CONTACT — grip missed")
+            return True
+
+        # Raw command for opening or non-adaptive mode
         async with httpx.AsyncClient(timeout=15.0) as c:
             resp = await c.post(
                 f"{ARM_API}/api/command/set-gripper",

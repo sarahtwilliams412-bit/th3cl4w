@@ -587,7 +587,14 @@ def get_arm_state() -> Dict[str, Any]:
             "timestamp": time.time(),
         }
 
-    angles_raw = arm.get_joint_angles()
+    # Prefer reliable (zero-filtered) joint angles if available
+    if hasattr(arm, "get_reliable_joint_angles"):
+        angles_raw = arm.get_reliable_joint_angles()
+        if angles_raw is None:
+            # Fall back to raw if reliable returns None (all stale)
+            angles_raw = arm.get_joint_angles()
+    else:
+        angles_raw = arm.get_joint_angles()
     if angles_raw is not None:
         angles = [round(float(a), 2) for a in angles_raw]
     else:
@@ -715,6 +722,16 @@ async def api_cameras():
 async def api_state():
     """Return current arm state (joints, gripper, power, enabled, error)."""
     return get_arm_state()
+
+
+@app.get("/api/diagnostics/feedback")
+async def api_diagnostics_feedback():
+    """Return DDS feedback health and recent samples for debugging."""
+    if arm is None or not hasattr(arm, "get_feedback_health"):
+        return {"available": False, "error": "No DDS connection or feedback monitor"}
+    health = arm.get_feedback_health()
+    recent = arm.feedback_monitor.get_recent_samples(20)
+    return {"available": True, "health": health, "recent_samples": recent}
 
 
 @app.get("/api/log")
@@ -902,6 +919,47 @@ async def cmd_set_gripper(req: SetGripperRequest):
     resp = cmd_response(ok, "SET_GRIPPER", f"{req.position} mm", cid)
     await broadcast_ack("SET_GRIPPER", ok)
     return resp
+
+
+# ── Gripper Contact Detection endpoints ──────────────────────────────
+from src.control.contact_detector import GripperContactDetector, OBJECT_PROFILES
+
+_contact_detector = GripperContactDetector()
+
+
+@app.post("/api/gripper/adaptive-close")
+async def gripper_adaptive_close(
+    profile: Optional[str] = None,
+    initial_mm: float = 15.0,
+    object_min_mm: float = 25.0,
+):
+    """Close gripper with adaptive contact detection."""
+    result = await _contact_detector.adaptive_grip(
+        initial_mm=initial_mm,
+        object_min_mm=object_min_mm,
+        profile=profile,
+    )
+    return {
+        "contacted": result.contacted,
+        "final_mm": result.final_mm,
+        "steps_taken": result.steps_taken,
+        "grip_force_mm": result.grip_force_mm,
+    }
+
+
+@app.get("/api/gripper/contact-status")
+async def gripper_contact_status():
+    """Return the last contact detection result."""
+    r = _contact_detector.last_result
+    if r is None:
+        return {"status": "no_detection_yet"}
+    return {
+        "contacted": r.contacted,
+        "status": r.status.value,
+        "final_mm": r.final_mm,
+        "stable_mm": r.stable_mm,
+        "time_s": round(r.time_s, 3),
+    }
 
 
 @app.post("/api/command/stop")

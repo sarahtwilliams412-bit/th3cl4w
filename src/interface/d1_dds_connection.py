@@ -88,7 +88,7 @@ class D1DDSConnection:
     # How often the reader thread polls for new samples (seconds)
     _POLL_INTERVAL = 0.005  # 5 ms — fast enough for real-time feedback
 
-    def __init__(self, collector=None) -> None:
+    def __init__(self, collector=None, feedback_monitor=None) -> None:
         self._dp: Optional[DomainParticipant] = None
         self._reader: Optional[DataReader] = None
         self._writer: Optional[DataWriter] = None
@@ -102,6 +102,12 @@ class D1DDSConnection:
         self._last_stale_warn: float = 0.0
         # Use explicitly passed collector to avoid singleton import-path issues
         self._collector = collector
+        # Feedback quality monitor — filters zero reads, provides reliable state
+        if feedback_monitor is not None:
+            self._feedback_monitor = feedback_monitor
+        else:
+            from .feedback_monitor import FeedbackMonitor
+            self._feedback_monitor = FeedbackMonitor()
 
     def _get_collector(self):
         """Return the telemetry collector — prefer explicit instance, fall back to singleton."""
@@ -471,6 +477,39 @@ class D1DDSConnection:
         )
 
     # ------------------------------------------------------------------
+    # Reliable state (filtered feedback)
+    # ------------------------------------------------------------------
+
+    @property
+    def feedback_monitor(self):
+        """Access the feedback quality monitor."""
+        return self._feedback_monitor
+
+    def get_reliable_joint_angles(self) -> Optional[np.ndarray]:
+        """Return filtered joint angles (zero-reads excluded), or None."""
+        return self._feedback_monitor.get_reliable_angles()
+
+    def get_reliable_state(self) -> Optional[D1State]:
+        """Return a D1State from reliable (non-zero) feedback, or None."""
+        angles = self._feedback_monitor.get_reliable_angles()
+        if angles is None:
+            return None
+        gripper = self._feedback_monitor.get_reliable_gripper()
+        with self._cache.lock:
+            ts = self._cache.last_update
+        return D1State(
+            joint_positions=angles,
+            joint_velocities=np.zeros(NUM_JOINTS, dtype=np.float64),
+            joint_torques=np.zeros(NUM_JOINTS, dtype=np.float64),
+            gripper_position=float(gripper) if gripper is not None else 0.0,
+            timestamp=ts,
+        )
+
+    def get_feedback_health(self) -> dict:
+        """Return feedback health metrics as a dict."""
+        return self._feedback_monitor.get_health().to_dict()
+
+    # ------------------------------------------------------------------
     # Background feedback reader
     # ------------------------------------------------------------------
 
@@ -560,6 +599,9 @@ class D1DDSConnection:
             if funcode == 1:
                 # Joint angle feedback
                 self._cache.joint_angles = data
+                # Feed to quality monitor (outside lock is fine, monitor has its own)
+                if isinstance(data, dict):
+                    self._feedback_monitor.record_sample(data, seq=seq)
                 # Track per-joint freshness (last time each joint had a non-zero value)
                 if isinstance(data, dict):
                     for key, val in data.items():
