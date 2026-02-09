@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D1 Arm Viewer — th3cl4w</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+:root { --bg: #1a1a2e; --card: #16213e; --border: #1a2744; --text: #e0e0e0; --dim: #8892a4; --mono: 'JetBrains Mono', 'Fira Code', monospace; --success: #53d769; --danger: #e94560; --info: #4a90d9; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:var(--mono); display:flex; height:100vh; overflow:hidden; }
+#viewport { flex:1; position:relative; }
+canvas { display:block; }
+.sidebar { width:340px; background:var(--card); border-left:1px solid var(--border); overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
+.title { font-size:16px; font-weight:700; color:var(--danger); letter-spacing:2px; }
+.subtitle { font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:2px; margin-bottom:2px; }
+.conn-bar { display:flex; align-items:center; gap:8px; padding:6px 0; }
+.dot { width:8px; height:8px; border-radius:50%; background:#666; }
+.dot.on { background:var(--success); box-shadow:0 0 6px var(--success); }
+.dot.off { background:var(--danger); box-shadow:0 0 6px var(--danger); }
+.conn-label { font-size:11px; color:var(--dim); }
+.section { background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:4px; padding:8px; }
+.joint-row { display:flex; align-items:center; gap:6px; margin:3px 0; }
+.joint-label { width:22px; font-size:10px; color:var(--dim); text-align:right; }
+.joint-slider { flex:1; -webkit-appearance:none; height:4px; background:#1a2744; border-radius:2px; outline:none; }
+.joint-slider::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:12px; border-radius:50%; cursor:pointer; border:2px solid; }
+.joint-value { width:55px; font-size:10px; text-align:right; }
+.ee-info { font-size:10px; color:var(--dim); line-height:1.6; }
+.ee-info span { color:var(--text); }
+.btn-row { display:flex; gap:4px; flex-wrap:wrap; }
+.btn { font-family:var(--mono); font-size:10px; padding:4px 10px; border:1px solid var(--border); border-radius:3px; cursor:pointer; background:var(--card); color:var(--text); text-transform:uppercase; letter-spacing:1px; }
+.btn:hover { background:#0f3460; border-color:var(--info); }
+.btn.active { background:#0a3d20; border-color:var(--success); color:var(--success); }
+.ghost-toggle { font-size:10px; }
+input[type="text"] { font-family:var(--mono); font-size:11px; padding:4px 8px; background:#0d1525; border:1px solid var(--border); border-radius:3px; color:var(--text); width:100%; }
+::-webkit-scrollbar { width:5px; }
+::-webkit-scrollbar-track { background:var(--card); }
+::-webkit-scrollbar-thumb { background:#2a3a5c; border-radius:3px; }
+</style>
+</head>
+<body>
+
+<div id="viewport"></div>
+
+<div class="sidebar">
+  <div class="title">D1 ARM VIEWER</div>
+
+  <div class="conn-bar">
+    <div class="dot" id="connDot"></div>
+    <span class="conn-label" id="connLabel">Disconnected</span>
+  </div>
+
+  <div class="section">
+    <div class="subtitle">Server</div>
+    <input type="text" id="wsUrl" value="" placeholder="ws://localhost:8081/ws/state">
+    <div style="margin-top:4px"><button class="btn" id="btnConnect">Connect</button></div>
+  </div>
+
+  <div class="section">
+    <div class="subtitle">Joint Angles</div>
+    <div id="sliders"></div>
+    <div class="joint-row" style="margin-top:6px">
+      <span class="joint-label">G</span>
+      <input type="range" class="joint-slider" id="gripSlider" min="0" max="65" step="0.5" value="0" style="border-color:#44ffcc">
+      <span class="joint-value" id="gripValue">0.0 mm</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="subtitle">End Effector</div>
+    <div class="ee-info" id="eeInfo">
+      X: <span>--</span><br>
+      Y: <span>--</span><br>
+      Z: <span>--</span><br>
+      Reach: <span>--</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="subtitle">Presets</div>
+    <div class="btn-row">
+      <button class="btn" onclick="setPreset([0,0,0,0,0,0])">Home</button>
+      <button class="btn" onclick="setPreset([0,-45,45,0,0,0])">Ready</button>
+      <button class="btn" onclick="setPreset([0,-60,90,0,-30,0])">Reach</button>
+      <button class="btn" onclick="setPreset([45,-30,60,0,-45,0])">Pick L</button>
+      <button class="btn" onclick="setPreset([-45,-30,60,0,-45,0])">Pick R</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="subtitle">Options</div>
+    <div class="btn-row">
+      <button class="btn" id="btnGhost">Ghost</button>
+      <button class="btn" id="btnAxes">Axes</button>
+      <button class="btn" id="btnTable">Table</button>
+      <button class="btn" id="btnWire">Wire</button>
+      <button class="btn" id="btnReset">Reset View</button>
+    </div>
+    <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:6px;margin-top:6px">
+      <input type="checkbox" id="chkSendCmds"> Send commands to server
+    </label>
+  </div>
+
+  <div class="section">
+    <div class="subtitle">WS Log</div>
+    <div id="wsLog" style="font-size:9px;color:var(--dim);max-height:100px;overflow-y:auto;line-height:1.4;word-break:break-all;"></div>
+  </div>
+</div>
+
+<script>
+// Inline arm3d.js core (for standalone use without server)
+</script>
+<script>
+// Load arm3d.js — try relative path from tools/ or from server
+(function(){
+  const s = document.createElement('script');
+  // When served from the th3cl4w server, static files are at /static/js/
+  // When opened as a file, try relative path
+  s.src = window.location.protocol === 'file:'
+    ? '../web/static/js/arm3d.js'
+    : '/static/js/arm3d.js';
+  s.onerror = () => console.warn('Could not load arm3d.js — using inline fallback');
+  document.head.appendChild(s);
+})();
+</script>
+
+<script>
+'use strict';
+
+// Wait for arm3d.js to load
+window.addEventListener('load', () => setTimeout(init, 100));
+
+let scene, camera, renderer, controls, arm, ghostArm;
+let tableGroup, axesHelper;
+let ws = null;
+let sendCmds = false;
+let animId;
+
+const DEG = Math.PI / 180;
+const JOINT_SPECS = [
+  { name:'J0', min:-135, max:135, color:'#00aaff' },
+  { name:'J1', min:-90,  max:90,  color:'#ff6600' },
+  { name:'J2', min:-90,  max:90,  color:'#00cc44' },
+  { name:'J3', min:-135, max:135, color:'#cc00ff' },
+  { name:'J4', min:-90,  max:90,  color:'#ffcc00' },
+  { name:'J5', min:-135, max:135, color:'#ff0066' },
+];
+
+function init() {
+  const container = document.getElementById('viewport');
+  const w = container.clientWidth, h = container.clientHeight;
+
+  // Scene
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0d1117);
+  scene.fog = new THREE.Fog(0x0d1117, 2, 5);
+
+  // Camera
+  camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 10);
+  camera.position.set(0.5, 0.4, 0.5);
+  camera.lookAt(0, 0.2, 0);
+
+  // Renderer
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  container.appendChild(renderer.domElement);
+
+  // Controls
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.15, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
+  controls.update();
+
+  // Lights
+  const amb = new THREE.AmbientLight(0x404060, 0.6);
+  scene.add(amb);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(1, 2, 1);
+  dir.castShadow = true;
+  scene.add(dir);
+  const point = new THREE.PointLight(0x4a90d9, 0.4, 3);
+  point.position.set(-0.5, 0.5, 0.5);
+  scene.add(point);
+
+  // Ground grid
+  const grid = new THREE.GridHelper(2, 40, 0x1a2744, 0x111827);
+  scene.add(grid);
+
+  // Arm
+  if (typeof D1Arm3D === 'undefined') {
+    console.error('arm3d.js not loaded');
+    return;
+  }
+
+  arm = new D1Arm3D({ smoothing: 0.15 });
+  scene.add(arm.group);
+
+  // Table (hidden by default)
+  tableGroup = createWorkTable({ width: 0.8, depth: 0.5, y: -0.01 });
+  tableGroup.position.set(0.15, 0, 0);
+  tableGroup.visible = false;
+  scene.add(tableGroup);
+
+  // Axes (hidden by default)
+  axesHelper = createAxes(0.15);
+  axesHelper.visible = false;
+  scene.add(axesHelper);
+
+  // Build sliders
+  buildSliders();
+
+  // Default WS URL
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  document.getElementById('wsUrl').value = `${proto}//${location.host}/ws/state`;
+
+  // Event handlers
+  document.getElementById('btnConnect').onclick = toggleConnect;
+  document.getElementById('btnGhost').onclick = toggleGhost;
+  document.getElementById('btnAxes').onclick = () => { axesHelper.visible = !axesHelper.visible; document.getElementById('btnAxes').classList.toggle('active'); };
+  document.getElementById('btnTable').onclick = () => { tableGroup.visible = !tableGroup.visible; document.getElementById('btnTable').classList.toggle('active'); };
+  document.getElementById('btnWire').onclick = toggleWireframe;
+  document.getElementById('btnReset').onclick = resetView;
+  document.getElementById('chkSendCmds').onchange = (e) => { sendCmds = e.target.checked; };
+
+  window.addEventListener('resize', onResize);
+  animate();
+}
+
+function buildSliders() {
+  const div = document.getElementById('sliders');
+  JOINT_SPECS.forEach((spec, i) => {
+    const row = document.createElement('div');
+    row.className = 'joint-row';
+    row.innerHTML = `
+      <span class="joint-label" style="color:${spec.color}">${spec.name}</span>
+      <input type="range" class="joint-slider" id="js${i}" min="${spec.min}" max="${spec.max}" step="0.5" value="0"
+        style="--c:${spec.color}">
+      <span class="joint-value" id="jv${i}">0.0°</span>
+    `;
+    div.appendChild(row);
+
+    const slider = row.querySelector('input');
+    slider.style.setProperty('--c', spec.color);
+    slider.addEventListener('input', () => {
+      const val = parseFloat(slider.value);
+      document.getElementById(`jv${i}`).textContent = val.toFixed(1) + '°';
+      const angles = getCurrentSliderAngles();
+      arm.setTarget(angles, parseFloat(document.getElementById('gripSlider').value));
+      if (sendCmds && ws && ws.readyState === 1) {
+        sendJointCmd(i, val);
+      }
+    });
+  });
+
+  document.getElementById('gripSlider').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('gripValue').textContent = val.toFixed(1) + ' mm';
+    arm.targetGripperWidth = val;
+    if (sendCmds && ws && ws.readyState === 1) {
+      sendGripperCmd(val);
+    }
+  });
+}
+
+function getCurrentSliderAngles() {
+  return JOINT_SPECS.map((_, i) => parseFloat(document.getElementById(`js${i}`).value));
+}
+
+function setPreset(angles) {
+  angles.forEach((a, i) => {
+    const slider = document.getElementById(`js${i}`);
+    if (slider) {
+      slider.value = a;
+      document.getElementById(`jv${i}`).textContent = a.toFixed(1) + '°';
+    }
+  });
+  arm.setTarget(angles, parseFloat(document.getElementById('gripSlider').value));
+}
+window.setPreset = setPreset;
+
+function toggleConnect() {
+  if (ws && ws.readyState <= 1) {
+    ws.close();
+    ws = null;
+    updateConn(false);
+    return;
+  }
+  const url = document.getElementById('wsUrl').value;
+  try {
+    ws = new WebSocket(url);
+    ws.onopen = () => { updateConn(true); wsLog('Connected'); };
+    ws.onclose = () => { updateConn(false); wsLog('Disconnected'); };
+    ws.onerror = () => { wsLog('Error'); };
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.joints) {
+          const joints6 = data.joints.slice(0, 6);
+          arm.setTarget([...joints6, 0], data.gripper || 0);
+          // Update sliders (unless user is dragging)
+          joints6.forEach((v, i) => {
+            const slider = document.getElementById(`js${i}`);
+            if (slider && document.activeElement !== slider) {
+              slider.value = v;
+              document.getElementById(`jv${i}`).textContent = v.toFixed(1) + '°';
+            }
+          });
+          const gs = document.getElementById('gripSlider');
+          if (document.activeElement !== gs) {
+            gs.value = data.gripper || 0;
+            document.getElementById('gripValue').textContent = (data.gripper || 0).toFixed(1) + ' mm';
+          }
+        }
+      } catch(err) {}
+    };
+  } catch(e) { wsLog('Failed: ' + e.message); }
+}
+
+function updateConn(on) {
+  document.getElementById('connDot').className = 'dot ' + (on ? 'on' : 'off');
+  document.getElementById('connLabel').textContent = on ? 'Connected' : 'Disconnected';
+  document.getElementById('btnConnect').textContent = on ? 'Disconnect' : 'Connect';
+}
+
+function wsLog(msg) {
+  const el = document.getElementById('wsLog');
+  const t = new Date().toTimeString().slice(0,8);
+  el.innerHTML += `<div>${t} ${msg}</div>`;
+  if (el.children.length > 50) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendJointCmd(id, angle) {
+  try {
+    const base = location.origin;
+    await fetch(`${base}/api/command/set-joint`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, angle })
+    });
+  } catch(e) {}
+}
+
+async function sendGripperCmd(pos) {
+  try {
+    const base = location.origin;
+    await fetch(`${base}/api/command/set-gripper`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ position: pos })
+    });
+  } catch(e) {}
+}
+
+function toggleGhost() {
+  const btn = document.getElementById('btnGhost');
+  if (!ghostArm) {
+    ghostArm = arm.createGhost();
+    scene.add(ghostArm.group);
+    btn.classList.add('active');
+    // Set ghost to current pose
+    ghostArm.setImmediate(getCurrentSliderAngles(), parseFloat(document.getElementById('gripSlider').value));
+  } else {
+    scene.remove(ghostArm.group);
+    ghostArm.dispose();
+    ghostArm = null;
+    arm.ghostArm = null;
+    btn.classList.remove('active');
+  }
+}
+
+function toggleWireframe() {
+  const btn = document.getElementById('btnWire');
+  btn.classList.toggle('active');
+  const wire = btn.classList.contains('active');
+  arm.group.traverse(c => { if (c.isMesh) c.material.wireframe = wire; });
+}
+
+function resetView() {
+  camera.position.set(0.5, 0.4, 0.5);
+  controls.target.set(0, 0.15, 0);
+  controls.update();
+}
+
+function onResize() {
+  const container = document.getElementById('viewport');
+  const w = container.clientWidth, h = container.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+
+function updateEEInfo() {
+  const ee = arm.getEEPosition();
+  const reach = Math.sqrt(ee.x * ee.x + ee.z * ee.z);
+  document.getElementById('eeInfo').innerHTML =
+    `X: <span>${(ee.x*1000).toFixed(1)} mm</span><br>` +
+    `Y: <span>${(ee.y*1000).toFixed(1)} mm</span><br>` +
+    `Z: <span>${(ee.z*1000).toFixed(1)} mm</span><br>` +
+    `Reach: <span>${(reach*1000).toFixed(1)} mm</span>`;
+}
+
+let lastTime = 0;
+function animate(time) {
+  animId = requestAnimationFrame(animate);
+  const dt = Math.min((time - lastTime) / 1000, 0.05) || 0.016;
+  lastTime = time;
+
+  arm.animate(dt);
+  if (ghostArm) ghostArm.animate(dt);
+  controls.update();
+  renderer.render(scene, camera);
+
+  // Update EE info every few frames
+  if (Math.floor(time / 100) % 3 === 0) updateEEInfo();
+}
+</script>
+</body>
+</html>

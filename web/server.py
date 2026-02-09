@@ -85,6 +85,13 @@ except ImportError:
     _HAS_VISION_PLANNING = False
 
 try:
+    from src.vla import VLAController, DataCollector, GeminiVLABackend
+
+    _HAS_VLA = True
+except ImportError:
+    _HAS_VLA = False
+
+try:
     from src.vision.claw_position import ClawPositionPredictor
 
     _HAS_CLAW_PREDICT = True
@@ -310,6 +317,8 @@ claw_predictor: Any = None  # ClawPositionPredictor for visual claw tracking
 collision_detector: Any = None  # CollisionDetector for stall detection
 collision_analyzer: Any = None  # CollisionAnalyzer for camera + vision analysis
 collision_events: list = []  # Recent collision events for API
+vla_controller: Any = None  # VLAController for vision-language-action
+vla_data_collector: Any = None  # DataCollector for recording demonstrations
 pose_fusion: Any = None  # PoseFusion engine
 arm3d_segmenters: dict = {}  # Per-camera ArmSegmenter instances
 arm3d_detector: Any = None  # JointDetector for arm3d pipeline
@@ -432,6 +441,18 @@ async def lifespan(app: FastAPI):
         arm3d_segmenters = {0: ArmSegmenter(), 1: ArmSegmenter()}
         arm3d_detector = JointDetector()
         action_log.add("SYSTEM", "Pose fusion pipeline initialized", "info")
+
+    # Initialize VLA controller and data collector
+    global vla_controller, vla_data_collector
+    if _HAS_VLA:
+        try:
+            vla_controller = VLAController()
+            vla_data_collector = DataCollector()
+            action_log.add("SYSTEM", "VLA controller initialized (Gemini backend, lazy-load)", "info")
+        except Exception as e:
+            logger.warning("VLA init failed: %s (will work without VLA)", e)
+            vla_controller = None
+            vla_data_collector = None
 
     # Load calibrated camera models
     global camera_models
@@ -3222,6 +3243,237 @@ async def get_calibration_frame(session_id: str, pose_index: int, camera_id: str
 
 
 # ---------------------------------------------------------------------------
+# VLA (Vision-Language-Action) endpoints
+# ---------------------------------------------------------------------------
+
+_vla_task: Optional[asyncio.Task] = None
+
+
+class VLAActRequest(BaseModel):
+    """Request to execute a VLA task."""
+    task: str = Field(description="Natural language task, e.g. 'pick up the red bull can'")
+    max_steps: int = Field(default=40, ge=1, le=100)
+    settle_time_s: float = Field(default=1.5, ge=0.5, le=5.0)
+
+
+class VLACollectRequest(BaseModel):
+    """Request to start/stop demo collection."""
+    action: str = Field(description="'start' or 'stop'")
+    task: str = Field(default="", description="Task description (for start)")
+    success: bool = Field(default=True, description="Whether demo was successful (for stop)")
+    notes: str = Field(default="")
+
+
+@app.get("/api/vla/status")
+async def vla_status():
+    """Get VLA system status."""
+    if not _HAS_VLA or vla_controller is None:
+        return {"available": False, "error": "VLA module not loaded"}
+
+    status = vla_controller.get_status()
+    status["available"] = True
+    if vla_data_collector:
+        status["collector"] = vla_data_collector.get_status()
+    return status
+
+
+@app.post("/api/vla/act")
+async def vla_act(req: VLAActRequest):
+    """Execute a VLA task: natural language command → arm executes.
+
+    This is the main VLA endpoint. Send a task like "pick up the red bull can"
+    and the arm will use camera vision + language understanding to execute it.
+    """
+    global _vla_task
+
+    if not _HAS_VLA or vla_controller is None:
+        return JSONResponse(
+            {"ok": False, "error": "VLA module not available"},
+            status_code=501,
+        )
+
+    if vla_controller.is_busy:
+        return JSONResponse(
+            {"ok": False, "error": "VLA controller is busy with another task",
+             "state": vla_controller.state.value},
+            status_code=409,
+        )
+
+    if not (smoother and smoother._arm_enabled):
+        return JSONResponse(
+            {"ok": False, "error": "Arm not enabled"},
+            status_code=409,
+        )
+
+    action_log.add("VLA", f"Task started: '{req.task}'", "info")
+
+    # Configure controller
+    vla_controller._max_steps = req.max_steps
+    vla_controller._settle_time = req.settle_time_s
+
+    # Run as background task so the HTTP response returns immediately
+    async def _run_task():
+        try:
+            result = await vla_controller.execute(req.task)
+            level = "info" if result.success else "warning"
+            action_log.add(
+                "VLA",
+                f"Task {'DONE' if result.success else 'FAILED'}: '{req.task}' "
+                f"({result.actions_executed} actions, {result.total_time_s:.1f}s)",
+                level,
+            )
+        except Exception as e:
+            action_log.add("VLA", f"Task error: {e}", "error")
+            logger.exception("VLA task error")
+
+    if _vla_task and not _vla_task.done():
+        _vla_task.cancel()
+
+    _vla_task = asyncio.create_task(_run_task())
+
+    return {
+        "ok": True,
+        "action": "VLA_ACT",
+        "task": req.task,
+        "message": f"VLA task started: '{req.task}'",
+        "state": vla_controller.state.value,
+    }
+
+
+@app.post("/api/vla/act-sync")
+async def vla_act_sync(req: VLAActRequest):
+    """Execute a VLA task synchronously (waits for completion).
+
+    Same as /api/vla/act but blocks until the task finishes.
+    Returns the full result including all steps taken.
+    """
+    if not _HAS_VLA or vla_controller is None:
+        return JSONResponse(
+            {"ok": False, "error": "VLA module not available"},
+            status_code=501,
+        )
+
+    if vla_controller.is_busy:
+        return JSONResponse(
+            {"ok": False, "error": "VLA controller is busy"},
+            status_code=409,
+        )
+
+    if not (smoother and smoother._arm_enabled):
+        return JSONResponse(
+            {"ok": False, "error": "Arm not enabled"},
+            status_code=409,
+        )
+
+    action_log.add("VLA", f"Task started (sync): '{req.task}'", "info")
+
+    vla_controller._max_steps = req.max_steps
+    vla_controller._settle_time = req.settle_time_s
+
+    result = await vla_controller.execute(req.task)
+
+    level = "info" if result.success else "warning"
+    action_log.add(
+        "VLA",
+        f"Task {'DONE' if result.success else 'FAILED'}: '{req.task}' "
+        f"({result.actions_executed} actions, {result.total_time_s:.1f}s)",
+        level,
+    )
+
+    return {
+        "ok": result.success,
+        "action": "VLA_ACT_SYNC",
+        "task": result.task,
+        "success": result.success,
+        "message": result.message,
+        "error": result.error,
+        "total_time_s": round(result.total_time_s, 1),
+        "actions_executed": result.actions_executed,
+        "observations_made": result.observations_made,
+        "final_phase": result.final_phase,
+        "steps": [
+            {
+                "step": s.step_num,
+                "state": s.state,
+                "action": s.action,
+                "phase": s.phase,
+                "confidence": s.confidence,
+                "execution_time_ms": round(s.execution_time_ms, 0),
+                "notes": s.notes,
+            }
+            for s in result.steps
+        ],
+    }
+
+
+@app.post("/api/vla/abort")
+async def vla_abort():
+    """Abort the current VLA task."""
+    if not _HAS_VLA or vla_controller is None:
+        return JSONResponse(
+            {"ok": False, "error": "VLA module not available"},
+            status_code=501,
+        )
+
+    vla_controller.abort()
+    action_log.add("VLA", "Task abort requested", "warning")
+    return {"ok": True, "action": "VLA_ABORT"}
+
+
+@app.post("/api/vla/collect")
+async def vla_collect(req: VLACollectRequest):
+    """Start or stop demonstration collection for VLA training.
+
+    Start: POST /api/vla/collect {"action": "start", "task": "pick up the can"}
+    Stop:  POST /api/vla/collect {"action": "stop", "success": true}
+    """
+    if not _HAS_VLA or vla_data_collector is None:
+        return JSONResponse(
+            {"ok": False, "error": "VLA data collector not available"},
+            status_code=501,
+        )
+
+    if req.action == "start":
+        if not req.task:
+            return JSONResponse(
+                {"ok": False, "error": "Task description required for 'start'"},
+                status_code=400,
+            )
+        try:
+            demo_id = vla_data_collector.start(req.task, notes=req.notes)
+            action_log.add("VLA_COLLECT", f"Recording started: {demo_id}", "info")
+            return {"ok": True, "demo_id": demo_id, "task": req.task}
+        except RuntimeError as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=409)
+
+    elif req.action == "stop":
+        demo_path = vla_data_collector.stop(success=req.success, notes=req.notes)
+        if demo_path:
+            action_log.add(
+                "VLA_COLLECT",
+                f"Recording stopped: {demo_path} (success={req.success})",
+                "info",
+            )
+            return {"ok": True, "demo_path": demo_path, "success": req.success}
+        return {"ok": False, "error": "Not recording"}
+
+    else:
+        return JSONResponse(
+            {"ok": False, "error": f"Unknown action: {req.action}"},
+            status_code=400,
+        )
+
+
+@app.get("/api/vla/demos")
+async def vla_demos():
+    """List all recorded demonstrations."""
+    if not _HAS_VLA or vla_data_collector is None:
+        return {"demos": [], "error": "VLA data collector not available"}
+
+    return {"demos": vla_data_collector.list_demos()}
+
+
+# ---------------------------------------------------------------------------
 # Static files — versioned UIs all pointing to the same server
 # /v1/ → V1 stable base, /v2/ → V2 Cartesian controls, / → V1 (default)
 # ---------------------------------------------------------------------------
@@ -3238,6 +3490,10 @@ if v2_dir.is_dir():
     app.mount("/v2", StaticFiles(directory=str(v2_dir), html=True), name="static-v2")
 if v3_dir.is_dir():
     app.mount("/v3", StaticFiles(directory=str(v3_dir), html=True), name="static-v3")
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static-assets")
+tools_dir = Path(__file__).parent.parent / "tools"
+if tools_dir.is_dir():
+    app.mount("/tools", StaticFiles(directory=str(tools_dir), html=True), name="tools")
 app.mount("/ui", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 
