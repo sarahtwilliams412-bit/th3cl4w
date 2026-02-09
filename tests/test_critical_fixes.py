@@ -12,6 +12,7 @@ class TestCalibrationSessionId:
 
     def test_session_id_preserved_if_preset(self):
         from src.calibration.calibration_runner import CalibrationRunner
+
         runner = CalibrationRunner()
         runner._session_id = "cal_preset_123"
         # Simulate what run_full_calibration does — should NOT overwrite
@@ -23,6 +24,7 @@ class TestCalibrationSessionId:
 
     def test_session_id_generated_if_none(self):
         from src.calibration.calibration_runner import CalibrationRunner
+
         runner = CalibrationRunner()
         assert runner._session_id is None
         runner._running = True
@@ -38,6 +40,7 @@ class TestDDSFeedbackFreshness:
 
     def test_freshness_tracking(self):
         from src.interface.d1_dds_connection import _FeedbackCache
+
         cache = _FeedbackCache()
         assert cache.joint_freshness == {}
 
@@ -48,6 +51,7 @@ class TestDDSFeedbackFreshness:
 
     def test_is_feedback_fresh(self):
         from src.interface.d1_dds_connection import D1DDSConnection
+
         conn = D1DDSConnection()
         # No feedback yet
         assert conn.is_feedback_fresh() is False
@@ -62,6 +66,7 @@ class TestDDSFeedbackFreshness:
 
     def test_get_joint_freshness_empty(self):
         from src.interface.d1_dds_connection import D1DDSConnection
+
         conn = D1DDSConnection()
         freshness = conn.get_joint_freshness()
         # All joints should report inf (never seen non-zero)
@@ -70,6 +75,7 @@ class TestDDSFeedbackFreshness:
 
     def test_get_joint_freshness_after_update(self):
         from src.interface.d1_dds_connection import D1DDSConnection
+
         conn = D1DDSConnection()
         now = time.monotonic()
         conn._cache.joint_freshness["angle0"] = now
@@ -88,12 +94,19 @@ class TestEnableStateSync:
         """When DDS shows enabled but smoother doesn't know, it should sync."""
         # Import the SimulatedArm from server module
         import sys
-        sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent.parent / 'web'))
+
+        sys.path.insert(
+            0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "web")
+        )
         from command_smoother import CommandSmoother
-        
+
         # Create a mock arm that reports enabled
         mock_arm = MagicMock()
-        mock_arm.get_status.return_value = {"power_status": 1, "enable_status": 1, "error_status": 0}
+        mock_arm.get_status.return_value = {
+            "power_status": 1,
+            "enable_status": 1,
+            "error_status": 0,
+        }
         mock_arm.get_joint_angles.return_value = [0.0] * 7
         mock_arm.get_gripper_position.return_value = 0.0
         mock_arm.is_connected = True
@@ -130,6 +143,7 @@ class TestGracefulShutdown:
 
     def test_sigterm_handler_raises_systemexit(self):
         """SIGTERM handler should raise SystemExit for clean uvicorn shutdown."""
+
         # We can't easily test the actual signal handler without running the server,
         # but we can verify the pattern works
         def handler(signum, frame):

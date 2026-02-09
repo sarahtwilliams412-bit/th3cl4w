@@ -142,7 +142,12 @@ if _web_dir not in sys.path:
 
 from command_smoother import CommandSmoother
 
-from src.safety.limits import JOINT_LIMITS_DEG as _UNIFIED_JOINT_LIMITS_DEG, GRIPPER_MIN_MM, GRIPPER_MAX_MM, MAX_STEP_DEG
+from src.safety.limits import (
+    JOINT_LIMITS_DEG as _UNIFIED_JOINT_LIMITS_DEG,
+    GRIPPER_MIN_MM,
+    GRIPPER_MAX_MM,
+    MAX_STEP_DEG,
+)
 from src.safety.safety_monitor import SafetyMonitor
 
 # ---------------------------------------------------------------------------
@@ -336,12 +341,15 @@ async def lifespan(app: FastAPI):
     # Initialize OpenCL GPU acceleration for OpenCV
     try:
         import cv2
+
         if cv2.ocl.haveOpenCL():
             cv2.ocl.setUseOpenCL(True)
             # Log device info
             dev = cv2.ocl.Device.getDefault()
             if dev is not None and dev.available():
-                logger.info("OpenCL GPU acceleration enabled: %s (%s)", dev.name(), dev.vendorName())
+                logger.info(
+                    "OpenCL GPU acceleration enabled: %s (%s)", dev.name(), dev.vendorName()
+                )
             else:
                 logger.info("OpenCL available but no device detected; falling back to CPU")
         else:
@@ -394,12 +402,18 @@ async def lifespan(app: FastAPI):
     if arm is not None:
         tc_ref = get_collector() if _HAS_TELEMETRY else None
         smoother = CommandSmoother(
-            arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=MAX_STEP_DEG,
-            collector=tc_ref, safety_monitor=safety_monitor,
+            arm,
+            rate_hz=10.0,
+            smoothing_factor=0.35,
+            max_step_deg=MAX_STEP_DEG,
+            collector=tc_ref,
+            safety_monitor=safety_monitor,
         )
         await smoother.start()
         action_log.add(
-            "SYSTEM", f"Command smoother started (10Hz, α=0.35, max_step={MAX_STEP_DEG}°, synced={smoother.synced})", "info"
+            "SYSTEM",
+            f"Command smoother started (10Hz, α=0.35, max_step={MAX_STEP_DEG}°, synced={smoother.synced})",
+            "info",
         )
 
     # Initialize task planner for pre-built motion sequences
@@ -454,7 +468,9 @@ async def lifespan(app: FastAPI):
         try:
             vla_controller = VLAController()
             vla_data_collector = DataCollector()
-            action_log.add("SYSTEM", "VLA controller initialized (Gemini backend, lazy-load)", "info")
+            action_log.add(
+                "SYSTEM", "VLA controller initialized (Gemini backend, lazy-load)", "info"
+            )
         except Exception as e:
             logger.warning("VLA init failed: %s (will work without VLA)", e)
             vla_controller = None
@@ -464,6 +480,7 @@ async def lifespan(app: FastAPI):
     global camera_models
     try:
         from src.vision.camera_model import CameraModel
+
         for cam_id in [0, 1]:
             cm = CameraModel(cam_id)
             if cm.load():
@@ -1678,6 +1695,7 @@ class VisualPickFromPositionRequest(BaseModel):
 # Camera-based 3D localization (uses calibrated extrinsics)
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/camera/status")
 async def camera_calibration_status():
     """Get camera calibration status."""
@@ -1687,8 +1705,9 @@ async def camera_calibration_status():
             cam_id: {
                 "position_m": cm.camera_position.tolist(),
                 "reproj_error_px": float(
-                    json.load(open(f"calibration_results/camera{cam_id}_extrinsics.json"))
-                    .get("reprojection_error_mean_px", -1)
+                    json.load(open(f"calibration_results/camera{cam_id}_extrinsics.json")).get(
+                        "reprojection_error_mean_px", -1
+                    )
                 ),
             }
             for cam_id, cm in camera_models.items()
@@ -1698,6 +1717,7 @@ async def camera_calibration_status():
 
 class LocateRequest(BaseModel):
     """Request to locate an object by pixel coords or by LLM vision."""
+
     pixel: Optional[list[float]] = None  # [u, v] in cam0
     camera_id: int = 0
     z_height: float = 0.0  # assumed Z height in meters (table surface)
@@ -1724,35 +1744,46 @@ async def locate_object(req: LocateRequest):
     if req.use_llm and pixel is None:
         # Use Gemini to find object pixel coords
         import httpx
+
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(f"http://localhost:8081/snap/{req.camera_id}")
                 if resp.status_code != 200:
-                    return JSONResponse({"ok": False, "error": "Camera snapshot failed"}, status_code=502)
+                    return JSONResponse(
+                        {"ok": False, "error": "Camera snapshot failed"}, status_code=502
+                    )
                 jpeg_bytes = resp.content
 
             import os
+
             api_key = os.environ.get("GEMINI_API_KEY")
             if not api_key:
-                return JSONResponse({"ok": False, "error": "GEMINI_API_KEY not set"}, status_code=501)
+                return JSONResponse(
+                    {"ok": False, "error": "GEMINI_API_KEY not set"}, status_code=501
+                )
 
             import google.generativeai as genai
+
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel("gemini-2.0-flash")
 
             import base64
+
             b64 = base64.b64encode(jpeg_bytes).decode()
             prompt = (
                 f"Find the {req.target} in this 1920x1080 image. "
                 f"Return ONLY the pixel coordinates of its center as JSON: "
-                f'{{\"u\": <x_pixel>, \"v\": <y_pixel>}}'
+                f'{{"u": <x_pixel>, "v": <y_pixel>}}'
             )
-            response = model.generate_content([
-                {"mime_type": "image/jpeg", "data": b64},
-                prompt,
-            ])
+            response = model.generate_content(
+                [
+                    {"mime_type": "image/jpeg", "data": b64},
+                    prompt,
+                ]
+            )
 
             import re
+
             match = re.search(r'\{[^}]*"u"\s*:\s*([\d.]+)[^}]*"v"\s*:\s*([\d.]+)', response.text)
             if not match:
                 return JSONResponse(
@@ -1760,13 +1791,19 @@ async def locate_object(req: LocateRequest):
                     status_code=422,
                 )
             pixel = [float(match.group(1)), float(match.group(2))]
-            action_log.add("VISION", f"LLM located '{req.target}' at pixel ({pixel[0]:.0f}, {pixel[1]:.0f})", "info")
+            action_log.add(
+                "VISION",
+                f"LLM located '{req.target}' at pixel ({pixel[0]:.0f}, {pixel[1]:.0f})",
+                "info",
+            )
 
         except Exception as e:
             return JSONResponse({"ok": False, "error": f"LLM locate failed: {e}"}, status_code=500)
 
     if pixel is None:
-        return JSONResponse({"ok": False, "error": "No pixel coordinates provided"}, status_code=400)
+        return JSONResponse(
+            {"ok": False, "error": "No pixel coordinates provided"}, status_code=400
+        )
 
     # Back-project to 3D
     world_point = cm.pixel_to_world_at_z(pixel[0], pixel[1], z=req.z_height)
@@ -1801,12 +1838,15 @@ async def locate_object(req: LocateRequest):
 # Visual servo
 # ---------------------------------------------------------------------------
 
+
 class ServoRequest(BaseModel):
     target: str = "red bull can"
     max_steps: int = 25
 
+
 _servo_task: Optional[asyncio.Task] = None
 _servo_result: Optional[dict] = None
+
 
 @app.post("/api/servo/approach")
 async def servo_approach(req: ServoRequest):
@@ -1817,6 +1857,7 @@ async def servo_approach(req: ServoRequest):
 
     _servo_result = None
     import os as _os
+
     api_key = _os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return JSONResponse({"ok": False, "error": "GEMINI_API_KEY not set"}, status_code=501)
@@ -1846,11 +1887,14 @@ async def servo_approach(req: ServoRequest):
                     for s in result.steps
                 ],
             }
-            action_log.add("SERVO", f"{'Success' if result.success else 'Failed'}: {result.message}", "info")
+            action_log.add(
+                "SERVO", f"{'Success' if result.success else 'Failed'}: {result.message}", "info"
+            )
         except Exception as e:
             _servo_result = {"success": False, "message": str(e), "steps": 0}
             action_log.add("SERVO", f"Error: {e}", "error")
             import traceback
+
             logger.error(f"Servo error: {traceback.format_exc()}")
 
     _servo_task = asyncio.create_task(_run())
@@ -1880,6 +1924,7 @@ async def servo_stop():
 # ---------------------------------------------------------------------------
 # Visual pick
 # ---------------------------------------------------------------------------
+
 
 @app.get("/api/pick/status")
 async def pick_status():
@@ -2522,7 +2567,7 @@ async def run_viz_calibration():
     # Disable collision detection during calibration — it fights the calibrator
     _saved_collision = collision_detector
     _saved_collision_enabled = None
-    if collision_detector and hasattr(collision_detector, 'enabled'):
+    if collision_detector and hasattr(collision_detector, "enabled"):
         _saved_collision_enabled = collision_detector.enabled
         collision_detector.enabled = False
     try:
@@ -2553,7 +2598,11 @@ async def run_viz_calibration():
     finally:
         _viz_calib_running = False
         # Re-enable collision detection
-        if collision_detector and hasattr(collision_detector, 'enabled') and _saved_collision_enabled is not None:
+        if (
+            collision_detector
+            and hasattr(collision_detector, "enabled")
+            and _saved_collision_enabled is not None
+        ):
             collision_detector.enabled = _saved_collision_enabled
 
 
@@ -2686,11 +2735,13 @@ async def gpu_status_endpoint():
     """Return GPU compute (OpenCL) availability and status."""
     if _HAS_GPU_PREPROCESS:
         return JSONResponse(_gpu_status())
-    return JSONResponse({
-        "opencl_available": False,
-        "opencl_enabled": False,
-        "device": None,
-    })
+    return JSONResponse(
+        {
+            "opencl_available": False,
+            "opencl_enabled": False,
+            "device": None,
+        }
+    )
 
 
 @app.get("/ascii")
@@ -2755,7 +2806,12 @@ async def ws_ascii(ws: WebSocket):
 
             if converter is None:
                 await ws.send_json(
-                    {"type": "frame", "lines": ["ASCII converter not available"], "width": 40, "height": 1}
+                    {
+                        "type": "frame",
+                        "lines": ["ASCII converter not available"],
+                        "width": 40,
+                        "height": 1,
+                    }
                 )
                 await asyncio.sleep(1.0)
                 continue
@@ -2773,7 +2829,12 @@ async def ws_ascii(ws: WebSocket):
 
             if jpeg_bytes is None:
                 await ws.send_json(
-                    {"type": "frame", "lines": ["No camera feed available"], "width": 30, "height": 1}
+                    {
+                        "type": "frame",
+                        "lines": ["No camera feed available"],
+                        "width": 30,
+                        "height": 1,
+                    }
                 )
                 await asyncio.sleep(0.5)
                 continue
@@ -2815,6 +2876,7 @@ async def ws_ascii(ws: WebSocket):
 # Real World 3D — Visual hull voxel reconstruction from dual cameras
 # ---------------------------------------------------------------------------
 
+
 @app.websocket("/ws/realworld3d")
 async def ws_realworld3d(ws: WebSocket):
     """Stream voxel reconstruction data from dual camera visual hull carving.
@@ -2842,7 +2904,12 @@ async def ws_realworld3d(ws: WebSocket):
                     bg_frame0 = None
                     bg_frame1 = None
                     frame_count = 0
-                    await ws.send_json({"type": "status", "message": "Background reset, will capture on next frame"})
+                    await ws.send_json(
+                        {
+                            "type": "status",
+                            "message": "Background reset, will capture on next frame",
+                        }
+                    )
             except asyncio.TimeoutError:
                 pass
             except Exception:
@@ -2872,8 +2939,17 @@ async def ws_realworld3d(ws: WebSocket):
 
             # Decode frames
             import cv2
-            f0 = cv2.imdecode(np.frombuffer(frame0_bytes, np.uint8), cv2.IMREAD_COLOR) if frame0_bytes else None
-            f1 = cv2.imdecode(np.frombuffer(frame1_bytes, np.uint8), cv2.IMREAD_COLOR) if frame1_bytes else None
+
+            f0 = (
+                cv2.imdecode(np.frombuffer(frame0_bytes, np.uint8), cv2.IMREAD_COLOR)
+                if frame0_bytes
+                else None
+            )
+            f1 = (
+                cv2.imdecode(np.frombuffer(frame1_bytes, np.uint8), cv2.IMREAD_COLOR)
+                if frame1_bytes
+                else None
+            )
 
             if f0 is None and f1 is None:
                 await ws.send_json({"type": "status", "message": "Failed to decode frames"})
@@ -2926,8 +3002,16 @@ async def ws_realworld3d(ws: WebSocket):
                 sil_top = np.ones((GRID_D, GRID_W), dtype=np.uint8) * 255
 
             # Also resize color frames on GPU before transferring to CPU
-            f0_small_u = cv2.resize(f0, (GRID_W, GRID_H), interpolation=cv2.INTER_AREA) if f0 is not None else None
-            f1_small_u = cv2.resize(f1, (GRID_W, GRID_D), interpolation=cv2.INTER_AREA) if f1 is not None else None
+            f0_small_u = (
+                cv2.resize(f0, (GRID_W, GRID_H), interpolation=cv2.INTER_AREA)
+                if f0 is not None
+                else None
+            )
+            f1_small_u = (
+                cv2.resize(f1, (GRID_W, GRID_D), interpolation=cv2.INTER_AREA)
+                if f1 is not None
+                else None
+            )
 
             # Transfer results from GPU to CPU for voxel carving (array indexing)
             if isinstance(sil_front, cv2.UMat):
@@ -2972,16 +3056,18 @@ async def ws_realworld3d(ws: WebSocket):
                 step = len(voxels) // 8000 + 1
                 voxels = voxels[::step]
 
-            await ws.send_json({
-                "type": "voxels",
-                "voxels": voxels,  # [[x,y,z,r,g,b], ...]
-                "gridW": GRID_W,
-                "gridH": GRID_H,
-                "gridD": GRID_D,
-                "frame": frame_count,
-                "cam0": f0 is not None,
-                "cam1": f1 is not None,
-            })
+            await ws.send_json(
+                {
+                    "type": "voxels",
+                    "voxels": voxels,  # [[x,y,z,r,g,b], ...]
+                    "gridW": GRID_W,
+                    "gridH": GRID_H,
+                    "gridD": GRID_D,
+                    "frame": frame_count,
+                    "cam0": f0 is not None,
+                    "cam1": f1 is not None,
+                }
+            )
 
             await asyncio.sleep(0.75)  # ~1.3 fps reconstruction rate
 
@@ -3004,6 +3090,7 @@ async def arm3d_status():
 
     # Check cameras
     import httpx
+
     cam_status = {}
     for cam_id in [0, 1]:
         try:
@@ -3060,12 +3147,11 @@ async def ws_arm3d(ws: WebSocket):
                     )
 
                 import cv2
+
                 for cam_id, resp in enumerate(results):
                     if isinstance(resp, Exception) or resp.status_code != 200:
                         continue
-                    frame = cv2.imdecode(
-                        np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR
-                    )
+                    frame = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
                     if frame is None:
                         continue
 
@@ -3096,12 +3182,14 @@ async def ws_arm3d(ws: WebSocket):
             )
 
             # 5. Send
-            await ws.send_json({
-                "type": "arm3d",
-                "positions": [[round(c, 4) for c in p] for p in result.positions],
-                "confidence": [round(c, 3) for c in result.confidence],
-                "source": result.source.value,
-            })
+            await ws.send_json(
+                {
+                    "type": "arm3d",
+                    "positions": [[round(c, 4) for c in p] for p in result.positions],
+                    "confidence": [round(c, 3) for c in result.confidence],
+                    "source": result.source.value,
+                }
+            )
 
             await asyncio.sleep(0.1)  # ~10Hz
 
@@ -3138,7 +3226,9 @@ async def calibration_start():
     global _calibration_runner, _calibration_pipeline, _calibration_task
     global _calibration_session, _calibration_error, _calibration_report
     if not _HAS_CALIBRATION:
-        return JSONResponse({"ok": False, "error": "Calibration module not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Calibration module not available"}, status_code=501
+        )
     if _calibration_task and not _calibration_task.done():
         return JSONResponse({"ok": False, "error": "Calibration already running"}, status_code=409)
 
@@ -3148,12 +3238,14 @@ async def calibration_start():
 
     # Create pipeline with LLM detection
     import os as _os_mod
+
     gemini_key = _os_mod.environ.get("GEMINI_API_KEY")
     _calibration_pipeline = LLMCalibrationPipeline(gemini_api_key=gemini_key)
     _calibration_runner = _calibration_pipeline.runner
 
     # Pre-generate session_id so it's available in the response
     import time as _time_mod
+
     _calibration_runner._session_id = f"cal_{int(_time_mod.time())}"
 
     async def _run():
@@ -3161,11 +3253,19 @@ async def calibration_start():
         try:
             # Run calibration (arm movement + frame capture)
             _calibration_session = await _calibration_runner.run_full_calibration()
-            action_log.add("CALIBRATION", f"Poses complete: {len(_calibration_session.captures)}", "info")
+            action_log.add(
+                "CALIBRATION", f"Poses complete: {len(_calibration_session.captures)}", "info"
+            )
 
             # Run CV + LLM detection on captured frames
-            _calibration_report = await _calibration_pipeline.run_detection_only(_calibration_session)
-            action_log.add("CALIBRATION", f"Detection complete. LLM tokens: {_calibration_report.total_llm_tokens}", "info")
+            _calibration_report = await _calibration_pipeline.run_detection_only(
+                _calibration_session
+            )
+            action_log.add(
+                "CALIBRATION",
+                f"Detection complete. LLM tokens: {_calibration_report.total_llm_tokens}",
+                "info",
+            )
 
             # Auto-save results to disk
             results_dir = str(Path(__file__).parent.parent / "calibration_results")
@@ -3183,6 +3283,7 @@ async def calibration_start():
             _calibration_error = str(e)
             action_log.add("CALIBRATION", f"Failed: {e}", "error")
             import traceback
+
             logger.error(f"Calibration error: {traceback.format_exc()}")
 
     _calibration_task = asyncio.create_task(_run())
@@ -3245,6 +3346,7 @@ async def calibration_results(session_id: str):
 
 try:
     from src.calibration.results_reporter import CalibrationReporter as _CalibReporter
+
     _HAS_CALIB_REPORTER = True
 except ImportError:
     _HAS_CALIB_REPORTER = False
@@ -3257,7 +3359,9 @@ _calib_comparison_reports: dict = {}  # session_id -> ComparisonReport
 async def calibration_report_md(session_id: str):
     """Return markdown comparison report for a calibration session."""
     if not _HAS_CALIB_REPORTER:
-        return JSONResponse({"ok": False, "error": "Reporter module not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Reporter module not available"}, status_code=501
+        )
     report = _calib_comparison_reports.get(session_id)
     if not report:
         return JSONResponse({"ok": False, "error": "Report not found"}, status_code=404)
@@ -3269,7 +3373,9 @@ async def calibration_report_md(session_id: str):
 async def calibration_report_json(session_id: str):
     """Return JSON comparison report for a calibration session."""
     if not _HAS_CALIB_REPORTER:
-        return JSONResponse({"ok": False, "error": "Reporter module not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Reporter module not available"}, status_code=501
+        )
     report = _calib_comparison_reports.get(session_id)
     if not report:
         return JSONResponse({"ok": False, "error": "Report not found"}, status_code=404)
@@ -3280,15 +3386,21 @@ async def calibration_report_json(session_id: str):
 # Camera Extrinsics endpoint
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/calibration/extrinsics")
 async def get_calibration_extrinsics():
     """Return current camera extrinsics (from saved calibration file)."""
     try:
         from src.calibration.extrinsics_solver import load_extrinsics
-        extrinsics_path = str(Path(__file__).parent.parent / "calibration_results" / "camera_extrinsics.json")
+
+        extrinsics_path = str(
+            Path(__file__).parent.parent / "calibration_results" / "camera_extrinsics.json"
+        )
         data = load_extrinsics(extrinsics_path)
         if data is None:
-            return JSONResponse({"ok": False, "error": "No extrinsics calibration found"}, status_code=404)
+            return JSONResponse(
+                {"ok": False, "error": "No extrinsics calibration found"}, status_code=404
+            )
         return {"ok": True, **data}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -3308,6 +3420,7 @@ async def get_calibration_frame(session_id: str, pose_index: int, camera_id: str
     if not jpeg:
         return JSONResponse({"ok": False, "error": f"No frame for {camera_id}"}, status_code=404)
     from starlette.responses import Response
+
     return Response(content=jpeg, media_type="image/jpeg")
 
 
@@ -3320,6 +3433,7 @@ _vla_task: Optional[asyncio.Task] = None
 
 class VLAActRequest(BaseModel):
     """Request to execute a VLA task."""
+
     task: str = Field(description="Natural language task, e.g. 'pick up the red bull can'")
     max_steps: int = Field(default=40, ge=1, le=100)
     settle_time_s: float = Field(default=1.5, ge=0.5, le=5.0)
@@ -3327,6 +3441,7 @@ class VLAActRequest(BaseModel):
 
 class VLACollectRequest(BaseModel):
     """Request to start/stop demo collection."""
+
     action: str = Field(description="'start' or 'stop'")
     task: str = Field(default="", description="Task description (for start)")
     success: bool = Field(default=True, description="Whether demo was successful (for stop)")
@@ -3363,8 +3478,11 @@ async def vla_act(req: VLAActRequest):
 
     if vla_controller.is_busy:
         return JSONResponse(
-            {"ok": False, "error": "VLA controller is busy with another task",
-             "state": vla_controller.state.value},
+            {
+                "ok": False,
+                "error": "VLA controller is busy with another task",
+                "state": vla_controller.state.value,
+            },
             status_code=409,
         )
 
@@ -3570,16 +3688,20 @@ app.mount("/ui", StaticFiles(directory=str(static_dir), html=True), name="static
 async def serve_root():
     """Redirect root to /ui/."""
     from starlette.responses import RedirectResponse
+
     return RedirectResponse(url="/ui/")
+
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+
 def _write_pidfile():
     """Write PID file for reliable process management."""
     pidfile = Path("/tmp/th3cl4w-server.pid")
     pidfile.write_text(str(os.getpid()))
+
 
 def _remove_pidfile():
     """Remove PID file on shutdown."""
@@ -3589,6 +3711,7 @@ def _remove_pidfile():
     except Exception:
         pass
 
+
 def _handle_sigterm(signum, frame):
     """Graceful shutdown on SIGTERM — lets uvicorn clean up."""
     logger.info("Received SIGTERM, initiating graceful shutdown...")
@@ -3596,12 +3719,16 @@ def _handle_sigterm(signum, frame):
     # Raise SystemExit so uvicorn's shutdown hooks run (lifespan cleanup)
     raise SystemExit(0)
 
+
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _handle_sigterm)
     _write_pidfile()
     logger.info(
         "Starting th3cl4w web panel on %s:%d (simulate=%s, pid=%d)",
-        args.host, args.port, args.simulate, os.getpid(),
+        args.host,
+        args.port,
+        args.simulate,
+        os.getpid(),
     )
     try:
         uvicorn.run(app, host=args.host, port=args.port, log_level="info")

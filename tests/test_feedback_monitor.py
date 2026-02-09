@@ -14,10 +14,10 @@ from src.interface.feedback_monitor import (
     _has_nan_or_inf,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
 
 def _angles(vals=None):
     """Build an angle dict. vals is a list of 7 floats or None for zeros."""
@@ -33,6 +33,7 @@ def _nonzero_angles():
 # ---------------------------------------------------------------------------
 # Unit tests: helpers
 # ---------------------------------------------------------------------------
+
 
 class TestHelpers:
     def test_zero_reading_all_zeros(self):
@@ -63,6 +64,7 @@ class TestHelpers:
 # ---------------------------------------------------------------------------
 # FeedbackMonitor tests
 # ---------------------------------------------------------------------------
+
 
 class TestFeedbackMonitor:
     def test_empty_monitor_returns_none(self):
@@ -206,12 +208,14 @@ class TestFeedbackMonitor:
 # Safety monitor NaN/Inf tests
 # ---------------------------------------------------------------------------
 
+
 class TestSafetyMonitorNaN:
     """Test that safety monitor rejects NaN/Inf values."""
 
     def test_nan_position_rejected(self):
         from src.safety.safety_monitor import SafetyMonitor
         from src.interface.d1_connection import D1Command
+
         sm = SafetyMonitor()
         cmd = D1Command(
             mode=1,
@@ -224,6 +228,7 @@ class TestSafetyMonitorNaN:
     def test_inf_velocity_rejected(self):
         from src.safety.safety_monitor import SafetyMonitor
         from src.interface.d1_connection import D1Command
+
         sm = SafetyMonitor()
         cmd = D1Command(
             mode=1,
@@ -235,6 +240,7 @@ class TestSafetyMonitorNaN:
     def test_nan_gripper_rejected(self):
         from src.safety.safety_monitor import SafetyMonitor
         from src.interface.d1_connection import D1Command
+
         sm = SafetyMonitor()
         cmd = D1Command(mode=1, gripper_position=float("nan"))
         result = sm.validate_command(cmd)
@@ -243,6 +249,7 @@ class TestSafetyMonitorNaN:
     def test_valid_command_passes(self):
         from src.safety.safety_monitor import SafetyMonitor
         from src.interface.d1_connection import D1Command
+
         sm = SafetyMonitor()
         cmd = D1Command(
             mode=1,
@@ -254,6 +261,7 @@ class TestSafetyMonitorNaN:
     def test_check_state_nan_detected(self):
         from src.safety.safety_monitor import SafetyMonitor
         from src.interface.d1_connection import D1State
+
         sm = SafetyMonitor()
         state = D1State(
             joint_positions=np.array([float("nan"), 0, 0, 0, 0, 0, 0]),

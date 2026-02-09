@@ -33,6 +33,7 @@ IMG_W, IMG_H = 1920, 1080
 @dataclass
 class ServoStep:
     """One step of visual servoing."""
+
     step: int
     joints_before: list[float]
     joints_after: list[float]
@@ -46,6 +47,7 @@ class ServoStep:
 @dataclass
 class ServoResult:
     """Result of a visual servo approach."""
+
     success: bool
     steps: list[ServoStep] = field(default_factory=list)
     total_time_s: float = 0.0
@@ -55,7 +57,7 @@ class ServoResult:
 
 class VisualServo:
     """Visual servoing controller.
-    
+
     Strategy:
     1. Snap both cameras
     2. Ask LLM: where is gripper tip? where is target?
@@ -76,11 +78,12 @@ class VisualServo:
         self.api_key = gemini_api_key or os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY required")
-        
+
         import google.generativeai as genai
+
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel("gemini-2.0-flash")
-        
+
         self.max_steps = max_steps
         self.close_enough_px = close_enough_px
         self.step_deg = step_deg
@@ -113,11 +116,11 @@ class VisualServo:
         self, jpeg: bytes, target: str, cam_id: int = 1
     ) -> tuple[Optional[tuple[float, float]], Optional[tuple[float, float]], str]:
         """Ask LLM to find gripper tip and target in the image.
-        
+
         Returns: (gripper_pixel, target_pixel, raw_response)
         """
         b64 = base64.b64encode(jpeg).decode()
-        
+
         view = "overhead (top-down)" if cam_id == 1 else "front"
         prompt = (
             f"This is a 1920x1080 {view} image of a robot arm workspace.\n"
@@ -129,17 +132,19 @@ class VisualServo:
             f'"target": {{"u": <x_pixel>, "v": <y_pixel>}}, '
             f'"distance_estimate_inches": <your estimate of real-world distance between them>}}'
         )
-        
+
         try:
-            response = self.model.generate_content([
-                {"mime_type": "image/jpeg", "data": b64},
-                prompt,
-            ])
+            response = self.model.generate_content(
+                [
+                    {"mime_type": "image/jpeg", "data": b64},
+                    prompt,
+                ]
+            )
             text = response.text.strip()
             # Strip markdown code fences if present
-            text = re.sub(r'^```json\s*', '', text)
-            text = re.sub(r'\s*```$', '', text)
-            
+            text = re.sub(r"^```json\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+
             data = json.loads(text)
             g = data.get("gripper", {})
             t = data.get("target", {})
@@ -147,7 +152,9 @@ class VisualServo:
             target_px = (float(t["u"]), float(t["v"])) if t else None
             return gripper, target_px, text
         except Exception as e:
-            logger.warning(f"LLM locate failed: {e}, raw={response.text[:200] if 'response' in dir() else '?'}")
+            logger.warning(
+                f"LLM locate failed: {e}, raw={response.text[:200] if 'response' in dir() else '?'}"
+            )
             return None, None, str(e)
 
     async def locate_averaged(
@@ -161,12 +168,13 @@ class VisualServo:
             if g and t:
                 grippers.append(g)
                 targets.append(t)
-        
+
         if len(grippers) < 2:
             return None, None
-        
+
         # Median of each coordinate
         import statistics
+
         g_u = statistics.median(g[0] for g in grippers)
         g_v = statistics.median(g[1] for g in grippers)
         t_u = statistics.median(t[0] for t in targets)
@@ -177,22 +185,22 @@ class VisualServo:
         self, gripper_px: tuple, target_px: tuple, joints: list[float], cam_id: int = 1
     ) -> tuple[int, float, str]:
         """Convert pixel delta to a single joint move.
-        
+
         For overhead camera (cam_id=1):
         - du (horizontal) → J0 (base yaw)
         - dv (vertical) → J1/J2 (reach in/out)
-        
+
         For front camera (cam_id=0):
-        - du (horizontal) → J0 (base yaw)  
+        - du (horizontal) → J0 (base yaw)
         - dv (vertical) → J1/J4 (height)
-        
+
         Returns: (joint_id, delta_degrees, reason)
         """
         du = target_px[0] - gripper_px[0]  # positive = target is to the right
         dv = target_px[1] - gripper_px[1]  # positive = target is below
-        
+
         step = self.step_deg
-        
+
         if cam_id == 1:  # Overhead
             # Determine which axis has bigger error
             if abs(du) > abs(dv):
@@ -200,7 +208,11 @@ class VisualServo:
                 # In overhead cam, image-right could be +J0 or -J0
                 # We'll try a direction and verify with next snap
                 delta = step if du > 0 else -step
-                return 0, delta, f"J0 {'CW' if delta<0 else 'CCW'} (target {'right' if du>0 else 'left'} by {abs(du):.0f}px)"
+                return (
+                    0,
+                    delta,
+                    f"J0 {'CW' if delta<0 else 'CCW'} (target {'right' if du>0 else 'left'} by {abs(du):.0f}px)",
+                )
             else:
                 # Vertical: adjust reach (J1 for lean, J2 for extend)
                 # In overhead, image-down typically = further from base
@@ -211,7 +223,7 @@ class VisualServo:
                 else:
                     # Target closer → lean back (J1 more positive)
                     return 1, step, f"J1 backward (target closer by {abs(dv):.0f}px)"
-        
+
         else:  # Front camera
             if abs(dv) > abs(du):
                 # Vertical: target below → need to lower arm
@@ -240,22 +252,22 @@ class VisualServo:
 
     async def approach(self, target: str = "red bull can") -> ServoResult:
         """Visual servo approach to target.
-        
+
         1. Use overhead cam for horizontal alignment (J0 + reach)
         2. Switch to front cam for height alignment (J4)
         3. Alternate until close
         """
         t0 = time.time()
         result = ServoResult(success=False)
-        
+
         # Start from a reaching pose — SEQUENCE MATTERS for torque safety:
         # 1. Lift shoulder (elbow tucked) — low torque
         # 2. Extend elbow gradually — distribute load
         # 3. Angle wrist down — point at target
         # Like a human: raise arm → reach out → angle hand
         logger.info("Visual servo: moving to initial reach pose (human-like sequence)")
-        await self.set_joint(2, 0)   # tuck elbow first
-        await self.set_joint(4, 0)   # wrist neutral
+        await self.set_joint(2, 0)  # tuck elbow first
+        await self.set_joint(4, 0)  # wrist neutral
         await self.set_joint(1, 30)  # lift shoulder UP (with elbow tucked = safe)
         await asyncio.sleep(1)
         await self.set_joint(2, 30)  # start extending elbow
@@ -264,40 +276,45 @@ class VisualServo:
         await asyncio.sleep(1)
         await self.set_joint(4, 50)  # angle wrist down
         await self.set_joint(4, 70)  # more down
-        
+
         prev_distance = 9999.0
         stall_count = 0
         cam_id = 1  # Start with overhead for horizontal alignment
         phase = "horizontal"  # horizontal → vertical → fine
-        
+
         for step_num in range(self.max_steps):
             joints_before = await self.get_joints()
-            
+
             # Snap and locate (averaged over 3 readings to reduce LLM noise)
             gripper_px, target_px = await self.locate_averaged(target, cam_id, n=3)
-            
+
             if gripper_px is None or target_px is None:
                 logger.warning(f"Step {step_num}: LLM couldn't find gripper or target")
                 # Try other camera
                 cam_id = 1 - cam_id
-                result.steps.append(ServoStep(
-                    step=step_num, joints_before=joints_before,
-                    joints_after=joints_before, action="switch_cam",
-                    notes=f"Detection failed, switching to cam {cam_id}",
-                ))
+                result.steps.append(
+                    ServoStep(
+                        step=step_num,
+                        joints_before=joints_before,
+                        joints_after=joints_before,
+                        action="switch_cam",
+                        notes=f"Detection failed, switching to cam {cam_id}",
+                    )
+                )
                 continue
-            
+
             # Compute distance
             import math
+
             dx = target_px[0] - gripper_px[0]
             dy = target_px[1] - gripper_px[1]
-            distance = math.sqrt(dx*dx + dy*dy)
-            
+            distance = math.sqrt(dx * dx + dy * dy)
+
             logger.info(
                 f"Step {step_num} cam{cam_id}: gripper=({gripper_px[0]:.0f},{gripper_px[1]:.0f}) "
                 f"target=({target_px[0]:.0f},{target_px[1]:.0f}) dist={distance:.0f}px"
             )
-            
+
             # Check if close enough
             if distance < self.close_enough_px:
                 result.success = True
@@ -305,7 +322,7 @@ class VisualServo:
                 result.message = f"Reached target within {distance:.0f}px after {step_num+1} steps"
                 logger.info(f"Visual servo: SUCCESS — {result.message}")
                 break
-            
+
             # Check for stalls (distance not decreasing)
             if distance >= prev_distance - 10:
                 stall_count += 1
@@ -316,9 +333,9 @@ class VisualServo:
                     logger.info(f"Stall detected, switching to cam {cam_id}")
             else:
                 stall_count = 0
-            
+
             prev_distance = distance
-            
+
             # Adaptive step size: bigger when far, smaller when close
             if distance > 300:
                 self.step_deg = 8.0
@@ -326,31 +343,31 @@ class VisualServo:
                 self.step_deg = 5.0
             else:
                 self.step_deg = 3.0
-            
+
             # Phase management: horizontal first, then vertical
             if phase == "horizontal" and distance < 100:
                 phase = "vertical"
                 cam_id = 0  # switch to front cam for height
                 logger.info("Phase: horizontal aligned, switching to vertical (front cam)")
-            
+
             # Decide which joint to move
             joint_id, delta, reason = self.pixel_delta_to_joint_action(
                 gripper_px, target_px, joints_before, cam_id
             )
-            
+
             # Apply limits
             new_angle = joints_before[joint_id] + delta
             new_angle = max(-85, min(85, new_angle))
-            
+
             logger.info(f"Step {step_num}: {reason} → J{joint_id} = {new_angle:.1f}°")
-            
+
             # Move
             ok = await self.set_joint(joint_id, new_angle)
-            
+
             # VERIFY: check if move helped
             g2, t2 = await self.locate_averaged(target, cam_id, n=2)
             if g2 and t2:
-                new_dist = math.sqrt((t2[0]-g2[0])**2 + (t2[1]-g2[1])**2)
+                new_dist = math.sqrt((t2[0] - g2[0]) ** 2 + (t2[1] - g2[1]) ** 2)
                 if new_dist > distance + 30:
                     # Move made things worse — reverse it!
                     logger.warning(
@@ -358,9 +375,9 @@ class VisualServo:
                     )
                     await self.set_joint(joint_id, joints_before[joint_id])
                     reason += " (REVERSED)"
-            
+
             joints_after = await self.get_joints()
-            
+
             step_data = ServoStep(
                 step=step_num,
                 joints_before=joints_before,
@@ -372,23 +389,26 @@ class VisualServo:
                 notes=reason,
             )
             result.steps.append(step_data)
-        
+
         result.total_time_s = time.time() - t0
         if not result.success:
             result.final_distance_px = prev_distance
-            result.message = f"Did not converge after {len(result.steps)} steps (dist={prev_distance:.0f}px)"
-        
+            result.message = (
+                f"Did not converge after {len(result.steps)} steps (dist={prev_distance:.0f}px)"
+            )
+
         return result
 
 
 async def main():
     """CLI entry point for testing."""
     import sys
+
     target = sys.argv[1] if len(sys.argv) > 1 else "red bull can"
-    
+
     servo = VisualServo()
     result = await servo.approach(target)
-    
+
     print(f"\n{'SUCCESS' if result.success else 'FAILED'}: {result.message}")
     print(f"Time: {result.total_time_s:.1f}s, Steps: {len(result.steps)}")
     for s in result.steps:

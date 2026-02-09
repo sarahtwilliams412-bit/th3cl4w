@@ -3,6 +3,7 @@
 Tests the client-side logic concepts: arm3d message parsing,
 voxel coordinate mapping, and FK overlay projection.
 """
+
 import json
 import math
 import pytest
@@ -14,9 +15,15 @@ class TestArm3dMessageFormat:
     def test_valid_message_structure(self):
         msg = {
             "type": "arm3d",
-            "positions": [[0,0,0],[0,0,0.1215],[0.1,0,0.25],[0.2,0,0.15],[0.25,0,0.1]],
+            "positions": [
+                [0, 0, 0],
+                [0, 0, 0.1215],
+                [0.1, 0, 0.25],
+                [0.2, 0, 0.15],
+                [0.25, 0, 0.1],
+            ],
             "confidence": [1.0, 0.9, 0.85, 0.8, 0.7],
-            "source": "fused"
+            "source": "fused",
         }
         assert msg["type"] == "arm3d"
         assert len(msg["positions"]) == 5
@@ -24,14 +31,19 @@ class TestArm3dMessageFormat:
         assert msg["source"] in ("fused", "fk_only")
 
     def test_positions_are_3d(self):
-        positions = [[0,0,0],[0,0,0.1215],[0.1,0,0.25],[0.2,0,0.15],[0.25,0,0.1]]
+        positions = [[0, 0, 0], [0, 0, 0.1215], [0.1, 0, 0.25], [0.2, 0, 0.15], [0.25, 0, 0.1]]
         for p in positions:
             assert len(p) == 3
             assert all(isinstance(v, (int, float)) for v in p)
 
     def test_source_values(self):
         for src in ("fused", "fk_only"):
-            msg = {"type": "arm3d", "positions": [[0,0,0]]*5, "confidence": [1]*5, "source": src}
+            msg = {
+                "type": "arm3d",
+                "positions": [[0, 0, 0]] * 5,
+                "confidence": [1] * 5,
+                "source": src,
+            }
             assert msg["source"] == src
 
 
@@ -101,7 +113,7 @@ class TestCalibStatusEndpoint:
             "cameras_connected": 2,
             "calibration_loaded": True,
             "tracking_quality": "good",
-            "source": "fused"
+            "source": "fused",
         }
         assert "cameras_connected" in status
         assert "calibration_loaded" in status

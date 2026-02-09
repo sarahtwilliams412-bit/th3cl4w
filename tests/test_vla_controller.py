@@ -59,23 +59,28 @@ class TestVLAControllerExecution:
     @pytest.mark.asyncio
     async def test_immediate_done(self):
         """Model says done on first call → task succeeds immediately."""
-        backend = MockVLABackend(plans=[
-            ActionPlan(
-                phase="done",
-                actions=[{"type": "done", "reason": "already at target"}],
-                confidence=1.0,
-            ),
-        ])
+        backend = MockVLABackend(
+            plans=[
+                ActionPlan(
+                    phase="done",
+                    actions=[{"type": "done", "reason": "already at target"}],
+                    confidence=1.0,
+                ),
+            ]
+        )
 
         ctrl = VLAController(backend=backend)
 
         # Mock the observation and arm API calls
         mock_obs = Observation(
-            cam0_jpeg=b"fake", cam1_jpeg=b"fake",
-            joints=[0.0] * 6, gripper_mm=0.0, enabled=True,
+            cam0_jpeg=b"fake",
+            cam1_jpeg=b"fake",
+            joints=[0.0] * 6,
+            gripper_mm=0.0,
+            enabled=True,
         )
 
-        with patch.object(ctrl, '_observe', return_value=mock_obs):
+        with patch.object(ctrl, "_observe", return_value=mock_obs):
             result = await ctrl.execute("test task")
 
         assert result.success
@@ -84,31 +89,38 @@ class TestVLAControllerExecution:
     @pytest.mark.asyncio
     async def test_plan_then_done(self):
         """Model plans actions, then says done after verify."""
-        backend = MockVLABackend(plans=[
-            ActionPlan(
-                phase="approach",
-                actions=[
-                    {"type": "joint", "id": 0, "delta": 5.0, "reason": "rotate"},
-                    {"type": "verify", "reason": "check"},
-                ],
-                confidence=0.7,
-            ),
-            ActionPlan(
-                phase="done",
-                actions=[{"type": "done", "reason": "aligned"}],
-                confidence=0.95,
-            ),
-        ])
+        backend = MockVLABackend(
+            plans=[
+                ActionPlan(
+                    phase="approach",
+                    actions=[
+                        {"type": "joint", "id": 0, "delta": 5.0, "reason": "rotate"},
+                        {"type": "verify", "reason": "check"},
+                    ],
+                    confidence=0.7,
+                ),
+                ActionPlan(
+                    phase="done",
+                    actions=[{"type": "done", "reason": "aligned"}],
+                    confidence=0.95,
+                ),
+            ]
+        )
 
         ctrl = VLAController(backend=backend)
 
         mock_obs = Observation(
-            cam0_jpeg=b"fake", cam1_jpeg=b"fake",
-            joints=[0.0] * 6, gripper_mm=0.0, enabled=True,
+            cam0_jpeg=b"fake",
+            cam1_jpeg=b"fake",
+            joints=[0.0] * 6,
+            gripper_mm=0.0,
+            enabled=True,
         )
 
-        with patch.object(ctrl, '_observe', return_value=mock_obs), \
-             patch.object(ctrl, '_execute_joint', return_value=True):
+        with (
+            patch.object(ctrl, "_observe", return_value=mock_obs),
+            patch.object(ctrl, "_execute_joint", return_value=True),
+        ):
             result = await ctrl.execute("pick up can")
 
         assert result.success
@@ -122,11 +134,14 @@ class TestVLAControllerExecution:
         ctrl = VLAController(backend=backend)
 
         mock_obs = Observation(
-            cam0_jpeg=b"fake", cam1_jpeg=b"fake",
-            joints=[0.0] * 6, gripper_mm=0.0, enabled=False,  # NOT enabled
+            cam0_jpeg=b"fake",
+            cam1_jpeg=b"fake",
+            joints=[0.0] * 6,
+            gripper_mm=0.0,
+            enabled=False,  # NOT enabled
         )
 
-        with patch.object(ctrl, '_observe', return_value=mock_obs):
+        with patch.object(ctrl, "_observe", return_value=mock_obs):
             result = await ctrl.execute("test")
 
         assert not result.success
@@ -150,12 +165,17 @@ class TestVLAControllerExecution:
         ctrl = VLAController(backend=backend, max_steps=3)
 
         mock_obs = Observation(
-            cam0_jpeg=b"fake", cam1_jpeg=b"fake",
-            joints=[0.0] * 6, gripper_mm=0.0, enabled=True,
+            cam0_jpeg=b"fake",
+            cam1_jpeg=b"fake",
+            joints=[0.0] * 6,
+            gripper_mm=0.0,
+            enabled=True,
         )
 
-        with patch.object(ctrl, '_observe', return_value=mock_obs), \
-             patch.object(ctrl, '_execute_joint', return_value=True):
+        with (
+            patch.object(ctrl, "_observe", return_value=mock_obs),
+            patch.object(ctrl, "_execute_joint", return_value=True),
+        ):
             result = await ctrl.execute("impossible task")
 
         assert not result.success
@@ -164,31 +184,38 @@ class TestVLAControllerExecution:
     @pytest.mark.asyncio
     async def test_abort_during_execution(self):
         """Should abort cleanly when abort() is called."""
-        backend = MockVLABackend(plans=[
-            ActionPlan(
-                phase="approach",
-                actions=[
-                    {"type": "joint", "id": 0, "delta": 5.0},
-                    {"type": "joint", "id": 1, "delta": -5.0},
-                    {"type": "joint", "id": 2, "delta": 5.0},
-                ],
-                confidence=0.5,
-            ),
-        ])
+        backend = MockVLABackend(
+            plans=[
+                ActionPlan(
+                    phase="approach",
+                    actions=[
+                        {"type": "joint", "id": 0, "delta": 5.0},
+                        {"type": "joint", "id": 1, "delta": -5.0},
+                        {"type": "joint", "id": 2, "delta": 5.0},
+                    ],
+                    confidence=0.5,
+                ),
+            ]
+        )
 
         ctrl = VLAController(backend=backend)
 
         mock_obs = Observation(
-            cam0_jpeg=b"fake", cam1_jpeg=b"fake",
-            joints=[0.0] * 6, gripper_mm=0.0, enabled=True,
+            cam0_jpeg=b"fake",
+            cam1_jpeg=b"fake",
+            joints=[0.0] * 6,
+            gripper_mm=0.0,
+            enabled=True,
         )
 
         async def slow_execute(jid, angle):
             ctrl.abort()  # Abort after first action
             return True
 
-        with patch.object(ctrl, '_observe', return_value=mock_obs), \
-             patch.object(ctrl, '_execute_joint', side_effect=slow_execute):
+        with (
+            patch.object(ctrl, "_observe", return_value=mock_obs),
+            patch.object(ctrl, "_execute_joint", side_effect=slow_execute),
+        ):
             result = await ctrl.execute("test")
 
         assert not result.success
@@ -200,7 +227,7 @@ class TestVLAControllerExecution:
         backend = MockVLABackend()
         ctrl = VLAController(backend=backend)
 
-        with patch.object(ctrl, '_observe', side_effect=Exception("Camera offline")):
+        with patch.object(ctrl, "_observe", side_effect=Exception("Camera offline")):
             result = await ctrl.execute("test")
 
         assert not result.success
@@ -209,31 +236,38 @@ class TestVLAControllerExecution:
     @pytest.mark.asyncio
     async def test_gripper_action(self):
         """Should execute gripper actions."""
-        backend = MockVLABackend(plans=[
-            ActionPlan(
-                phase="grasp",
-                actions=[
-                    {"type": "gripper", "position_mm": 55.0, "reason": "open"},
-                    {"type": "verify", "reason": "check"},
-                ],
-                confidence=0.9,
-            ),
-            ActionPlan(
-                phase="done",
-                actions=[{"type": "done", "reason": "grasped"}],
-                confidence=1.0,
-            ),
-        ])
+        backend = MockVLABackend(
+            plans=[
+                ActionPlan(
+                    phase="grasp",
+                    actions=[
+                        {"type": "gripper", "position_mm": 55.0, "reason": "open"},
+                        {"type": "verify", "reason": "check"},
+                    ],
+                    confidence=0.9,
+                ),
+                ActionPlan(
+                    phase="done",
+                    actions=[{"type": "done", "reason": "grasped"}],
+                    confidence=1.0,
+                ),
+            ]
+        )
 
         ctrl = VLAController(backend=backend)
 
         mock_obs = Observation(
-            cam0_jpeg=b"fake", cam1_jpeg=b"fake",
-            joints=[0.0] * 6, gripper_mm=0.0, enabled=True,
+            cam0_jpeg=b"fake",
+            cam1_jpeg=b"fake",
+            joints=[0.0] * 6,
+            gripper_mm=0.0,
+            enabled=True,
         )
 
-        with patch.object(ctrl, '_observe', return_value=mock_obs), \
-             patch.object(ctrl, '_execute_gripper', return_value=True):
+        with (
+            patch.object(ctrl, "_observe", return_value=mock_obs),
+            patch.object(ctrl, "_execute_gripper", return_value=True),
+        ):
             result = await ctrl.execute("grasp object")
 
         assert result.success

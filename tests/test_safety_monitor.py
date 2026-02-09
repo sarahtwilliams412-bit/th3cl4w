@@ -60,6 +60,7 @@ def make_state(positions=None, velocities=None, torques=None, gripper=0.0, times
 
 # ── Default limits sanity ───────────────────────────────────────────────────
 
+
 class TestDefaultLimits:
     def test_limits_shapes(self, limits):
         assert limits.position_min.shape == (NUM_JOINTS,)
@@ -109,6 +110,7 @@ class TestDefaultLimits:
 
 
 # ── Position limit tests ────────────────────────────────────────────────────
+
 
 class TestPositionLimits:
     def test_zero_positions_safe(self, monitor):
@@ -164,7 +166,7 @@ class TestPositionLimits:
     def test_nan_position(self, monitor):
         """NaN should fail comparisons and be treated as out of range."""
         positions = [0.0] * NUM_JOINTS
-        positions[0] = float('nan')
+        positions[0] = float("nan")
         cmd = make_cmd(positions=positions)
         result = monitor.validate_command(cmd)
         # NaN comparisons are False, so it won't trigger < or > — this tests the behavior
@@ -173,14 +175,14 @@ class TestPositionLimits:
 
     def test_inf_position(self, monitor):
         positions = [0.0] * NUM_JOINTS
-        positions[0] = float('inf')
+        positions[0] = float("inf")
         cmd = make_cmd(positions=positions)
         result = monitor.validate_command(cmd)
         assert not result.is_safe
 
     def test_negative_inf_position(self, monitor):
         positions = [0.0] * NUM_JOINTS
-        positions[0] = float('-inf')
+        positions[0] = float("-inf")
         cmd = make_cmd(positions=positions)
         result = monitor.validate_command(cmd)
         assert not result.is_safe
@@ -201,6 +203,7 @@ class TestPositionLimits:
 
 
 # ── Velocity limit tests ────────────────────────────────────────────────────
+
 
 class TestVelocityLimits:
     def test_zero_velocities_safe(self, monitor):
@@ -233,6 +236,7 @@ class TestVelocityLimits:
 
 # ── Torque limit tests ──────────────────────────────────────────────────────
 
+
 class TestTorqueLimits:
     def test_zero_torques_safe(self, monitor):
         cmd = make_cmd(torques=[0.0] * NUM_JOINTS)
@@ -256,6 +260,7 @@ class TestTorqueLimits:
 
 
 # ── Gripper limit tests ─────────────────────────────────────────────────────
+
 
 class TestGripperLimits:
     def test_gripper_zero_safe(self, monitor):
@@ -295,6 +300,7 @@ class TestGripperLimits:
 
 
 # ── E-stop tests ────────────────────────────────────────────────────────────
+
 
 class TestEstop:
     def test_estop_initially_inactive(self, monitor):
@@ -342,10 +348,16 @@ class TestEstop:
 
 # ── Command clamping tests ──────────────────────────────────────────────────
 
+
 class TestClampCommand:
     def test_clamp_within_limits_unchanged(self, monitor, limits):
         positions = [0.0] * NUM_JOINTS
-        cmd = make_cmd(positions=positions, velocities=[0.0] * NUM_JOINTS, torques=[0.0] * NUM_JOINTS, gripper=0.5)
+        cmd = make_cmd(
+            positions=positions,
+            velocities=[0.0] * NUM_JOINTS,
+            torques=[0.0] * NUM_JOINTS,
+            gripper=0.5,
+        )
         clamped = monitor.clamp_command(cmd)
         np.testing.assert_array_almost_equal(clamped.joint_positions, positions)
         assert clamped.gripper_position == 0.5
@@ -408,6 +420,7 @@ class TestClampCommand:
 
 # ── State checking tests ────────────────────────────────────────────────────
 
+
 class TestCheckState:
     def test_safe_state(self, monitor):
         state = make_state()
@@ -438,11 +451,14 @@ class TestCheckState:
         torques[0] = limits.torque_max[0] + 1.0
         state = make_state(torques=torques)
         violations = monitor.check_state(state)
-        torque_violations = [v for v in violations if v.violation_type == ViolationType.TORQUE_LIMIT]
+        torque_violations = [
+            v for v in violations if v.violation_type == ViolationType.TORQUE_LIMIT
+        ]
         assert len(torque_violations) >= 1
 
 
 # ── SafetyResult / SafetyViolation dataclass tests ──────────────────────────
+
 
 class TestSafetyResultBool:
     def test_safe_result_is_truthy(self):
@@ -458,6 +474,7 @@ class TestSafetyResultBool:
 
 
 # ── Combined / multi-violation tests ────────────────────────────────────────
+
 
 class TestMultipleViolations:
     def test_position_and_velocity_violations(self, monitor, limits):

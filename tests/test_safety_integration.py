@@ -31,10 +31,10 @@ from src.safety.limits import (
 from src.safety.safety_monitor import SafetyMonitor, d1_default_limits, SafetyResult
 from src.interface.d1_connection import D1Command, NUM_JOINTS
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_mock_arm(angles=None, gripper=0.0):
     """Create a mock arm with configurable joint feedback."""
@@ -76,6 +76,7 @@ def _make_smoother(arm=None, safety_monitor=None, max_step_deg=MAX_STEP_DEG):
 # Test: Unified limits are consistent
 # ---------------------------------------------------------------------------
 
+
 class TestUnifiedLimits:
     def test_limits_shape(self):
         assert JOINT_LIMITS_DEG.shape == (6, 2)
@@ -89,6 +90,7 @@ class TestUnifiedLimits:
 
     def test_rad_limits_match_deg(self):
         import math
+
         for i in range(6):
             assert abs(JOINT_LIMITS_RAD_MIN[i] - math.radians(JOINT_LIMITS_DEG[i, 0])) < 1e-10
             assert abs(JOINT_LIMITS_RAD_MAX[i] - math.radians(JOINT_LIMITS_DEG[i, 1])) < 1e-10
@@ -104,6 +106,7 @@ class TestUnifiedLimits:
 # ---------------------------------------------------------------------------
 # Test: SafetyMonitor validates commands
 # ---------------------------------------------------------------------------
+
 
 class TestSafetyMonitorValidation:
     def setup_method(self):
@@ -141,6 +144,7 @@ class TestSafetyMonitorValidation:
 # ---------------------------------------------------------------------------
 # Test: CommandSmoother integration with SafetyMonitor
 # ---------------------------------------------------------------------------
+
 
 class TestSmootherSafetyIntegration:
     def test_valid_command_sent(self):
@@ -223,6 +227,7 @@ class TestSmootherSafetyIntegration:
 # Test: d1_default_limits uses unified values
 # ---------------------------------------------------------------------------
 
+
 class TestDefaultLimitsUnified:
     def test_limits_use_unified_values(self):
         limits = d1_default_limits()
@@ -234,10 +239,12 @@ class TestDefaultLimitsUnified:
 # Test: Feedback freshness
 # ---------------------------------------------------------------------------
 
+
 class TestFeedbackFreshness:
     def test_fresh_feedback(self):
         monitor = SafetyMonitor()
         from src.interface.d1_connection import D1State
+
         state = D1State(
             joint_positions=np.zeros(NUM_JOINTS),
             joint_velocities=np.zeros(NUM_JOINTS),
@@ -250,6 +257,7 @@ class TestFeedbackFreshness:
     def test_stale_feedback(self):
         monitor = SafetyMonitor()
         from src.interface.d1_connection import D1State
+
         state = D1State(
             joint_positions=np.zeros(NUM_JOINTS),
             joint_velocities=np.zeros(NUM_JOINTS),

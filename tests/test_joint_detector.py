@@ -33,7 +33,7 @@ def _make_segmentation(
             else:
                 half = base_w
             cx = x + w // 2
-            mask[row, max(0, cx - half): min(mask.shape[1], cx + half)] = 255
+            mask[row, max(0, cx - half) : min(mask.shape[1], cx + half)] = 255
 
     return ArmSegmentation(
         silhouette_mask=mask,

@@ -103,9 +103,7 @@ class CameraModel:
 
         return self.camera_position.copy(), dir_world
 
-    def pixel_to_world_at_z(
-        self, u: float, v: float, z: float = 0.0
-    ) -> Optional[np.ndarray]:
+    def pixel_to_world_at_z(self, u: float, v: float, z: float = 0.0) -> Optional[np.ndarray]:
         """Back-project a pixel to a 3D world point at a given Z height.
 
         Useful for objects on a known surface (e.g., table at z=0.05m).
@@ -130,9 +128,7 @@ class CameraModel:
         point = origin + t * direction
         return point
 
-    def pixel_to_world_at_distance(
-        self, u: float, v: float, distance: float
-    ) -> np.ndarray:
+    def pixel_to_world_at_distance(self, u: float, v: float, distance: float) -> np.ndarray:
         """Back-project a pixel to a 3D point at a given distance from camera.
 
         Args:

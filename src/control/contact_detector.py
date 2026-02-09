@@ -32,6 +32,7 @@ class ContactStatus(Enum):
 @dataclass
 class ContactResult:
     """Result of a contact detection attempt."""
+
     contacted: bool
     status: ContactStatus
     final_mm: float
@@ -43,6 +44,7 @@ class ContactResult:
 @dataclass
 class GripResult:
     """Result of an adaptive grip sequence."""
+
     contacted: bool
     final_mm: float
     steps_taken: int
@@ -53,6 +55,7 @@ class GripResult:
 @dataclass
 class ObjectProfile:
     """Expected contact range for a known object type."""
+
     name: str
     min_contact_mm: float
     max_contact_mm: float
@@ -181,7 +184,8 @@ class GripperContactDetector:
                             self._last_result = result
                             logger.info(
                                 "Contact detected at %.1fmm (stable for %.2fs)",
-                                stable_value, elapsed - stable_start,
+                                stable_value,
+                                elapsed - stable_start,
                             )
                             return result
                 else:

@@ -191,6 +191,7 @@ class SafetyMonitor:
         Returns False if the state timestamp is older than FEEDBACK_MAX_AGE_S.
         """
         import time as _time
+
         age = _time.time() - state.timestamp
         return age <= FEEDBACK_MAX_AGE_S
 

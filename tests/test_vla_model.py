@@ -85,25 +85,26 @@ class TestGeminiVLABackend:
     def test_parse_valid_response(self):
         """Test parsing a well-formed JSON response."""
         # We need to test the _parse_response method directly
-        with patch("google.generativeai.configure"), \
-             patch("google.generativeai.GenerativeModel"):
+        with patch("google.generativeai.configure"), patch("google.generativeai.GenerativeModel"):
             backend = GeminiVLABackend.__new__(GeminiVLABackend)
             backend.api_key = "test"
 
-        response_json = json.dumps({
-            "reasoning": "Can is to the right, need to rotate base",
-            "scene_description": "Red bull can visible on table",
-            "gripper_position": {"cam1": {"u": 760, "v": 135}},
-            "target_position": {"cam1": {"u": 900, "v": 600}},
-            "actions": [
-                {"type": "joint", "id": 0, "delta": 8.0, "reason": "rotate right"},
-                {"type": "joint", "id": 1, "delta": -5.0, "reason": "lean forward"},
-                {"type": "verify", "reason": "check position"},
-            ],
-            "phase": "approach",
-            "confidence": 0.75,
-            "estimated_remaining_steps": 8,
-        })
+        response_json = json.dumps(
+            {
+                "reasoning": "Can is to the right, need to rotate base",
+                "scene_description": "Red bull can visible on table",
+                "gripper_position": {"cam1": {"u": 760, "v": 135}},
+                "target_position": {"cam1": {"u": 900, "v": 600}},
+                "actions": [
+                    {"type": "joint", "id": 0, "delta": 8.0, "reason": "rotate right"},
+                    {"type": "joint", "id": 1, "delta": -5.0, "reason": "lean forward"},
+                    {"type": "verify", "reason": "check position"},
+                ],
+                "phase": "approach",
+                "confidence": 0.75,
+                "estimated_remaining_steps": 8,
+            }
+        )
 
         plan = backend._parse_response(response_json)
         assert plan.phase == "approach"
@@ -113,19 +114,19 @@ class TestGeminiVLABackend:
 
     def test_parse_with_markdown_fences(self):
         """Gemini sometimes wraps JSON in ```json ... ```."""
-        with patch("google.generativeai.configure"), \
-             patch("google.generativeai.GenerativeModel"):
+        with patch("google.generativeai.configure"), patch("google.generativeai.GenerativeModel"):
             backend = GeminiVLABackend.__new__(GeminiVLABackend)
 
-        response = '```json\n{"reasoning": "test", "actions": [], "phase": "done", "confidence": 1.0}\n```'
+        response = (
+            '```json\n{"reasoning": "test", "actions": [], "phase": "done", "confidence": 1.0}\n```'
+        )
         plan = backend._parse_response(response)
         assert plan.phase == "done"
         assert plan.error is None
 
     def test_parse_invalid_json(self):
         """Invalid JSON should return error plan, not crash."""
-        with patch("google.generativeai.configure"), \
-             patch("google.generativeai.GenerativeModel"):
+        with patch("google.generativeai.configure"), patch("google.generativeai.GenerativeModel"):
             backend = GeminiVLABackend.__new__(GeminiVLABackend)
 
         plan = backend._parse_response("this is not json at all")
@@ -133,8 +134,7 @@ class TestGeminiVLABackend:
         assert "JSON parse error" in plan.error
 
     def test_parse_empty_response(self):
-        with patch("google.generativeai.configure"), \
-             patch("google.generativeai.GenerativeModel"):
+        with patch("google.generativeai.configure"), patch("google.generativeai.GenerativeModel"):
             backend = GeminiVLABackend.__new__(GeminiVLABackend)
 
         plan = backend._parse_response("")

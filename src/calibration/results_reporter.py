@@ -20,6 +20,7 @@ try:
         ComparisonResult,
         JointComparison,
     )
+
     _USING_REAL_CLASSES = True
 except ImportError:
     _USING_REAL_CLASSES = False
@@ -93,10 +94,14 @@ COST_PER_TOKEN = 0.15 / 1_000_000  # blended estimate
 # Helper: extract per-joint stats from ComparisonReport
 # ---------------------------------------------------------------------------
 
+
 def _joint_stats(report: ComparisonReport) -> list[dict]:
     """Aggregate per-joint stats from results."""
     from collections import defaultdict
-    stats = defaultdict(lambda: {"cv_det": 0, "llm_det": 0, "cv_errs": [], "llm_errs": [], "agree": 0, "total": 0})
+
+    stats = defaultdict(
+        lambda: {"cv_det": 0, "llm_det": 0, "cv_errs": [], "llm_errs": [], "agree": 0, "total": 0}
+    )
 
     for r in report.results:
         for jc in r.joints:
@@ -120,20 +125,23 @@ def _joint_stats(report: ComparisonReport) -> list[dict]:
             continue
         s = stats[name]
         total = s["total"] or 1
-        result.append({
-            "name": name,
-            "cv_detection_rate": s["cv_det"] / total,
-            "llm_detection_rate": s["llm_det"] / total,
-            "cv_mean_error_px": _avg(s["cv_errs"]) if s["cv_errs"] else None,
-            "llm_mean_error_px": _avg(s["llm_errs"]) if s["llm_errs"] else None,
-            "agreement_rate": s["agree"] / total,
-        })
+        result.append(
+            {
+                "name": name,
+                "cv_detection_rate": s["cv_det"] / total,
+                "llm_detection_rate": s["llm_det"] / total,
+                "cv_mean_error_px": _avg(s["cv_errs"]) if s["cv_errs"] else None,
+                "llm_mean_error_px": _avg(s["llm_errs"]) if s["llm_errs"] else None,
+                "agreement_rate": s["agree"] / total,
+            }
+        )
     return result
 
 
 # ---------------------------------------------------------------------------
 # Reporter
 # ---------------------------------------------------------------------------
+
 
 class CalibrationReporter:
 
@@ -150,7 +158,7 @@ class CalibrationReporter:
         lines: list[str] = []
         _a = lines.append
 
-        session_id = getattr(session, 'session_id', '') or 'unknown'
+        session_id = getattr(session, "session_id", "") or "unknown"
         _a("# Calibration Comparison Report")
         _a(f"**Session:** {session_id}")
         _a(f"**Date:** {datetime.now().isoformat()}")
@@ -185,9 +193,11 @@ class CalibrationReporter:
         _a("| Joint | CV Det% | LLM Det% | CV Err(px) | LLM Err(px) | Agreement |")
         _a("|-------|---------|----------|------------|-------------|-----------|")
         for js in jstats:
-            cv_e = f"{js['cv_mean_error_px']:.1f}" if js['cv_mean_error_px'] is not None else "—"
-            llm_e = f"{js['llm_mean_error_px']:.1f}" if js['llm_mean_error_px'] is not None else "—"
-            _a(f"| {js['name']:<14} | {js['cv_detection_rate']*100:5.1f}% | {js['llm_detection_rate']*100:6.1f}% | {cv_e:>10} | {llm_e:>11} | {js['agreement_rate']*100:5.1f}% |")
+            cv_e = f"{js['cv_mean_error_px']:.1f}" if js["cv_mean_error_px"] is not None else "—"
+            llm_e = f"{js['llm_mean_error_px']:.1f}" if js["llm_mean_error_px"] is not None else "—"
+            _a(
+                f"| {js['name']:<14} | {js['cv_detection_rate']*100:5.1f}% | {js['llm_detection_rate']*100:6.1f}% | {cv_e:>10} | {llm_e:>11} | {js['agreement_rate']*100:5.1f}% |"
+            )
         _a("")
 
         # -- Per-Pose Detail --
@@ -204,7 +214,9 @@ class CalibrationReporter:
                 llm_errs = [j.llm_error_px for j in r.joints if j.llm_error_px is not None]
                 cv_me_s = f"{_avg(cv_errs):.1f}" if cv_errs else "—"
                 llm_me_s = f"{_avg(llm_errs):.1f}" if llm_errs else "—"
-                _a(f"| {r.pose_index:>4} | {r.camera_id} | {cv_count}/{n_joints} | {llm_count}/{n_joints} | {cv_me_s:>12} | {llm_me_s:>13} |")
+                _a(
+                    f"| {r.pose_index:>4} | {r.camera_id} | {cv_count}/{n_joints} | {llm_count}/{n_joints} | {cv_me_s:>12} | {llm_me_s:>13} |"
+                )
             _a("")
 
         # -- Cost Analysis --
@@ -372,8 +384,12 @@ class CalibrationReporter:
             name = js["name"][:12].ljust(12)
             cv_len = int(js["cv_detection_rate"] * max_bar)
             llm_len = int(js["llm_detection_rate"] * max_bar)
-            lines.append(f"{name} CV  |{'█' * cv_len}{'░' * (max_bar - cv_len)}| {js['cv_detection_rate']*100:.0f}%")
-            lines.append(f"{'':12} LLM |{'▓' * llm_len}{'░' * (max_bar - llm_len)}| {js['llm_detection_rate']*100:.0f}%")
+            lines.append(
+                f"{name} CV  |{'█' * cv_len}{'░' * (max_bar - cv_len)}| {js['cv_detection_rate']*100:.0f}%"
+            )
+            lines.append(
+                f"{'':12} LLM |{'▓' * llm_len}{'░' * (max_bar - llm_len)}| {js['llm_detection_rate']*100:.0f}%"
+            )
             lines.append("")
         lines.append("```")
         return "\n".join(lines)
@@ -397,18 +413,18 @@ class CalibrationReporter:
             max_val = 1.0
         h, w = 15, 40
 
-        grid = [[' '] * (w + 1) for _ in range(h + 1)]
+        grid = [[" "] * (w + 1) for _ in range(h + 1)]
         for cv_e, llm_e in pairs:
             x = min(int(cv_e / max_val * w), w)
             y = min(int(llm_e / max_val * h), h)
-            grid[h - y][x] = '●'
+            grid[h - y][x] = "●"
 
         # Diagonal
         for i in range(min(h, w) + 1):
             r_idx = h - int(i * h / min(h, w)) if min(h, w) > 0 else 0
             c_idx = int(i * w / min(h, w)) if min(h, w) > 0 else 0
-            if 0 <= r_idx <= h and 0 <= c_idx <= w and grid[r_idx][c_idx] == ' ':
-                grid[r_idx][c_idx] = '·'
+            if 0 <= r_idx <= h and 0 <= c_idx <= w and grid[r_idx][c_idx] == " ":
+                grid[r_idx][c_idx] = "·"
 
         lines.append(f"LLM err ^  (max={max_val:.0f}px)")
         for row in grid:
