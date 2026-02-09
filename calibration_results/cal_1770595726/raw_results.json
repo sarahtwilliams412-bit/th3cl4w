@@ -1,0 +1,512 @@
+[
+  {
+    "pose_index": 0,
+    "camera_id": 0,
+    "joint_angles": [
+      0.2,
+      0.2,
+      0.8,
+      0.0,
+      0.1,
+      0.1
+    ],
+    "joints": [
+      {
+        "name": "base",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          1026.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1405.0893210041845,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "high"
+      },
+      {
+        "name": "shoulder",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          810.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1256.0652849274993,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "elbow",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          864.0,
+          594.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1048.4903433031704,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "wrist",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          672.0,
+          432.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 798.8792149004754,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      },
+      {
+        "name": "end_effector",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          576.0,
+          324.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 660.8721510246895,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      }
+    ],
+    "cv_latency_ms": 110.08245400444139,
+    "llm_latency_ms": 1953.9066290017217,
+    "llm_tokens": 2510
+  },
+  {
+    "pose_index": 1,
+    "camera_id": 0,
+    "joint_angles": [
+      29.2,
+      0.2,
+      0.7,
+      0.0,
+      0.2,
+      0.1
+    ],
+    "joints": [
+      {
+        "name": "base",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          1026.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1405.0893210041845,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "high"
+      },
+      {
+        "name": "shoulder",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          810.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1256.0652849274993,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "elbow",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          768.0,
+          594.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 970.9067926428365,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "wrist",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          576.0,
+          432.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 720.0,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      },
+      {
+        "name": "end_effector",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          480.0,
+          324.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 579.1165685766554,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      }
+    ],
+    "cv_latency_ms": 96.6350960006821,
+    "llm_latency_ms": 1571.7592949949903,
+    "llm_tokens": 2450
+  },
+  {
+    "pose_index": 2,
+    "camera_id": 0,
+    "joint_angles": [
+      -29.3,
+      0.2,
+      0.8,
+      0.0,
+      0.3,
+      0.1
+    ],
+    "joints": [
+      {
+        "name": "base",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          1026.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1405.0893210041845,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "high"
+      },
+      {
+        "name": "shoulder",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          810.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1256.0652849274993,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "elbow",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          768.0,
+          594.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 970.9067926428365,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "wrist",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          576.0,
+          432.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 720.0,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      },
+      {
+        "name": "end_effector",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          384.0,
+          378.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 538.8320703150472,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      }
+    ],
+    "cv_latency_ms": 86.45840099779889,
+    "llm_latency_ms": 1974.782019999111,
+    "llm_tokens": 2316
+  },
+  {
+    "pose_index": 3,
+    "camera_id": 0,
+    "joint_angles": [
+      -0.2,
+      -30.0,
+      0.6,
+      0.1,
+      0.2,
+      0.1
+    ],
+    "joints": [
+      {
+        "name": "base",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          1026.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1405.0893210041845,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "high"
+      },
+      {
+        "name": "shoulder",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          810.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1256.0652849274993,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "elbow",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          864.0,
+          594.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1048.4903433031704,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "wrist",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          672.0,
+          432.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 798.8792149004754,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      },
+      {
+        "name": "end_effector",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          576.0,
+          324.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 660.8721510246895,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      }
+    ],
+    "cv_latency_ms": 81.5150030030054,
+    "llm_latency_ms": 1916.031133994693,
+    "llm_tokens": 2248
+  },
+  {
+    "pose_index": 4,
+    "camera_id": 0,
+    "joint_angles": [
+      -0.1,
+      -60.4,
+      0.5,
+      0.0,
+      0.2,
+      0.1
+    ],
+    "joints": [
+      {
+        "name": "base",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          1026.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1405.0893210041845,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "high"
+      },
+      {
+        "name": "shoulder",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          960.0,
+          810.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 1256.0652849274993,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "elbow",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          768.0,
+          540.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 938.8418397152951,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "medium"
+      },
+      {
+        "name": "wrist",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          576.0,
+          378.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 688.9557315241669,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      },
+      {
+        "name": "end_effector",
+        "fk_pixel": [
+          0,
+          0
+        ],
+        "cv_pixel": null,
+        "llm_pixel": [
+          480.0,
+          324.0
+        ],
+        "cv_error_px": null,
+        "llm_error_px": 579.1165685766554,
+        "agreement_px": null,
+        "cv_source": "fk_only",
+        "llm_confidence": "low"
+      }
+    ],
+    "cv_latency_ms": 83.62155400391202,
+    "llm_latency_ms": 1622.112365999783,
+    "llm_tokens": 2339
+  }
+]

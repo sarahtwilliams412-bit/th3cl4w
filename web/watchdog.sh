@@ -2,6 +2,10 @@
 # Watchdog for th3cl4w web + camera servers — auto-restarts on crash
 cd "$(dirname "$0")/.."
 
+# Source environment (API keys etc)
+# .bashrc exits early for non-interactive shells, so grep exports directly
+eval "$(grep '^export ' "$HOME/.bashrc" 2>/dev/null)" || true
+
 # Prevent duplicate watchdogs
 WATCHDOG_LOCK="/tmp/th3cl4w-watchdog.lock"
 exec 200>"$WATCHDOG_LOCK"

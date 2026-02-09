@@ -1,0 +1,85 @@
+{
+  "session_id": "",
+  "total_poses": 5,
+  "recommendation": "archive",
+  "cv_detection_rate": 0.0,
+  "llm_detection_rate": 1.0,
+  "cv_mean_error_px": 0.0,
+  "llm_mean_error_px": 1001.1573124843433,
+  "total_llm_cost_usd": 0.0015570749999999998,
+  "total_llm_tokens": 11863,
+  "joints": [
+    {
+      "name": "base",
+      "cv_detection_rate": 0.0,
+      "llm_detection_rate": 1.0,
+      "cv_mean_error_px": null,
+      "llm_mean_error_px": 1405.0893210041845,
+      "agreement_rate": 0.0
+    },
+    {
+      "name": "shoulder",
+      "cv_detection_rate": 0.0,
+      "llm_detection_rate": 1.0,
+      "cv_mean_error_px": null,
+      "llm_mean_error_px": 1256.0652849274993,
+      "agreement_rate": 0.0
+    },
+    {
+      "name": "elbow",
+      "cv_detection_rate": 0.0,
+      "llm_detection_rate": 1.0,
+      "cv_mean_error_px": null,
+      "llm_mean_error_px": 995.5272223214619,
+      "agreement_rate": 0.0
+    },
+    {
+      "name": "wrist",
+      "cv_detection_rate": 0.0,
+      "llm_detection_rate": 1.0,
+      "cv_mean_error_px": null,
+      "llm_mean_error_px": 745.3428322650236,
+      "agreement_rate": 0.0
+    },
+    {
+      "name": "end_effector",
+      "cv_detection_rate": 0.0,
+      "llm_detection_rate": 1.0,
+      "cv_mean_error_px": null,
+      "llm_mean_error_px": 603.7619019035474,
+      "agreement_rate": 0.0
+    }
+  ],
+  "per_pose": [
+    {
+      "pose_index": 0,
+      "camera_id": 0,
+      "cv_detected": 0,
+      "llm_detected": 5
+    },
+    {
+      "pose_index": 1,
+      "camera_id": 0,
+      "cv_detected": 0,
+      "llm_detected": 5
+    },
+    {
+      "pose_index": 2,
+      "camera_id": 0,
+      "cv_detected": 0,
+      "llm_detected": 5
+    },
+    {
+      "pose_index": 3,
+      "camera_id": 0,
+      "cv_detected": 0,
+      "llm_detected": 5
+    },
+    {
+      "pose_index": 4,
+      "camera_id": 0,
+      "cv_detected": 0,
+      "llm_detected": 5
+    }
+  ]
+}

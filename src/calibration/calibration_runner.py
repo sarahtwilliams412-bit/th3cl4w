@@ -30,8 +30,8 @@ JOINT_LIMITS_SAFE = {
 
 MAX_INCREMENT_DEG = 10.0
 MAX_TRACKING_ERROR_DEG = 20.0
-POSE_REACHED_TOLERANCE_DEG = 2.0
-POSE_REACHED_TIMEOUT_S = 15.0
+POSE_REACHED_TOLERANCE_DEG = 6.0
+POSE_REACHED_TIMEOUT_S = 30.0
 
 CALIBRATION_POSES = [
     (0, 0, 0, 0, 0, 0),           # home
@@ -125,16 +125,24 @@ class CalibrationRunner:
             return [float(j) for j in data["joints"]]
 
     async def set_single_joint(self, joint_id: int, angle: float) -> bool:
-        """Send a single set-joint command (funcode 1)."""
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(
-                f"{self.arm_base}/api/command/set-joint",
-                json={"id": joint_id, "angle": round(angle, 2)},
-            )
-            if resp.status_code == 409:
-                raise CalibrationError("Arm not enabled")
-            data = resp.json()
-            return data.get("ok", False)
+        """Send a single set-joint command (funcode 1). Retries on timeout."""
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(
+                        f"{self.arm_base}/api/command/set-joint",
+                        json={"id": joint_id, "angle": round(angle, 2)},
+                    )
+                    if resp.status_code == 409:
+                        raise CalibrationError("Arm not enabled")
+                    data = resp.json()
+                    return data.get("ok", False)
+            except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException):
+                logger.warning(f"Joint {joint_id} command timeout (attempt {attempt+1}/3)")
+                if attempt == 2:
+                    logger.error(f"Joint {joint_id} command timed out after 3 attempts — skipping")
+                    return False
+                await asyncio.sleep(2)
 
     async def wait_for_pose_reached(
         self,
@@ -349,10 +357,14 @@ class CalibrationRunner:
                     logger.warning("Calibration aborted by user")
                     break
 
-                capture = await self.run_single_pose(i, pose, comparator)
-                session.captures.append(capture)
+                try:
+                    capture = await self.run_single_pose(i, pose, comparator)
+                    session.captures.append(capture)
+                except Exception as e:
+                    logger.warning(f"Pose {i+1} failed, skipping: {e}")
+                    continue
 
-        except CalibrationError as e:
+        except Exception as e:
             logger.error(f"Calibration stopped: {e}")
             raise
         finally:
