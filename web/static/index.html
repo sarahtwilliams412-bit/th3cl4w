@@ -75,6 +75,20 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .estop.flash { animation: estop-flash 0.8s infinite; }
 @keyframes estop-flash { 0%,100% { box-shadow: 0 0 5px rgba(233,69,96,0.3); } 50% { box-shadow: 0 0 25px rgba(233,69,96,0.8); border-color: #fff; } }
 
+/* === Text Command Input === */
+.text-cmd-wrap { margin-top: 6px; }
+.text-cmd { display: flex; gap: 6px; }
+.text-cmd input { flex: 1; font-family: var(--mono); font-size: 12px; padding: 8px 10px; background: #0d1525; border: 1px solid var(--info); border-radius: 4px; color: var(--text); outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
+.text-cmd input:focus { border-color: #6ab0ff; box-shadow: 0 0 8px rgba(74,144,217,0.3); }
+.text-cmd input::placeholder { color: #556; font-style: italic; }
+.text-cmd button { padding: 8px 14px; font-size: 11px; }
+.text-cmd-feedback { font-family: var(--mono); font-size: 10px; margin-top: 4px; padding: 4px 8px; border-radius: 3px; display: none; line-height: 1.4; }
+.text-cmd-feedback.ok { display: block; background: rgba(10,61,32,0.5); color: var(--success); border: 1px solid rgba(83,215,105,0.2); }
+.text-cmd-feedback.err { display: block; background: rgba(61,10,10,0.5); color: var(--danger); border: 1px solid rgba(233,69,96,0.2); }
+.text-cmd-examples { font-family: var(--mono); font-size: 9px; color: #445; margin-top: 3px; line-height: 1.5; }
+.text-cmd-examples span { cursor: pointer; color: #556; transition: color 0.15s; padding: 1px 4px; border-radius: 2px; }
+.text-cmd-examples span:hover { color: var(--info); background: rgba(74,144,217,0.1); }
+
 /* === Raw Command Input === */
 .raw-cmd { display: flex; gap: 6px; margin-top: 4px; }
 .raw-cmd input { flex: 1; font-family: var(--mono); font-size: 11px; padding: 6px 8px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; color: var(--text); outline: none; }
@@ -294,6 +308,16 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <span id="calibCams">Cameras: --</span><br>
         <span id="calibLoaded">Calibration: --</span><br>
         <span id="calibQuality">Tracking: --</span>
+      </div>
+
+      <div class="section-title">Text Command</div>
+      <div class="text-cmd-wrap">
+        <div class="text-cmd">
+          <input type="text" id="textCmdInput" placeholder="Tell the arm what to do...">
+          <button class="btn" id="btnTextCmd">GO</button>
+        </div>
+        <div class="text-cmd-feedback" id="textCmdFeedback"></div>
+        <div class="text-cmd-examples">try: <span onclick="textCmdFill(this)">wave hello</span> <span onclick="textCmdFill(this)">go home</span> <span onclick="textCmdFill(this)">open gripper</span> <span onclick="textCmdFill(this)">reach forward</span> <span onclick="textCmdFill(this)">point left</span> <span onclick="textCmdFill(this)">nod</span> <span onclick="textCmdFill(this)">raise</span> <span onclick="textCmdFill(this)">set j0 to 45</span></div>
       </div>
 
       <div class="section-title">Raw Command</div>
@@ -705,6 +729,64 @@ document.getElementById('btnRawSend').addEventListener('click', async () => {
   } catch(e) { logLocal('RAW', `Error: ${e.message}`, 'error'); }
 });
 document.getElementById('rawInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnRawSend').click(); });
+
+// ============================================================
+//  TEXT COMMAND INTERFACE
+// ============================================================
+
+function textCmdFill(el) {
+  document.getElementById('textCmdInput').value = el.textContent;
+  document.getElementById('textCmdInput').focus();
+}
+
+document.getElementById('btnTextCmd').addEventListener('click', async () => {
+  const input = document.getElementById('textCmdInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  const feedback = document.getElementById('textCmdFeedback');
+  feedback.className = 'text-cmd-feedback';
+  feedback.style.display = 'none';
+
+  logLocal('TEXT_CMD', `Sending: "${text}"`, 'info');
+  try {
+    const resp = await fetch('/api/command/text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      const desc = data.description || data.action || 'OK';
+      const extra = data.points ? ` (${data.points} pts, ${data.duration_s}s)` : '';
+      feedback.textContent = `${desc}${extra}`;
+      feedback.className = 'text-cmd-feedback ok';
+      logLocal('TEXT_CMD', `${desc}${extra}`, 'info');
+      input.value = '';
+    } else {
+      const errMsg = data.error || 'Unknown error';
+      feedback.textContent = errMsg;
+      feedback.className = 'text-cmd-feedback err';
+      logLocal('TEXT_CMD', `Error: ${errMsg}`, 'error');
+    }
+    if (data.state) { armState = { ...armState, ...data.state }; vizDirty = true; }
+    updateUI();
+  } catch(e) {
+    feedback.textContent = `Network error: ${e.message}`;
+    feedback.className = 'text-cmd-feedback err';
+    logLocal('TEXT_CMD', `Network error: ${e.message}`, 'error');
+  }
+
+  // Auto-hide feedback after 5 seconds
+  setTimeout(() => {
+    feedback.className = 'text-cmd-feedback';
+    feedback.style.display = 'none';
+  }, 5000);
+});
+
+document.getElementById('textCmdInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btnTextCmd').click();
+});
 
 // ============================================================
 //  WEBSOCKET
