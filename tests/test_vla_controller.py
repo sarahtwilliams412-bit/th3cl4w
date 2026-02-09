@@ -192,7 +192,7 @@ class TestVLAControllerExecution:
             result = await ctrl.execute("test")
 
         assert not result.success
-        assert "aborted" in result.message.lower() or ctrl._state == TaskState.ABORTED
+        assert result.final_phase == "aborted" or "aborted" in result.message.lower()
 
     @pytest.mark.asyncio
     async def test_observation_failure(self):
@@ -214,9 +214,14 @@ class TestVLAControllerExecution:
                 phase="grasp",
                 actions=[
                     {"type": "gripper", "position_mm": 55.0, "reason": "open"},
-                    {"type": "done", "reason": "grasped"},
+                    {"type": "verify", "reason": "check"},
                 ],
                 confidence=0.9,
+            ),
+            ActionPlan(
+                phase="done",
+                actions=[{"type": "done", "reason": "grasped"}],
+                confidence=1.0,
             ),
         ])
 
