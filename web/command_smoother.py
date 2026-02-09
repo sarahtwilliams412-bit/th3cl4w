@@ -57,10 +57,11 @@ class CommandSmoother:
         arm: Any,
         rate_hz: float = 10.0,
         smoothing_factor: float = 0.35,
-        max_step_deg: float = 15.0,
+        max_step_deg: float = 10.0,
         max_gripper_step_mm: float = 5.0,
         num_joints: int = 6,
         collector: Any = None,
+        safety_monitor: Any = None,
     ):
         self._arm = arm
         self._rate_hz = rate_hz
@@ -70,6 +71,10 @@ class CommandSmoother:
         self._max_grip_step = max_gripper_step_mm
         self._num_joints = num_joints
         self._collector = collector
+        self._safety_monitor = safety_monitor
+
+        # Feedback freshness tracking
+        self._last_feedback_time: float = 0.0
 
         # SAFETY: Initialize to None — unknown positions until synced
         self._current: list[Optional[float]] = [None] * num_joints
@@ -136,6 +141,7 @@ class CommandSmoother:
             else:
                 self._current_gripper = 0.0
             self._synced = True
+            self._last_feedback_time = time.time()
             logger.info("Smoother synced to arm positions: %s", self._current)
             return True
         except Exception as e:
@@ -155,6 +161,7 @@ class CommandSmoother:
             if gripper is not None:
                 self._current_gripper = float(gripper)
             self._synced = True
+            self._last_feedback_time = time.time()
             logger.info("Smoother synced from feedback: %s", self._current)
 
     def set_arm_enabled(self, enabled: bool) -> None:
@@ -260,6 +267,22 @@ class CommandSmoother:
         if not self._arm_enabled:
             return
 
+        # SAFETY: Check feedback freshness — refuse commands if feedback is stale
+        if self._last_feedback_time > 0:
+            feedback_age = time.time() - self._last_feedback_time
+            if feedback_age > 0.5:  # 500ms staleness threshold
+                if self._ticks % 50 == 0:  # Log every ~5s to avoid spam
+                    logger.error(
+                        "Feedback stale (%.1fs old) — refusing commands", feedback_age
+                    )
+                return
+
+        # SAFETY: Check e-stop on safety monitor
+        if self._safety_monitor is not None and self._safety_monitor.estop_active:
+            if self._ticks % 50 == 0:
+                logger.error("E-STOP active — refusing commands")
+            return
+
         if not self._dirty_joints and not self._dirty_gripper:
             return
 
@@ -312,6 +335,18 @@ class CommandSmoother:
                     )
                     return
                 send_angles.append(v)
+
+            # SAFETY: Validate command through SafetyMonitor before sending
+            if self._safety_monitor is not None:
+                from src.safety.limits import JOINT_LIMITS_DEG as _LIM
+                for i, angle in enumerate(send_angles):
+                    lo, hi = float(_LIM[i, 0]), float(_LIM[i, 1])
+                    if angle < lo or angle > hi:
+                        logger.warning(
+                            "Safety: J%d=%.2f° outside [%.1f, %.1f] — blocking command",
+                            i, angle, lo, hi,
+                        )
+                        return
 
             if len(joints_changed) >= 3:
                 # Batch as set_all_joints when multiple joints move
