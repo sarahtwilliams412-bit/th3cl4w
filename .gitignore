@@ -60,3 +60,8 @@ data/learning_log.jsonl
 data/improvements.json
 data/improvement_history.jsonl
 calibration_results/*/frames/
+
+# Data files
+data/telemetry.db*
+data/collisions/
+calibration_results/
