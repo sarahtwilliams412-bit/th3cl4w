@@ -590,10 +590,16 @@ def get_arm_state() -> Dict[str, Any]:
         smoother.set_arm_enabled(True)
         action_log.add("STATE", "Auto-synced enable state from DDS feedback", "warning")
 
-    # Log state transitions
+    # Log state transitions + power-loss auto-recovery
+    global _power_loss_recovery_task
     if _prev_state:
         if _prev_state.get("power") != state["power"]:
             action_log.add("STATE", f"Power: {'ON' if state['power'] else 'OFF'}", "warning")
+            # Detect power loss transition (True -> False) and trigger auto-recovery
+            if _prev_state.get("power") and not state["power"]:
+                action_log.add("STATE", "Power loss detected — scheduling auto-recovery in 3s", "error")
+                if _power_loss_recovery_task is None or _power_loss_recovery_task.done():
+                    _power_loss_recovery_task = asyncio.create_task(_auto_recover_power())
         if _prev_state.get("enabled") != state["enabled"]:
             action_log.add(
                 "STATE", f"Motors: {'ENABLED' if state['enabled'] else 'DISABLED'}", "warning"
@@ -878,6 +884,63 @@ async def cmd_reset():
     return resp
 
 
+@app.post("/api/command/reset-enable")
+async def cmd_reset_enable():
+    """Combined reset + enable: reset, wait 2s, then enable. Required after overcurrent."""
+    cid = _new_cid()
+    _telem_cmd_sent("reset-enable", {}, cid)
+    if arm is None:
+        return cmd_response(False, "RESET_ENABLE", "No arm connected", cid)
+    action_log.add("RESET_ENABLE", "Starting reset+enable sequence", "info")
+    ok_reset = arm.reset_to_zero(_correlation_id=cid)
+    if smoother:
+        smoother.set_arm_enabled(False)
+    if not ok_reset:
+        return cmd_response(False, "RESET_ENABLE", "Reset failed", cid)
+    await asyncio.sleep(2.0)
+    ok_enable = arm.enable_motors(_correlation_id=cid)
+    if ok_enable and smoother:
+        smoother.set_arm_enabled(True)
+    action_log.add(
+        "RESET_ENABLE",
+        f"reset={'OK' if ok_reset else 'FAIL'} enable={'OK' if ok_enable else 'FAIL'}",
+        "info" if ok_enable else "error",
+    )
+    resp = cmd_response(ok_enable, "RESET_ENABLE", f"reset=OK enable={'OK' if ok_enable else 'FAIL'}", cid)
+    await broadcast_ack("RESET_ENABLE", ok_enable)
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Power-loss auto-recovery state
+# ---------------------------------------------------------------------------
+_power_loss_recovery_task: Optional[asyncio.Task] = None
+
+
+async def _auto_recover_power():
+    """Wait 3s then attempt reset+enable after power loss."""
+    await asyncio.sleep(3.0)
+    action_log.add("AUTO_RECOVERY", "Attempting reset+enable after power loss", "warning")
+    if arm is None:
+        action_log.add("AUTO_RECOVERY", "No arm connected, aborting", "error")
+        return
+    ok_reset = arm.reset_to_zero()
+    if smoother:
+        smoother.set_arm_enabled(False)
+    if not ok_reset:
+        action_log.add("AUTO_RECOVERY", "Reset failed", "error")
+        return
+    await asyncio.sleep(2.0)
+    ok_enable = arm.enable_motors()
+    if ok_enable and smoother:
+        smoother.set_arm_enabled(True)
+    action_log.add(
+        "AUTO_RECOVERY",
+        f"Recovery {'succeeded' if ok_enable else 'failed'}: reset={'OK' if ok_reset else 'FAIL'} enable={'OK' if ok_enable else 'FAIL'}",
+        "info" if ok_enable else "error",
+    )
+
+
 @app.post("/api/command/set-joint")
 async def cmd_set_joint(req: SetJointRequest):
     """Set a single joint to a target angle (degrees)."""
@@ -900,14 +963,53 @@ async def cmd_set_joint(req: SetJointRequest):
         if cid:
             resp_data["correlation_id"] = cid
         return JSONResponse(resp_data, status_code=400)
+
+    # Safe reach check: rough torque proxy using current targets
+    current_joints = list(armState_joints())
+    proposed = list(current_joints)
+    proposed[req.id] = req.angle
+    torque_proxy = abs(proposed[1]) + abs(proposed[2]) * 0.7
+    if torque_proxy > 100:
+        action_log.add(
+            "SET_JOINT",
+            f"REJECTED — torque proxy {torque_proxy:.1f} > 100 (J1={proposed[1]:.1f}° J2={proposed[2]:.1f}°)",
+            "warning",
+        )
+        resp_data = {
+            "ok": False,
+            "action": "SET_JOINT",
+            "error": "Pose may exceed torque limits",
+            "torque_proxy": round(torque_proxy, 1),
+            "state": get_arm_state(),
+        }
+        if cid:
+            resp_data["correlation_id"] = cid
+        return JSONResponse(resp_data, status_code=400)
+
     if smoother and smoother.running:
         smoother.set_joint_target(req.id, req.angle)
         ok = True
     else:
         ok = arm.set_joint(req.id, req.angle, _correlation_id=cid) if arm else False
+
+    # Schedule stall detection check
+    if ok:
+        asyncio.create_task(_check_stall(req.id, req.angle, cid))
+
     resp = cmd_response(ok, "SET_JOINT", f"J{req.id} = {req.angle}°", cid)
     await broadcast_ack("SET_JOINT", ok)
     return resp
+
+
+async def _check_stall(joint_id: int, target_angle: float, cid: str | None):
+    """After 3s, check if joint reached within 5° of target. Log warning if stalled."""
+    await asyncio.sleep(3.0)
+    state = get_arm_state()
+    actual = state["joints"][joint_id]
+    if abs(actual - target_angle) > 5.0:
+        msg = f"J{joint_id} stalled at {actual:.1f}° (target {target_angle:.1f}°)"
+        action_log.add("STALL", msg, "warning")
+        logger.warning(msg)
 
 
 @app.post("/api/command/set-all-joints")
@@ -1670,6 +1772,11 @@ async def task_stop():
         action_log.add("TASK", "Task cancelled by user", "warning")
         return {"ok": True, "action": "TASK_STOP"}
     return {"ok": True, "action": "TASK_STOP", "detail": "No task running"}
+
+
+def armState_joints() -> list:
+    """Get current joint angles as a list of floats."""
+    return list(_cached_joint_angles)
 
 
 def _get_current_joints():
