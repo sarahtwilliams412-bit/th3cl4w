@@ -225,6 +225,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="logo">th3cl4w</div>
   <div class="conn-dot" id="connDot"></div>
   <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">DISCONNECTED</span>
+  <span id="simBadge" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:10px;font-family:var(--mono);font-weight:bold;cursor:pointer;background:#f59e0b;color:#000" title="Click to toggle SIM/LIVE mode">SIM</span>
   <span class="conn-quality" id="connQuality"></span>
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="control">CONTROL</button>
@@ -862,6 +863,23 @@ function updateUI() {
   if (armState.error) { berr.textContent = 'ERR ' + armState.error; berr.className = 'badge error'; }
   else { berr.textContent = 'NO ERR'; berr.className = 'badge'; }
 
+  // SIM mode badge
+  const simBadge = document.getElementById('simBadge');
+  if (armState.sim_mode !== undefined) {
+    simBadge.style.display = 'inline';
+    if (armState.sim_mode) {
+      simBadge.textContent = '⚡ SIM';
+      simBadge.style.background = '#f59e0b';
+      simBadge.style.color = '#000';
+      simBadge.title = 'Running in SIMULATION mode — click to switch to LIVE';
+    } else {
+      simBadge.textContent = '🔴 LIVE';
+      simBadge.style.background = '#ef4444';
+      simBadge.style.color = '#fff';
+      simBadge.title = 'Running in LIVE mode — click to switch to SIM';
+    }
+  }
+
   // Connection quality
   if (lastStateTs > 0) {
     const age = Date.now() - lastStateTs;
@@ -1399,6 +1417,30 @@ function renderDebugEvents(events) {
 
 connectWS();
 setTimeout(() => { resizeCanvas(); animLoop(); }, 50);
+
+// SIM/LIVE toggle
+document.getElementById('simBadge').addEventListener('click', async () => {
+  const badge = document.getElementById('simBadge');
+  const wasSim = armState.sim_mode;
+  const msg = wasSim
+    ? 'Switch to LIVE mode? This will attempt to connect to the physical arm via DDS.'
+    : 'Switch to SIM mode? This will disconnect from the physical arm.';
+  if (!confirm(msg)) return;
+  badge.style.opacity = '0.5';
+  try {
+    const resp = await fetch('/api/sim/toggle', { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      armState.sim_mode = data.sim_mode;
+      updateUI();
+    } else {
+      alert('Toggle failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Toggle failed: ' + e.message);
+  }
+  badge.style.opacity = '1';
+});
 
 // Auto-connect ASCII video if ASCII tab is active on load
 setTimeout(() => { if (window._activeTab === 'ascii' && typeof asciiConnect === 'function') asciiConnect(); }, 500);

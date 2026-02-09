@@ -223,91 +223,13 @@ class ActionLog:
 action_log = ActionLog()
 
 # ---------------------------------------------------------------------------
-# Simulated arm for --simulate mode
+# Simulated arm — imported from src.interface.simulated_arm
 # ---------------------------------------------------------------------------
 
+from src.interface.simulated_arm import SimulatedArm
 
-class SimulatedArm:
-    """Fake arm that holds state in memory with proper power→enable ordering."""
-
-    def __init__(self):
-        self._angles = [0.0] * 6
-        self._target_angles = [0.0] * 6
-        self._gripper = 0.0
-        self._target_gripper = 0.0
-        self._powered = False
-        self._enabled = False
-        self._error = 0
-        self._connected = True
-
-    @property
-    def is_connected(self) -> bool:
-        return self._connected
-
-    def get_joint_angles(self):
-        import numpy as np
-
-        for i in range(6):
-            diff = self._target_angles[i] - self._angles[i]
-            self._angles[i] += diff * 0.15
-        self._gripper += (self._target_gripper - self._gripper) * 0.15
-        return np.array(self._angles)
-
-    def get_gripper_position(self) -> float:
-        return round(self._gripper, 2)
-
-    def get_status(self):
-        return {
-            "power_status": 1 if self._powered else 0,
-            "enable_status": 1 if self._enabled else 0,
-            "error_status": self._error,
-        }
-
-    def power_on(self, **kwargs):
-        self._powered = True
-        return True
-
-    def power_off(self, **kwargs):
-        self._enabled = False
-        self._powered = False
-        return True
-
-    def enable_motors(self, **kwargs):
-        if not self._powered:
-            return False
-        self._enabled = True
-        return True
-
-    def disable_motors(self, **kwargs):
-        self._enabled = False
-        return True
-
-    def reset_to_zero(self, **kwargs):
-        self._target_angles = [0.0] * 6
-        self._target_gripper = 0.0
-        return True
-
-    def set_joint(self, joint_id: int, angle_deg: float, delay_ms: int = 0, **kwargs):
-        lo, hi = JOINT_LIMITS_DEG.get(joint_id, (-135, 135))
-        if not (0 <= joint_id <= 5):
-            return False
-        self._target_angles[joint_id] = max(lo, min(hi, angle_deg))
-        return True
-
-    def set_all_joints(self, angles_deg: list, mode: int = 0, **kwargs):
-        if len(angles_deg) != 6:
-            return False
-        for i, a in enumerate(angles_deg):
-            lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
-            self._target_angles[i] = max(lo, min(hi, a))
-        return True
-
-    def set_gripper(self, position_mm: float, **kwargs):
-        self._target_gripper = max(GRIPPER_RANGE[0], min(GRIPPER_RANGE[1], position_mm))
-        return True
-
-    def disconnect(self):
-        self._connected = False
+# Track whether we're in simulation mode (can be toggled at runtime)
+_sim_mode: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +295,9 @@ async def lifespan(app: FastAPI):
 
     if args.simulate:
         arm = SimulatedArm()
-        action_log.add("SYSTEM", "Simulated arm initialized", "info")
+        arm.start_feedback_loop(rate_hz=10.0)
+        _sim_mode = True
+        action_log.add("SYSTEM", "Simulated arm initialized (SIM mode)", "info")
         logger.info("Running in SIMULATION mode")
     else:
         try:
@@ -612,6 +536,7 @@ def get_arm_state() -> Dict[str, Any]:
             "power": False,
             "enabled": False,
             "error": 0,
+            "sim_mode": _sim_mode,
             "timestamp": time.time(),
         }
 
@@ -647,6 +572,7 @@ def get_arm_state() -> Dict[str, Any]:
         "power": bool(status.get("power_status", 0)),
         "enabled": bool(status.get("enable_status", 0)),
         "error": status.get("error_status", 0),
+        "sim_mode": _sim_mode,
         "timestamp": time.time(),
     }
 
@@ -750,6 +676,93 @@ async def api_cameras():
 async def api_state():
     """Return current arm state (joints, gripper, power, enabled, error)."""
     return get_arm_state()
+
+
+@app.get("/api/sim/status")
+async def api_sim_status():
+    """Return whether the server is in simulation mode."""
+    return {"sim_mode": _sim_mode}
+
+
+@app.post("/api/sim/toggle")
+async def api_sim_toggle():
+    """Toggle between SIM and LIVE mode at runtime.
+
+    When switching to SIM: creates a SimulatedArm, stops DDS.
+    When switching to LIVE: attempts DDS connection, falls back to SIM on failure.
+    """
+    global arm, smoother, _sim_mode
+
+    if _sim_mode:
+        # Switch SIM → LIVE
+        action_log.add("SYSTEM", "Switching from SIM to LIVE mode...", "warning")
+        try:
+            from src.interface.d1_dds_connection import D1DDSConnection
+
+            tc = get_collector() if _HAS_TELEMETRY else None
+            new_arm = D1DDSConnection(collector=tc)
+            if new_arm.connect(interface_name=args.interface):
+                # Tear down old sim arm
+                if arm is not None:
+                    arm.disconnect()
+                if smoother is not None:
+                    await smoother.stop()
+
+                arm = new_arm
+                _sim_mode = False
+
+                # Restart smoother with new arm
+                tc_ref = get_collector() if _HAS_TELEMETRY else None
+                smoother = CommandSmoother(
+                    arm,
+                    rate_hz=10.0,
+                    smoothing_factor=0.35,
+                    max_step_deg=MAX_STEP_DEG,
+                    collector=tc_ref,
+                    safety_monitor=safety_monitor,
+                )
+                await smoother.start()
+
+                action_log.add("SYSTEM", "Switched to LIVE mode (DDS connected)", "info")
+                return {"ok": True, "sim_mode": False}
+            else:
+                new_arm.disconnect()
+                action_log.add("SYSTEM", "Failed to connect DDS — staying in SIM mode", "error")
+                return JSONResponse(
+                    {"ok": False, "sim_mode": True, "error": "DDS connection failed"},
+                    status_code=503,
+                )
+        except Exception as e:
+            action_log.add("SYSTEM", f"Failed to switch to LIVE: {e}", "error")
+            return JSONResponse({"ok": False, "sim_mode": True, "error": str(e)}, status_code=503)
+    else:
+        # Switch LIVE → SIM
+        action_log.add("SYSTEM", "Switching from LIVE to SIM mode...", "warning")
+        if smoother is not None:
+            await smoother.stop()
+        if arm is not None:
+            try:
+                arm.disconnect()
+            except Exception:
+                pass
+
+        arm = SimulatedArm()
+        arm.start_feedback_loop(rate_hz=10.0)
+        _sim_mode = True
+
+        tc_ref = get_collector() if _HAS_TELEMETRY else None
+        smoother = CommandSmoother(
+            arm,
+            rate_hz=10.0,
+            smoothing_factor=0.35,
+            max_step_deg=MAX_STEP_DEG,
+            collector=tc_ref,
+            safety_monitor=safety_monitor,
+        )
+        await smoother.start()
+
+        action_log.add("SYSTEM", "Switched to SIM mode", "info")
+        return {"ok": True, "sim_mode": True}
 
 
 @app.get("/api/diagnostics/feedback")
