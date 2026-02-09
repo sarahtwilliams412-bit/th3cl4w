@@ -2495,9 +2495,9 @@ async def ws_ascii(ws: WebSocket):
             await asyncio.sleep(0.1)
 
     except WebSocketDisconnect:
-        pass
-    except Exception:
-        pass
+        logger.debug("ASCII WS client disconnected normally")
+    except Exception as exc:
+        logger.warning("ASCII WS error: %s", exc)
 
 
 # ---------------------------------------------------------------------------

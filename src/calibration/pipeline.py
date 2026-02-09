@@ -90,7 +90,7 @@ class LLMCalibrationPipeline:
             if frame is not None:
                 try:
                     t0 = time.monotonic()
-                    seg = self.segmenter.segment(frame)
+                    seg = self.segmenter.segment_arm(frame)
                     cv_dets = self.cv_detector.detect_joints(seg, list(fk_pixels))
                     cv_latency = (time.monotonic() - t0) * 1000
                 except Exception as e:
