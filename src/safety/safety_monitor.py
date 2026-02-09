@@ -196,11 +196,17 @@ class SafetyMonitor:
 
     # -- Command Validation --------------------------------------------------
 
+    @staticmethod
+    def _is_valid_float(val: float) -> bool:
+        """Return False if value is NaN or Inf."""
+        return not (math.isnan(val) or math.isinf(val))
+
     def validate_command(self, cmd: D1Command) -> SafetyResult:
         """Validate a command against all safety constraints.
 
         Returns SafetyResult indicating whether the command is safe to execute.
         If e-stop is active, the command is always rejected.
+        NaN/Inf values in any field are rejected immediately.
         """
         violations: list[SafetyViolation] = []
 
@@ -218,6 +224,38 @@ class SafetyMonitor:
             return SafetyResult(is_safe=False, violations=tuple(violations))
 
         lim = self._limits
+
+        # NaN/Inf checks on all fields
+        for field_name, arr in [
+            ("position", cmd.joint_positions),
+            ("velocity", cmd.joint_velocities),
+            ("torque", cmd.joint_torques),
+        ]:
+            if arr is not None:
+                for i in range(NUM_JOINTS):
+                    val = float(arr[i])
+                    if not self._is_valid_float(val):
+                        violations.append(
+                            SafetyViolation(
+                                violation_type=ViolationType.POSITION_LIMIT,
+                                joint_index=i,
+                                message=f"Joint {i} {field_name} is NaN/Inf — rejected",
+                                actual_value=0.0,
+                                limit_value=0.0,
+                            )
+                        )
+        if cmd.gripper_position is not None and not self._is_valid_float(cmd.gripper_position):
+            violations.append(
+                SafetyViolation(
+                    violation_type=ViolationType.GRIPPER_LIMIT,
+                    joint_index=6,
+                    message="Gripper position is NaN/Inf — rejected",
+                    actual_value=0.0,
+                    limit_value=0.0,
+                )
+            )
+        if violations:
+            return SafetyResult(is_safe=False, violations=tuple(violations))
 
         # Position limits
         if cmd.joint_positions is not None:
@@ -302,6 +340,27 @@ class SafetyMonitor:
         """
         violations: list[SafetyViolation] = []
         lim = self._limits
+
+        # NaN/Inf check on state
+        for field_name, arr in [
+            ("position", state.joint_positions),
+            ("velocity", state.joint_velocities),
+            ("torque", state.joint_torques),
+        ]:
+            for i in range(NUM_JOINTS):
+                val = float(arr[i])
+                if not self._is_valid_float(val):
+                    violations.append(
+                        SafetyViolation(
+                            violation_type=ViolationType.POSITION_LIMIT,
+                            joint_index=i,
+                            message=f"Joint {i} {field_name} is NaN/Inf in state",
+                            actual_value=0.0,
+                            limit_value=0.0,
+                        )
+                    )
+        if violations:
+            return violations
 
         # Position
         for i in range(NUM_JOINTS):

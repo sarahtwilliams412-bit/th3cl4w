@@ -268,7 +268,18 @@ class CommandSmoother:
             return
 
         # SAFETY: Check feedback freshness — refuse commands if feedback is stale
-        if self._last_feedback_time > 0:
+        # Use feedback monitor if available (filters zero-reads), else wall-clock
+        _fb_monitor = getattr(self._arm, '_feedback_monitor', None) if self._arm else None
+        if _fb_monitor is not None:
+            if not _fb_monitor.is_feedback_fresh(max_age_s=0.5):
+                if self._ticks % 50 == 0:
+                    health = _fb_monitor.get_health()
+                    logger.error(
+                        "Reliable feedback stale (last good %.1fs ago, zero_rate=%.0f%%) — refusing commands",
+                        health.last_good_age_s, health.zero_rate * 100,
+                    )
+                return
+        elif self._last_feedback_time > 0:
             feedback_age = time.time() - self._last_feedback_time
             if feedback_age > 0.5:  # 500ms staleness threshold
                 if self._ticks % 50 == 0:  # Log every ~5s to avoid spam
