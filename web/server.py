@@ -313,6 +313,7 @@ collision_events: list = []  # Recent collision events for API
 pose_fusion: Any = None  # PoseFusion engine
 arm3d_segmenters: dict = {}  # Per-camera ArmSegmenter instances
 arm3d_detector: Any = None  # JointDetector for arm3d pipeline
+camera_models: dict = {}  # CameraModel instances keyed by camera_id
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -431,6 +432,19 @@ async def lifespan(app: FastAPI):
         arm3d_segmenters = {0: ArmSegmenter(), 1: ArmSegmenter()}
         arm3d_detector = JointDetector()
         action_log.add("SYSTEM", "Pose fusion pipeline initialized", "info")
+
+    # Load calibrated camera models
+    global camera_models
+    try:
+        from src.vision.camera_model import CameraModel
+        for cam_id in [0, 1]:
+            cm = CameraModel(cam_id)
+            if cm.load():
+                camera_models[cam_id] = cm
+        if camera_models:
+            action_log.add("SYSTEM", f"Camera models loaded: {list(camera_models.keys())}", "info")
+    except Exception as e:
+        logger.warning(f"Failed to load camera models: {e}")
 
     # Initialize collision detector + analyzer
     global collision_detector, collision_analyzer
@@ -1569,6 +1583,133 @@ class VisualPickFromPositionRequest(BaseModel):
     speed: float = Field(default=0.5, ge=0.1, le=1.0)
     execute: bool = Field(default=False)
 
+
+# ---------------------------------------------------------------------------
+# Camera-based 3D localization (uses calibrated extrinsics)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/camera/status")
+async def camera_calibration_status():
+    """Get camera calibration status."""
+    return {
+        "calibrated_cameras": list(camera_models.keys()),
+        "details": {
+            cam_id: {
+                "position_m": cm.camera_position.tolist(),
+                "reproj_error_px": float(
+                    json.load(open(f"calibration_results/camera{cam_id}_extrinsics.json"))
+                    .get("reprojection_error_mean_px", -1)
+                ),
+            }
+            for cam_id, cm in camera_models.items()
+        },
+    }
+
+
+class LocateRequest(BaseModel):
+    """Request to locate an object by pixel coords or by LLM vision."""
+    pixel: Optional[list[float]] = None  # [u, v] in cam0
+    camera_id: int = 0
+    z_height: float = 0.0  # assumed Z height in meters (table surface)
+    use_llm: bool = False  # ask Gemini to find object and return pixel
+    target: str = "red bull can"  # object to find (when use_llm=True)
+
+
+@app.post("/api/locate")
+async def locate_object(req: LocateRequest):
+    """Locate an object in 3D using calibrated camera.
+
+    Either provide pixel coordinates directly, or set use_llm=True to have
+    Gemini find the object in the camera frame.
+    """
+    cm = camera_models.get(req.camera_id)
+    if cm is None:
+        return JSONResponse(
+            {"ok": False, "error": f"Camera {req.camera_id} not calibrated"},
+            status_code=501,
+        )
+
+    pixel = req.pixel
+
+    if req.use_llm and pixel is None:
+        # Use Gemini to find object pixel coords
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"http://localhost:8081/snap/{req.camera_id}")
+                if resp.status_code != 200:
+                    return JSONResponse({"ok": False, "error": "Camera snapshot failed"}, status_code=502)
+                jpeg_bytes = resp.content
+
+            import os
+            api_key = os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                return JSONResponse({"ok": False, "error": "GEMINI_API_KEY not set"}, status_code=501)
+
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel("gemini-2.0-flash")
+
+            import base64
+            b64 = base64.b64encode(jpeg_bytes).decode()
+            prompt = (
+                f"Find the {req.target} in this 1920x1080 image. "
+                f"Return ONLY the pixel coordinates of its center as JSON: "
+                f'{{\"u\": <x_pixel>, \"v\": <y_pixel>}}'
+            )
+            response = model.generate_content([
+                {"mime_type": "image/jpeg", "data": b64},
+                prompt,
+            ])
+
+            import re
+            match = re.search(r'\{[^}]*"u"\s*:\s*([\d.]+)[^}]*"v"\s*:\s*([\d.]+)', response.text)
+            if not match:
+                return JSONResponse(
+                    {"ok": False, "error": f"LLM couldn't parse: {response.text[:200]}"},
+                    status_code=422,
+                )
+            pixel = [float(match.group(1)), float(match.group(2))]
+            action_log.add("VISION", f"LLM located '{req.target}' at pixel ({pixel[0]:.0f}, {pixel[1]:.0f})", "info")
+
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": f"LLM locate failed: {e}"}, status_code=500)
+
+    if pixel is None:
+        return JSONResponse({"ok": False, "error": "No pixel coordinates provided"}, status_code=400)
+
+    # Back-project to 3D
+    world_point = cm.pixel_to_world_at_z(pixel[0], pixel[1], z=req.z_height)
+    if world_point is None:
+        return JSONResponse({"ok": False, "error": "Ray parallel to Z plane"}, status_code=422)
+
+    # Also get the ray for debugging
+    origin, direction = cm.pixel_to_ray(pixel[0], pixel[1])
+
+    result = {
+        "ok": True,
+        "pixel": pixel,
+        "camera_id": req.camera_id,
+        "world_position_m": [round(float(x), 4) for x in world_point],
+        "world_position_mm": [round(float(x) * 1000, 1) for x in world_point],
+        "z_height_m": req.z_height,
+        "ray_origin_m": [round(float(x), 4) for x in origin],
+        "ray_direction": [round(float(x), 4) for x in direction],
+    }
+
+    action_log.add(
+        "VISION",
+        f"Located at ({world_point[0]*1000:.0f}, {world_point[1]*1000:.0f}, {world_point[2]*1000:.0f})mm "
+        f"from pixel ({pixel[0]:.0f}, {pixel[1]:.0f})",
+        "info",
+    )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Visual pick
+# ---------------------------------------------------------------------------
 
 @app.get("/api/pick/status")
 async def pick_status():
