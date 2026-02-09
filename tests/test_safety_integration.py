@@ -45,6 +45,7 @@ def _make_mock_arm(angles=None, gripper=0.0):
     arm.set_all_joints.return_value = True
     arm.set_gripper.return_value = True
     arm.is_connected = True
+    arm._feedback_monitor = None
     return arm
 
 
