@@ -65,3 +65,4 @@ calibration_results/*/frames/
 data/telemetry.db*
 data/collisions/
 calibration_results/
+.env

@@ -1,5 +1,7 @@
 # th3cl4w V1 Server — Stable Base
 #!/usr/bin/env python3.12
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file before anything else
 """
 th3cl4w — Web Control Panel for Unitree D1 Arm.
 
@@ -657,8 +659,32 @@ async def broadcast_ack(action: str, success: bool):
 
 
 # ---------------------------------------------------------------------------
+# Startup validation
+# ---------------------------------------------------------------------------
+
+def _validate_env():
+    """Check required env vars at startup and warn if missing."""
+    if not os.environ.get("GEMINI_API_KEY"):
+        logging.getLogger("th3cl4w").warning(
+            "GEMINI_API_KEY not set — Gemini vision/LLM features will be unavailable. "
+            "Add it to .env or set the environment variable."
+        )
+
+_validate_env()
+
+
+# ---------------------------------------------------------------------------
 # REST endpoints
 # ---------------------------------------------------------------------------
+
+
+@app.get("/api/config/secrets-status")
+async def api_secrets_status():
+    """Return which secret keys are configured (True/False) without revealing values."""
+    return {
+        "GEMINI_API_KEY": bool(os.environ.get("GEMINI_API_KEY")
+                               and os.environ.get("GEMINI_API_KEY") != "your-gemini-api-key-here"),
+    }
 
 
 @app.get("/api/cameras")

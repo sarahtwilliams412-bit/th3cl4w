@@ -11,6 +11,8 @@ import numpy as np
 import cv2
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file
 # GEMINI_API_KEY must be set in environment (never hardcode API keys)
 if not os.environ.get("GEMINI_API_KEY"):
     print("ERROR: GEMINI_API_KEY not set in environment", file=sys.stderr)
