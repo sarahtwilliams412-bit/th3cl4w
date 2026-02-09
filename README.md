@@ -4,6 +4,21 @@
 
 ---
 
+> ⚠️ **WARNING — REAL HARDWARE, REAL DANGER**
+>
+> This software controls **physical robotic hardware** that can move with significant force and speed. Improper use can cause **property damage, injury, or death**. By using this software you accept full responsibility for any outcomes.
+>
+> - **Never** run commands against a live arm without understanding what they do
+> - **Always** maintain a clear workspace around the arm's reach envelope
+> - **Always** have a physical e-stop within reach before enabling the arm
+> - **Never** leave a powered arm unattended
+> - The simulator mode (`--sim`) is available for safe testing without hardware
+> - This project is experimental and provided **as-is with no warranty**
+>
+> **If you are not comfortable operating industrial robotics equipment, do not use this software in live mode.**
+
+---
+
 ## Overview
 
 th3cl4w is a control interface for the [Unitree D1](https://www.unitree.com/d1/) dexterous robotic arm. Designed for integration with Unitree quadrupeds (Go2, B2) and humanoids (G1, H1).
