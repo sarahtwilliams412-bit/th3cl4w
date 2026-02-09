@@ -1708,6 +1708,86 @@ async def locate_object(req: LocateRequest):
 
 
 # ---------------------------------------------------------------------------
+# Visual servo
+# ---------------------------------------------------------------------------
+
+class ServoRequest(BaseModel):
+    target: str = "red bull can"
+    max_steps: int = 25
+
+_servo_task: Optional[asyncio.Task] = None
+_servo_result: Optional[dict] = None
+
+@app.post("/api/servo/approach")
+async def servo_approach(req: ServoRequest):
+    """Visual servo approach to a target. Moves arm step-by-step with camera feedback."""
+    global _servo_task, _servo_result
+    if _servo_task and not _servo_task.done():
+        return JSONResponse({"ok": False, "error": "Servo already running"}, status_code=409)
+
+    _servo_result = None
+    import os as _os
+    api_key = _os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return JSONResponse({"ok": False, "error": "GEMINI_API_KEY not set"}, status_code=501)
+
+    from src.control.visual_servo import VisualServo
+
+    async def _run():
+        global _servo_result
+        try:
+            servo = VisualServo(gemini_api_key=api_key, max_steps=req.max_steps)
+            result = await servo.approach(req.target)
+            _servo_result = {
+                "success": result.success,
+                "message": result.message,
+                "steps": len(result.steps),
+                "time_s": round(result.total_time_s, 1),
+                "final_distance_px": round(result.final_distance_px, 1),
+                "log": [
+                    {
+                        "step": s.step,
+                        "action": s.action,
+                        "distance_px": round(s.pixel_distance, 1),
+                        "gripper": s.gripper_pixel,
+                        "target": s.target_pixel,
+                        "notes": s.notes,
+                    }
+                    for s in result.steps
+                ],
+            }
+            action_log.add("SERVO", f"{'Success' if result.success else 'Failed'}: {result.message}", "info")
+        except Exception as e:
+            _servo_result = {"success": False, "message": str(e), "steps": 0}
+            action_log.add("SERVO", f"Error: {e}", "error")
+            import traceback
+            logger.error(f"Servo error: {traceback.format_exc()}")
+
+    _servo_task = asyncio.create_task(_run())
+    return {"ok": True, "message": f"Visual servo started toward '{req.target}'"}
+
+
+@app.get("/api/servo/status")
+async def servo_status():
+    """Get visual servo status."""
+    running = _servo_task is not None and not _servo_task.done()
+    return {
+        "running": running,
+        "result": _servo_result,
+    }
+
+
+@app.post("/api/servo/stop")
+async def servo_stop():
+    """Stop visual servo."""
+    global _servo_task
+    if _servo_task and not _servo_task.done():
+        _servo_task.cancel()
+        return {"ok": True}
+    return {"ok": False, "error": "Not running"}
+
+
+# ---------------------------------------------------------------------------
 # Visual pick
 # ---------------------------------------------------------------------------
 
