@@ -216,13 +216,24 @@ class VisualServo:
             if abs(dv) > abs(du):
                 # Vertical: target below → need to lower arm
                 if dv > 0:
-                    # Lower: increase J4 (wrist down) or decrease J1 (lean forward)
-                    if joints[4] < 80:
+                    # Target is below gripper. Cycle through lowering methods:
+                    # 1. Extend elbow (J2+) pushes forearm down when shoulder is raised
+                    # 2. Lean shoulder forward (J1-) lowers everything
+                    # 3. Wrist down (J4+) as fine adjustment
+                    if joints[2] < 80:
+                        return 2, step, f"J2 extend (target below by {abs(dv):.0f}px)"
+                    elif joints[1] > -80:
+                        return 1, -step, f"J1 forward (target below by {abs(dv):.0f}px)"
+                    elif joints[4] < 85:
                         return 4, step, f"J4 down (target below by {abs(dv):.0f}px)"
                     else:
-                        return 1, -step, f"J1 forward (target below by {abs(dv):.0f}px)"
+                        return 1, -step, f"J1 forward (all maxed, target below by {abs(dv):.0f}px)"
                 else:
-                    return 4, -step, f"J4 up (target above by {abs(dv):.0f}px)"
+                    # Target above gripper
+                    if joints[4] > -80:
+                        return 4, -step, f"J4 up (target above by {abs(dv):.0f}px)"
+                    else:
+                        return 1, step, f"J1 back (target above by {abs(dv):.0f}px)"
             else:
                 delta = step if du > 0 else -step
                 return 0, delta, f"J0 (target {'right' if du>0 else 'left'} by {abs(du):.0f}px)"
@@ -237,15 +248,27 @@ class VisualServo:
         t0 = time.time()
         result = ServoResult(success=False)
         
-        # Start from a reasonable reaching pose
-        logger.info("Visual servo: moving to initial reach pose")
-        await self.set_joint(1, -50)
-        await self.set_joint(2, 50)
-        await self.set_joint(4, 50)
+        # Start from a reaching pose — SEQUENCE MATTERS for torque safety:
+        # 1. Lift shoulder (elbow tucked) — low torque
+        # 2. Extend elbow gradually — distribute load
+        # 3. Angle wrist down — point at target
+        # Like a human: raise arm → reach out → angle hand
+        logger.info("Visual servo: moving to initial reach pose (human-like sequence)")
+        await self.set_joint(2, 0)   # tuck elbow first
+        await self.set_joint(4, 0)   # wrist neutral
+        await self.set_joint(1, 30)  # lift shoulder UP (with elbow tucked = safe)
+        await asyncio.sleep(1)
+        await self.set_joint(2, 30)  # start extending elbow
+        await self.set_joint(2, 50)  # extend more
+        await self.set_joint(2, 70)  # full extension
+        await asyncio.sleep(1)
+        await self.set_joint(4, 50)  # angle wrist down
+        await self.set_joint(4, 70)  # more down
         
         prev_distance = 9999.0
         stall_count = 0
         cam_id = 1  # Start with overhead for horizontal alignment
+        phase = "horizontal"  # horizontal → vertical → fine
         
         for step_num in range(self.max_steps):
             joints_before = await self.get_joints()
@@ -295,6 +318,20 @@ class VisualServo:
                 stall_count = 0
             
             prev_distance = distance
+            
+            # Adaptive step size: bigger when far, smaller when close
+            if distance > 300:
+                self.step_deg = 8.0
+            elif distance > 150:
+                self.step_deg = 5.0
+            else:
+                self.step_deg = 3.0
+            
+            # Phase management: horizontal first, then vertical
+            if phase == "horizontal" and distance < 100:
+                phase = "vertical"
+                cam_id = 0  # switch to front cam for height
+                logger.info("Phase: horizontal aligned, switching to vertical (front cam)")
             
             # Decide which joint to move
             joint_id, delta, reason = self.pixel_delta_to_joint_action(
