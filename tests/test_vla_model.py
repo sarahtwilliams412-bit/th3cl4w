@@ -1,159 +1,372 @@
-"""Tests for VLA model backends."""
+"""Tests for the Video Language Action (VLA) model module."""
 
-import json
+import time
+
+import numpy as np
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.vla.vla_model import (
-    Observation,
-    ActionPlan,
-    GeminiVLABackend,
-    OctoVLABackend,
+from src.vision.vla_model import (
+    VLAModel,
+    VLAMode,
+    VLAAnalysisResult,
+    AsciiMeasurement,
+    DetectedObject3D,
+    ObjectShape,
 )
+from src.vision.camera_pipeline import AsciiFrame, StereoAsciiFrame
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def sample_observation():
-    return Observation(
-        cam0_jpeg=b"\xff\xd8\xff\xe0" + b"\x00" * 100,  # minimal JPEG header
-        cam1_jpeg=b"\xff\xd8\xff\xe0" + b"\x00" * 100,
-        joints=[0.0, -20.0, 30.0, 0.0, 45.0, 0.0],
-        gripper_mm=10.0,
-        enabled=True,
+def _make_ascii_frame(text: str, camera_id: int = 0) -> AsciiFrame:
+    """Create a test ASCII frame."""
+    lines = text.split("\n")
+    width = max(len(line) for line in lines) if lines else 0
+    height = len(lines)
+    return AsciiFrame(
+        camera_id=camera_id,
+        ascii_text=text,
+        grid_width=width,
+        grid_height=height,
+        timestamp=time.monotonic(),
+        frame_number=1,
     )
 
 
-class TestObservation:
-    def test_observation_defaults(self):
-        obs = Observation(
-            cam0_jpeg=b"test",
-            cam1_jpeg=b"test",
-            joints=[0.0] * 6,
-            gripper_mm=0.0,
+def _make_object_ascii(width=120, height=40) -> str:
+    """Create ASCII art with a dense object region.
+
+    Puts a dense block of '#' characters in the center of the frame,
+    surrounded by spaces.
+    """
+    lines = []
+    for r in range(height):
+        row = []
+        for c in range(width):
+            # Dense block from (45,15) to (75,25)
+            if 45 <= c <= 75 and 15 <= r <= 25:
+                row.append("#")
+            else:
+                row.append(" ")
+        lines.append("".join(row))
+    return "\n".join(lines)
+
+
+def _make_multi_object_ascii(width=120, height=40) -> str:
+    """Create ASCII art with two separate dense regions."""
+    lines = []
+    for r in range(height):
+        row = []
+        for c in range(width):
+            # Object 1: (20,10) to (35,20)
+            if 20 <= c <= 35 and 10 <= r <= 20:
+                row.append("@")
+            # Object 2: (80,25) to (100,35)
+            elif 80 <= c <= 100 and 25 <= r <= 35:
+                row.append("#")
+            else:
+                row.append(" ")
+        lines.append("".join(row))
+    return "\n".join(lines)
+
+
+def _make_stereo(cam0_text=None, cam1_text=None) -> StereoAsciiFrame:
+    cam0 = _make_ascii_frame(cam0_text, camera_id=0) if cam0_text else None
+    cam1 = _make_ascii_frame(cam1_text, camera_id=1) if cam1_text else None
+    return StereoAsciiFrame(
+        cam0=cam0,
+        cam1=cam1,
+        timestamp=time.monotonic(),
+        frame_number=1,
+    )
+
+
+# ---------------------------------------------------------------------------
+# VLAModel construction tests
+# ---------------------------------------------------------------------------
+
+
+class TestVLAModelInit:
+    def test_default_construction(self):
+        vla = VLAModel()
+        assert vla.mode == VLAMode.LOCAL
+        assert vla.is_running is False
+        assert vla.analysis_fps == 2.0
+
+    def test_custom_mode(self):
+        vla = VLAModel(mode=VLAMode.TEXT)
+        assert vla.mode == VLAMode.TEXT
+
+    def test_custom_scale(self):
+        vla = VLAModel(mm_per_col=5.0, mm_per_row=10.0)
+        assert vla.mm_per_col == 5.0
+        assert vla.mm_per_row == 10.0
+
+
+# ---------------------------------------------------------------------------
+# ASCII measurement tests
+# ---------------------------------------------------------------------------
+
+
+class TestAsciiMeasurement:
+    def test_to_dict(self):
+        m = AsciiMeasurement(
+            label="test",
+            grid_min_col=10,
+            grid_max_col=20,
+            grid_min_row=5,
+            grid_max_row=15,
+            occupied_cells=50,
+            total_cells=110,
+            width_mm=66.7,
+            height_mm=125.0,
+            centroid_col=15.0,
+            centroid_row=10.0,
+            shape=ObjectShape.RECTANGULAR,
+            fill_ratio=0.45,
+            confidence=0.7,
         )
-        assert obs.enabled is True
-        assert obs.timestamp > 0
-
-    def test_observation_preserves_joints(self, sample_observation):
-        assert sample_observation.joints[1] == -20.0
-        assert sample_observation.gripper_mm == 10.0
+        d = m.to_dict()
+        assert d["label"] == "test"
+        assert d["shape"] == "rectangular"
+        assert d["confidence"] == 0.7
 
 
-class TestActionPlan:
-    def test_empty_plan(self):
-        plan = ActionPlan()
-        assert not plan.is_done
-        assert not plan.needs_verify
-        assert plan.joint_actions == []
-        assert plan.gripper_actions == []
+# ---------------------------------------------------------------------------
+# Object detection from ASCII
+# ---------------------------------------------------------------------------
 
-    def test_done_detection(self):
-        plan = ActionPlan(
-            actions=[{"type": "done", "reason": "complete"}],
-            phase="done",
+
+class TestMeasureFromAscii:
+    def test_single_object(self):
+        vla = VLAModel()
+        text = _make_object_ascii()
+        af = _make_ascii_frame(text, camera_id=1)
+        measurements = vla._measure_from_ascii(af, "cam1")
+
+        assert len(measurements) == 1
+        m = measurements[0]
+        assert m.occupied_cells > 0
+        assert m.grid_min_col >= 45
+        assert m.grid_max_col <= 75
+        assert m.grid_min_row >= 15
+        assert m.grid_max_row <= 25
+        assert m.width_mm > 0
+        assert m.confidence > 0
+
+    def test_multiple_objects(self):
+        vla = VLAModel()
+        text = _make_multi_object_ascii()
+        af = _make_ascii_frame(text, camera_id=1)
+        measurements = vla._measure_from_ascii(af, "cam1")
+
+        assert len(measurements) == 2
+
+    def test_empty_frame(self):
+        vla = VLAModel()
+        text = "\n".join([" " * 120] * 40)
+        af = _make_ascii_frame(text, camera_id=1)
+        measurements = vla._measure_from_ascii(af, "cam1")
+        assert len(measurements) == 0
+
+    def test_cam0_height_measurement(self):
+        """Front camera should measure height (Z) not depth."""
+        vla = VLAModel()
+        text = _make_object_ascii(width=120, height=40)
+        af = _make_ascii_frame(text, camera_id=0)
+        measurements = vla._measure_from_ascii(af, "cam0")
+
+        assert len(measurements) == 1
+        m = measurements[0]
+        assert m.height_mm > 0  # front camera provides height
+
+
+# ---------------------------------------------------------------------------
+# Shape classification tests
+# ---------------------------------------------------------------------------
+
+
+class TestShapeClassification:
+    def test_rectangular(self):
+        vla = VLAModel()
+        shape = vla._classify_shape(0.9, 20, 10)
+        assert shape == ObjectShape.RECTANGULAR
+
+    def test_cylindrical(self):
+        vla = VLAModel()
+        shape = vla._classify_shape(0.75, 10, 10)
+        assert shape == ObjectShape.CYLINDRICAL
+
+    def test_spherical(self):
+        vla = VLAModel()
+        shape = vla._classify_shape(0.6, 10, 10)
+        assert shape == ObjectShape.SPHERICAL
+
+    def test_irregular(self):
+        vla = VLAModel()
+        shape = vla._classify_shape(0.3, 20, 5)
+        assert shape == ObjectShape.IRREGULAR
+
+
+# ---------------------------------------------------------------------------
+# 3D fusion tests
+# ---------------------------------------------------------------------------
+
+
+class TestFusion:
+    def test_cam1_only_fusion(self):
+        vla = VLAModel()
+        text = _make_object_ascii()
+        stereo = _make_stereo(cam1_text=text)
+        result = vla._analyze_frame(stereo)
+
+        assert len(result.objects) > 0
+        obj = result.objects[0]
+        assert obj.position_mm is not None
+        assert obj.dimensions_mm is not None
+        assert obj.source_camera == "cam1"
+
+    def test_dual_camera_fusion(self):
+        vla = VLAModel()
+        cam1_text = _make_object_ascii()
+        cam0_text = _make_object_ascii()  # same shape in front view
+        stereo = _make_stereo(cam0_text=cam0_text, cam1_text=cam1_text)
+        result = vla._analyze_frame(stereo)
+
+        assert len(result.objects) > 0
+        # At least one should have height info from cam0
+        has_height = any(obj.dimensions_mm[1] > 0 for obj in result.objects)
+        assert has_height
+
+    def test_reachable_classification(self):
+        vla = VLAModel()
+        text = _make_object_ascii()
+        stereo = _make_stereo(cam1_text=text)
+        result = vla._analyze_frame(stereo)
+
+        for obj in result.objects:
+            assert isinstance(obj.reachable, bool)
+            assert obj.reach_distance_mm >= 0
+
+
+# ---------------------------------------------------------------------------
+# Mesh generation tests
+# ---------------------------------------------------------------------------
+
+
+class TestMeshGeneration:
+    def test_box_mesh(self):
+        vla = VLAModel()
+        center = np.array([100.0, 200.0, 50.0])
+        dims = np.array([40.0, 30.0, 40.0])
+        vertices, faces = vla._generate_box_mesh(center, dims)
+
+        assert len(vertices) == 8
+        assert len(faces) == 12
+        # Each face is a triangle (3 indices)
+        for face in faces:
+            assert len(face) == 3
+
+
+# ---------------------------------------------------------------------------
+# Scene description tests
+# ---------------------------------------------------------------------------
+
+
+class TestSceneDescription:
+    def test_no_objects(self):
+        vla = VLAModel()
+        desc = vla._describe_scene([])
+        assert "No objects" in desc
+
+    def test_with_objects(self):
+        vla = VLAModel()
+        obj = DetectedObject3D(
+            object_id="test_1",
+            label="test",
+            position_mm=np.array([200.0, 100.0, 0.0]),
+            dimensions_mm=np.array([40.0, 30.0, 40.0]),
+            shape=ObjectShape.RECTANGULAR,
+            confidence=0.8,
+            reachable=True,
+            reach_distance_mm=223.6,
         )
-        assert plan.is_done
-
-    def test_verify_detection(self):
-        plan = ActionPlan(
-            actions=[
-                {"type": "joint", "id": 0, "delta": 5.0},
-                {"type": "verify", "reason": "check"},
-            ],
-        )
-        assert plan.needs_verify
-
-    def test_action_filtering(self):
-        plan = ActionPlan(
-            actions=[
-                {"type": "joint", "id": 0, "delta": 5.0},
-                {"type": "gripper", "position_mm": 50.0},
-                {"type": "joint", "id": 1, "delta": -3.0},
-                {"type": "verify"},
-            ],
-        )
-        assert len(plan.joint_actions) == 2
-        assert len(plan.gripper_actions) == 1
-
-    def test_error_plan(self):
-        plan = ActionPlan(error="API timeout")
-        assert plan.error == "API timeout"
-        assert not plan.is_done
+        desc = vla._describe_scene([obj])
+        assert "1 objects" in desc or "Detected 1" in desc
+        assert "reach" in desc.lower()
 
 
-class TestGeminiVLABackend:
-    def test_parse_valid_response(self):
-        """Test parsing a well-formed JSON response."""
-        # We need to test the _parse_response method directly
-        with patch("google.generativeai.configure"), patch("google.generativeai.GenerativeModel"):
-            backend = GeminiVLABackend.__new__(GeminiVLABackend)
-            backend.api_key = "test"
-
-        response_json = json.dumps(
-            {
-                "reasoning": "Can is to the right, need to rotate base",
-                "scene_description": "Red bull can visible on table",
-                "gripper_position": {"cam1": {"u": 760, "v": 135}},
-                "target_position": {"cam1": {"u": 900, "v": 600}},
-                "actions": [
-                    {"type": "joint", "id": 0, "delta": 8.0, "reason": "rotate right"},
-                    {"type": "joint", "id": 1, "delta": -5.0, "reason": "lean forward"},
-                    {"type": "verify", "reason": "check position"},
-                ],
-                "phase": "approach",
-                "confidence": 0.75,
-                "estimated_remaining_steps": 8,
-            }
-        )
-
-        plan = backend._parse_response(response_json)
-        assert plan.phase == "approach"
-        assert plan.confidence == 0.75
-        assert len(plan.actions) == 3
-        assert plan.error is None
-
-    def test_parse_with_markdown_fences(self):
-        """Gemini sometimes wraps JSON in ```json ... ```."""
-        with patch("google.generativeai.configure"), patch("google.generativeai.GenerativeModel"):
-            backend = GeminiVLABackend.__new__(GeminiVLABackend)
-
-        response = (
-            '```json\n{"reasoning": "test", "actions": [], "phase": "done", "confidence": 1.0}\n```'
-        )
-        plan = backend._parse_response(response)
-        assert plan.phase == "done"
-        assert plan.error is None
-
-    def test_parse_invalid_json(self):
-        """Invalid JSON should return error plan, not crash."""
-        with patch("google.generativeai.configure"), patch("google.generativeai.GenerativeModel"):
-            backend = GeminiVLABackend.__new__(GeminiVLABackend)
-
-        plan = backend._parse_response("this is not json at all")
-        assert plan.error is not None
-        assert "JSON parse error" in plan.error
-
-    def test_parse_empty_response(self):
-        with patch("google.generativeai.configure"), patch("google.generativeai.GenerativeModel"):
-            backend = GeminiVLABackend.__new__(GeminiVLABackend)
-
-        plan = backend._parse_response("")
-        assert plan.error is not None
+# ---------------------------------------------------------------------------
+# Continuous loop tests
+# ---------------------------------------------------------------------------
 
 
-class TestOctoVLABackend:
-    def test_raises_not_implemented(self, sample_observation):
-        backend = OctoVLABackend()
-        assert backend.name == "octo-small"
+class TestVLAContinuousLoop:
+    def test_start_stop(self):
+        vla = VLAModel(analysis_fps=20.0)
+        vla.start()
+        assert vla.is_running is True
+        time.sleep(0.1)
+        vla.stop()
+        assert vla.is_running is False
 
-    @pytest.mark.asyncio
-    async def test_plan_raises(self, sample_observation):
-        backend = OctoVLABackend()
-        with pytest.raises(NotImplementedError):
-            await backend.plan(sample_observation, "test task")
+    def test_feed_and_analyze(self):
+        vla = VLAModel(analysis_fps=20.0)
+        results = []
+        vla.on_result(lambda r: results.append(r))
 
-    @pytest.mark.asyncio
-    async def test_verify_raises(self, sample_observation):
-        backend = OctoVLABackend()
-        with pytest.raises(NotImplementedError):
-            await backend.verify(sample_observation, "test task", [])
+        vla.start()
+
+        text = _make_object_ascii()
+        stereo = _make_stereo(cam1_text=text)
+        vla.feed_frame(stereo)
+
+        time.sleep(0.5)
+        vla.stop()
+
+        assert len(results) > 0
+        assert isinstance(results[0], VLAAnalysisResult)
+        assert results[0].frame_number > 0
+
+    def test_get_latest_result(self):
+        vla = VLAModel(analysis_fps=20.0)
+        vla.start()
+
+        text = _make_object_ascii()
+        stereo = _make_stereo(cam1_text=text)
+        vla.feed_frame(stereo)
+
+        time.sleep(0.5)
+        vla.stop()
+
+        result = vla.get_latest_result()
+        assert result is not None
+
+    def test_get_tracked_objects(self):
+        vla = VLAModel(analysis_fps=20.0)
+        vla.start()
+
+        text = _make_object_ascii()
+        stereo = _make_stereo(cam1_text=text)
+        vla.feed_frame(stereo)
+
+        time.sleep(0.5)
+        vla.stop()
+
+        tracked = vla.get_tracked_objects()
+        assert len(tracked) > 0
+
+    def test_get_stats(self):
+        vla = VLAModel()
+        stats = vla.get_stats()
+        assert stats["running"] is False
+        assert stats["mode"] == "local"
+        assert "scale" in stats
+
+    def test_update_scale(self):
+        vla = VLAModel()
+        vla.update_scale(10.0, 20.0)
+        assert vla.mm_per_col == 10.0
+        assert vla.mm_per_row == 20.0
