@@ -59,3 +59,4 @@ data/collisions/
 data/learning_log.jsonl
 data/improvements.json
 data/improvement_history.jsonl
+calibration_results/*/frames/
