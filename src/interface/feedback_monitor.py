@@ -27,6 +27,7 @@ NUM_JOINTS = 7  # 6 arm + 1 gripper
 @dataclass
 class FeedbackSample:
     """A single feedback sample with metadata."""
+
     joint_angles: Dict[str, float]  # angle0..angle6
     timestamp: float  # monotonic time
     wall_time: float  # wall clock time
@@ -37,6 +38,7 @@ class FeedbackSample:
 @dataclass
 class FeedbackHealth:
     """Aggregate feedback health metrics."""
+
     total_samples: int = 0
     zero_samples: int = 0
     zero_rate: float = 0.0  # percentage of zero reads in recent window
@@ -52,8 +54,12 @@ class FeedbackHealth:
             "zero_samples": self.zero_samples,
             "zero_rate_pct": round(self.zero_rate * 100, 1),
             "samples_per_second": round(self.samples_per_second, 1),
-            "last_good_age_s": round(self.last_good_age_s, 3) if self.last_good_age_s != float("inf") else None,
-            "last_any_age_s": round(self.last_any_age_s, 3) if self.last_any_age_s != float("inf") else None,
+            "last_good_age_s": (
+                round(self.last_good_age_s, 3) if self.last_good_age_s != float("inf") else None
+            ),
+            "last_any_age_s": (
+                round(self.last_any_age_s, 3) if self.last_any_age_s != float("inf") else None
+            ),
             "is_healthy": self.is_healthy,
             "degraded_reason": self.degraded_reason,
         }

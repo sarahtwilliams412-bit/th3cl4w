@@ -20,12 +20,12 @@ logger = logging.getLogger("th3cl4w.calibration")
 
 # Hardware joint limits (degrees) with 5° safety margin
 JOINT_LIMITS_SAFE = {
-    0: (-130.0, 130.0),   # J0 base yaw (hw ±135)
-    1: (-85.0, 85.0),     # J1 shoulder pitch (hw ±90)
-    2: (-85.0, 85.0),     # J2 elbow pitch (hw ±90)
-    3: (-130.0, 130.0),   # J3 wrist roll (hw ±135)
-    4: (-85.0, 85.0),     # J4 wrist pitch (hw ±90)
-    5: (-130.0, 130.0),   # J5 wrist roll (hw ±135)
+    0: (-130.0, 130.0),  # J0 base yaw (hw ±135)
+    1: (-85.0, 85.0),  # J1 shoulder pitch (hw ±90)
+    2: (-85.0, 85.0),  # J2 elbow pitch (hw ±90)
+    3: (-130.0, 130.0),  # J3 wrist roll (hw ±135)
+    4: (-85.0, 85.0),  # J4 wrist pitch (hw ±90)
+    5: (-130.0, 130.0),  # J5 wrist roll (hw ±135)
 }
 
 MAX_INCREMENT_DEG = 10.0
@@ -34,26 +34,26 @@ POSE_REACHED_TOLERANCE_DEG = 6.0
 POSE_REACHED_TIMEOUT_S = 30.0
 
 CALIBRATION_POSES = [
-    (0, 0, 0, 0, 0, 0),           # home
-    (30, 0, 0, 0, 0, 0),          # yaw right
-    (-30, 0, 0, 0, 0, 0),         # yaw left
-    (0, -30, 0, 0, 0, 0),         # lean forward
-    (0, -60, 0, 0, 0, 0),         # lean far forward
-    (0, 0, 45, 0, 0, 0),          # elbow out
-    (0, 0, -45, 0, 0, 0),         # elbow in
-    (0, -30, 30, 0, 0, 0),        # forward + elbow
-    (0, -45, 45, 0, -30, 0),      # reaching forward-down
-    (30, -30, 30, 0, 0, 0),       # right + forward + elbow
-    (-30, -30, 30, 0, 0, 0),      # left + forward + elbow
-    (0, 30, 0, 0, 0, 0),          # lean back
-    (0, -30, 45, 0, 45, 0),       # forward + elbow + wrist down
-    (45, -45, 30, 0, 0, 0),       # diagonal reach
-    (-45, -45, 30, 0, 0, 0),      # opposite diagonal
-    (0, 0, 0, 0, -45, 0),         # wrist up only
-    (0, -30, 0, 0, 45, 0),        # forward + wrist down
-    (60, 0, 30, 0, 0, 0),         # wide yaw + elbow
-    (-60, 0, 30, 0, 0, 0),        # opposite wide yaw
-    (0, -60, 60, 0, -45, 0),      # maximum forward reach
+    (0, 0, 0, 0, 0, 0),  # home
+    (30, 0, 0, 0, 0, 0),  # yaw right
+    (-30, 0, 0, 0, 0, 0),  # yaw left
+    (0, -30, 0, 0, 0, 0),  # lean forward
+    (0, -60, 0, 0, 0, 0),  # lean far forward
+    (0, 0, 45, 0, 0, 0),  # elbow out
+    (0, 0, -45, 0, 0, 0),  # elbow in
+    (0, -30, 30, 0, 0, 0),  # forward + elbow
+    (0, -45, 45, 0, -30, 0),  # reaching forward-down
+    (30, -30, 30, 0, 0, 0),  # right + forward + elbow
+    (-30, -30, 30, 0, 0, 0),  # left + forward + elbow
+    (0, 30, 0, 0, 0, 0),  # lean back
+    (0, -30, 45, 0, 45, 0),  # forward + elbow + wrist down
+    (45, -45, 30, 0, 0, 0),  # diagonal reach
+    (-45, -45, 30, 0, 0, 0),  # opposite diagonal
+    (0, 0, 0, 0, -45, 0),  # wrist up only
+    (0, -30, 0, 0, 45, 0),  # forward + wrist down
+    (60, 0, 30, 0, 0, 0),  # wide yaw + elbow
+    (-60, 0, 30, 0, 0, 0),  # opposite wide yaw
+    (0, -60, 60, 0, -45, 0),  # maximum forward reach
 ]
 
 
@@ -79,6 +79,7 @@ class CalibrationSession:
 
 class CalibrationError(Exception):
     """Raised on safety violations during calibration."""
+
     pass
 
 
@@ -87,9 +88,9 @@ class CalibrationRunner:
 
     def __init__(
         self,
-        arm_host: str = 'localhost',
+        arm_host: str = "localhost",
         arm_port: int = 8080,
-        cam_host: str = 'localhost',
+        cam_host: str = "localhost",
         cam_port: int = 8081,
         settle_time: float = 2.5,
     ):
@@ -209,7 +210,7 @@ class CalibrationRunner:
     async def command_pose(self, angles: tuple) -> None:
         """
         Command arm to target pose using set_joint (funcode 1) one joint at a time.
-        
+
         Moves in ≤10° increments, verifies feedback between moves.
         Raises CalibrationError on safety violations.
         """
@@ -217,7 +218,7 @@ class CalibrationRunner:
 
         for joint_id in range(6):
             target = float(angles[joint_id])
-            
+
             # Safety: check against limits with 5° margin
             lo, hi = JOINT_LIMITS_SAFE[joint_id]
             if not (lo <= target <= hi):
@@ -240,9 +241,7 @@ class CalibrationRunner:
 
                 ok = await self.set_single_joint(joint_id, step_angle)
                 if not ok:
-                    raise CalibrationError(
-                        f"set_joint failed for J{joint_id} -> {step_angle}°"
-                    )
+                    raise CalibrationError(f"set_joint failed for J{joint_id} -> {step_angle}°")
                 # Brief pause for arm to move
                 await asyncio.sleep(0.5)
 
@@ -261,9 +260,7 @@ class CalibrationRunner:
                     f"(commanded={target}°, actual={feedback[joint_id]:.1f}°)"
                 )
 
-    async def run_single_pose(
-        self, pose_index: int, angles: tuple, comparator=None
-    ) -> PoseCapture:
+    async def run_single_pose(self, pose_index: int, angles: tuple, comparator=None) -> PoseCapture:
         """Run a single calibration pose: move, wait for arrival, settle, capture."""
         logger.info(f"Pose {pose_index + 1}/{self._total_poses}: commanding {angles}")
         self._current_pose = pose_index
@@ -319,7 +316,9 @@ class CalibrationRunner:
         return capture
 
     async def run_full_calibration(
-        self, comparator=None, output_dir: Optional[str] = None,
+        self,
+        comparator=None,
+        output_dir: Optional[str] = None,
     ) -> CalibrationSession:
         """
         Run the full 20-pose calibration sequence.
@@ -393,13 +392,11 @@ class CalibrationRunner:
                 if jpeg_data:
                     fname = f"pose{cap.pose_index:02d}_cam{cam_idx}.jpg"
                     fpath = os.path.join(frames_dir, fname)
-                    with open(fpath, 'wb') as f:
+                    with open(fpath, "wb") as f:
                         f.write(jpeg_data)
                     logger.debug(f"Saved {fpath} ({len(jpeg_data)} bytes)")
                 else:
-                    logger.warning(
-                        f"Skipping pose{cap.pose_index:02d}_cam{cam_idx}.jpg — no data"
-                    )
+                    logger.warning(f"Skipping pose{cap.pose_index:02d}_cam{cam_idx}.jpg — no data")
 
         logger.info(f"Frames saved to {frames_dir}")
 
@@ -412,22 +409,28 @@ class CalibrationRunner:
             "captures": [],
         }
         for cap in session.captures:
-            data["captures"].append({
-                "pose_index": cap.pose_index,
-                "commanded_angles": list(cap.commanded_angles),
-                "actual_angles": cap.actual_angles,
-                "cam0_jpeg_b64": base64.b64encode(cap.cam0_jpeg).decode() if cap.cam0_jpeg else "",
-                "cam1_jpeg_b64": base64.b64encode(cap.cam1_jpeg).decode() if cap.cam1_jpeg else "",
-                "timestamp": cap.timestamp,
-            })
+            data["captures"].append(
+                {
+                    "pose_index": cap.pose_index,
+                    "commanded_angles": list(cap.commanded_angles),
+                    "actual_angles": cap.actual_angles,
+                    "cam0_jpeg_b64": (
+                        base64.b64encode(cap.cam0_jpeg).decode() if cap.cam0_jpeg else ""
+                    ),
+                    "cam1_jpeg_b64": (
+                        base64.b64encode(cap.cam1_jpeg).decode() if cap.cam1_jpeg else ""
+                    ),
+                    "timestamp": cap.timestamp,
+                }
+            )
 
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(data, f, indent=2)
         logger.info(f"Session saved to {path}")
 
     def load_session(self, path: str) -> CalibrationSession:
         """Load a saved calibration session from JSON."""
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)
 
         session = CalibrationSession(
@@ -436,14 +439,16 @@ class CalibrationRunner:
             total_poses=data["total_poses"],
         )
         for cap_data in data["captures"]:
-            session.captures.append(PoseCapture(
-                pose_index=cap_data["pose_index"],
-                commanded_angles=tuple(cap_data["commanded_angles"]),
-                actual_angles=cap_data["actual_angles"],
-                cam0_jpeg=base64.b64decode(cap_data.get("cam0_jpeg_b64", "")),
-                cam1_jpeg=base64.b64decode(cap_data.get("cam1_jpeg_b64", "")),
-                timestamp=cap_data["timestamp"],
-            ))
+            session.captures.append(
+                PoseCapture(
+                    pose_index=cap_data["pose_index"],
+                    commanded_angles=tuple(cap_data["commanded_angles"]),
+                    actual_angles=cap_data["actual_angles"],
+                    cam0_jpeg=base64.b64decode(cap_data.get("cam0_jpeg_b64", "")),
+                    cam1_jpeg=base64.b64decode(cap_data.get("cam1_jpeg_b64", "")),
+                    timestamp=cap_data["timestamp"],
+                )
+            )
         return session
 
 

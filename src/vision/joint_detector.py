@@ -54,6 +54,7 @@ class DetectionSource(Enum):
 @dataclass
 class JointDetection:
     """Single joint detection result."""
+
     joint_index: int
     pixel_pos: tuple[float, float]
     confidence: float  # 0.0 - 1.0
@@ -61,12 +62,17 @@ class JointDetection:
 
     @property
     def name(self) -> str:
-        return JOINT_NAMES[self.joint_index] if self.joint_index < len(JOINT_NAMES) else f"joint_{self.joint_index}"
+        return (
+            JOINT_NAMES[self.joint_index]
+            if self.joint_index < len(JOINT_NAMES)
+            else f"joint_{self.joint_index}"
+        )
 
 
 @dataclass
 class SmoothedJoint:
     """Temporally smoothed joint position."""
+
     joint_index: int
     pixel_pos: tuple[float, float]
     confidence: float
@@ -75,7 +81,7 @@ class SmoothedJoint:
 
 # Per-camera visibility: which joints are best observed from each camera
 _CAMERA_VISIBLE_JOINTS: dict[int, list[int]] = {
-    0: [1, 2, 4],     # cam0 front: shoulder pitch, elbow pitch, wrist pitch
+    0: [1, 2, 4],  # cam0 front: shoulder pitch, elbow pitch, wrist pitch
     1: [0, 1, 2, 4],  # cam1 overhead: base yaw + reach (all pitch joints visible too)
 }
 
@@ -83,6 +89,7 @@ _CAMERA_VISIBLE_JOINTS: dict[int, list[int]] = {
 @dataclass
 class MarkerDetection:
     """A detected color marker blob."""
+
     color_name: str
     centroid: tuple[float, float]  # (x, y)
     area: float
@@ -111,7 +118,9 @@ class JointDetector:
         self.contour_search_radius = contour_search_radius
         self.width_search_radius = width_search_radius
         self.min_inflection_angle = min_inflection_angle
-        self.marker_colors = marker_colors if marker_colors is not None else dict(DEFAULT_MARKER_COLORS)
+        self.marker_colors = (
+            marker_colors if marker_colors is not None else dict(DEFAULT_MARKER_COLORS)
+        )
         self.marker_min_area = marker_min_area
         self.marker_search_radius = marker_search_radius
         self.blur_kernel = blur_kernel
@@ -166,8 +175,11 @@ class JointDetector:
             markers = self.detect_markers(frame)
             marker_centroids = [(m.centroid[0], m.centroid[1]) for m in markers]
             if markers:
-                logger.debug("Detected %d markers: %s", len(markers),
-                             [(m.color_name, m.centroid) for m in markers])
+                logger.debug(
+                    "Detected %d markers: %s",
+                    len(markers),
+                    [(m.color_name, m.centroid) for m in markers],
+                )
 
         detections: list[JointDetection] = []
         inflection_pts = self._find_contour_inflections(segmentation)
@@ -175,7 +187,11 @@ class JointDetector:
 
         for i, fk_pos in enumerate(fk_pixels):
             det = self._detect_single_joint(
-                i, fk_pos, segmentation.gold_centroids, inflection_pts, width_minima,
+                i,
+                fk_pos,
+                segmentation.gold_centroids,
+                inflection_pts,
+                width_minima,
                 marker_centroids=marker_centroids,
             )
             detections.append(det)
@@ -204,7 +220,9 @@ class JointDetector:
         best_gold, gold_dist = self._nearest(fk_pos, gold_centroids)
         if best_gold is not None and gold_dist <= self.gold_search_radius:
             conf = max(0.5, 1.0 - gold_dist / self.gold_search_radius)
-            return JointDetection(joint_idx, (float(best_gold[0]), float(best_gold[1])), conf, DetectionSource.GOLD)
+            return JointDetection(
+                joint_idx, (float(best_gold[0]), float(best_gold[1])), conf, DetectionSource.GOLD
+            )
 
         # 2. Contour inflection match
         best_infl, infl_dist = self._nearest(fk_pos, inflection_pts)
@@ -237,9 +255,7 @@ class JointDetector:
                 best = (float(c[0]), float(c[1]))
         return best, best_dist
 
-    def _find_contour_inflections(
-        self, segmentation: ArmSegmentation
-    ) -> list[tuple[float, float]]:
+    def _find_contour_inflections(self, segmentation: ArmSegmentation) -> list[tuple[float, float]]:
         """Find inflection points along the arm contour (direction changes)."""
         if segmentation.contour is None or len(segmentation.contour) < 10:
             return []
@@ -261,9 +277,7 @@ class JointDetector:
 
         return inflections
 
-    def _find_width_minima(
-        self, segmentation: ArmSegmentation
-    ) -> list[tuple[float, float]]:
+    def _find_width_minima(self, segmentation: ArmSegmentation) -> list[tuple[float, float]]:
         """Find local width minima in the arm silhouette (joints are narrower)."""
         if segmentation.silhouette_mask is None:
             return []
@@ -280,7 +294,7 @@ class JointDetector:
         for row in range(by, by + bh):
             if row < 0 or row >= mask.shape[0]:
                 continue
-            row_slice = mask[row, max(0, bx): min(mask.shape[1], bx + bw)]
+            row_slice = mask[row, max(0, bx) : min(mask.shape[1], bx + bw)]
             nonzero = np.nonzero(row_slice)[0]
             if len(nonzero) >= 2:
                 w = float(nonzero[-1] - nonzero[0])
@@ -362,12 +376,14 @@ class JointTracker:
                 self._confidences[i] *= self.confidence_decay
 
             pos = self._positions[i] or (0.0, 0.0)
-            results.append(SmoothedJoint(
-                joint_index=i,
-                pixel_pos=pos,
-                confidence=self._confidences[i],
-                frames_tracked=self._frames[i],
-            ))
+            results.append(
+                SmoothedJoint(
+                    joint_index=i,
+                    pixel_pos=pos,
+                    confidence=self._confidences[i],
+                    frames_tracked=self._frames[i],
+                )
+            )
 
         return results
 

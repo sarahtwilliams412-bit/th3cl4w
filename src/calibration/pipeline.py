@@ -31,6 +31,7 @@ def _pixel_dist(a, b):
     if a is None or b is None:
         return None
     import math
+
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
@@ -42,14 +43,16 @@ class LLMCalibrationPipeline:
 
     def __init__(
         self,
-        arm_host: str = 'localhost',
+        arm_host: str = "localhost",
         arm_port: int = 8080,
-        cam_host: str = 'localhost',
+        cam_host: str = "localhost",
         cam_port: int = 8081,
         gemini_api_key: str | None = None,
         settle_time: float = 2.5,
     ):
-        self.runner = CalibrationRunner(arm_host, arm_port, cam_host, cam_port, settle_time=settle_time)
+        self.runner = CalibrationRunner(
+            arm_host, arm_port, cam_host, cam_port, settle_time=settle_time
+        )
         self.segmenter = ArmSegmenter()
         self.cv_detector = JointDetector()
 
@@ -83,6 +86,7 @@ class LLMCalibrationPipeline:
 
         # CV pipeline
         import time
+
         cv_latency = 0.0
         cv_dets = []
         if capture.cam0_jpeg:
@@ -105,7 +109,8 @@ class LLMCalibrationPipeline:
         if self.llm_detector and capture.cam0_jpeg:
             try:
                 llm_result = await self.llm_detector.detect_joints(
-                    capture.cam0_jpeg, camera_id=0,
+                    capture.cam0_jpeg,
+                    camera_id=0,
                     joint_angles=joint_angles,
                 )
                 llm_latency = llm_result.latency_ms
@@ -134,17 +139,19 @@ class LLMCalibrationPipeline:
                 if cv_det.source != DetectionSource.FK_ONLY:
                     cv_pixel = cv_det.pixel_pos
 
-            joints.append(JointComparison(
-                name=name,
-                fk_pixel=fk_px,
-                cv_pixel=cv_pixel,
-                llm_pixel=llm_pixels[i],
-                cv_error_px=_pixel_dist(cv_pixel, fk_px),
-                llm_error_px=_pixel_dist(llm_pixels[i], fk_px),
-                agreement_px=_pixel_dist(cv_pixel, llm_pixels[i]),
-                cv_source=cv_source,
-                llm_confidence=llm_confidences[i],
-            ))
+            joints.append(
+                JointComparison(
+                    name=name,
+                    fk_pixel=fk_px,
+                    cv_pixel=cv_pixel,
+                    llm_pixel=llm_pixels[i],
+                    cv_error_px=_pixel_dist(cv_pixel, fk_px),
+                    llm_error_px=_pixel_dist(llm_pixels[i], fk_px),
+                    agreement_px=_pixel_dist(cv_pixel, llm_pixels[i]),
+                    cv_source=cv_source,
+                    llm_confidence=llm_confidences[i],
+                )
+            )
 
         return ComparisonResult(
             pose_index=pose_index,
@@ -162,9 +169,15 @@ class LLMCalibrationPipeline:
 
         if not results:
             return ComparisonReport(
-                results=[], cv_detection_rate=0.0, llm_detection_rate=0.0,
-                cv_mean_error_px=0.0, llm_mean_error_px=0.0, agreement_rate=0.0,
-                total_llm_tokens=0, total_llm_cost_usd=0.0, recommendation="inconclusive",
+                results=[],
+                cv_detection_rate=0.0,
+                llm_detection_rate=0.0,
+                cv_mean_error_px=0.0,
+                llm_mean_error_px=0.0,
+                agreement_rate=0.0,
+                total_llm_tokens=0,
+                total_llm_cost_usd=0.0,
+                recommendation="inconclusive",
             )
 
         total_joints = 0
@@ -224,7 +237,7 @@ class LLMCalibrationPipeline:
             recommendation=recommendation,
         )
 
-    async def run(self, output_dir: str = 'calibration_results') -> str:
+    async def run(self, output_dir: str = "calibration_results") -> str:
         """Run full calibration pipeline, return path to report directory."""
         # Run calibration (arm movement + frame capture)
         session = await self.runner.run_full_calibration()
@@ -245,7 +258,11 @@ class LLMCalibrationPipeline:
             end_time=session.end_time,
         )
 
-        out_path = Path(output_dir) / f"cal_{session_id}" if not session_id.startswith("cal_") else Path(output_dir) / session_id
+        out_path = (
+            Path(output_dir) / f"cal_{session_id}"
+            if not session_id.startswith("cal_")
+            else Path(output_dir) / session_id
+        )
         out_path.mkdir(parents=True, exist_ok=True)
 
         # Save report files via reporter
@@ -295,7 +312,7 @@ class LLMCalibrationPipeline:
         self,
         session: CalibrationSession,
         report: ComparisonReport,
-        output_dir: str = 'calibration_results',
+        output_dir: str = "calibration_results",
     ) -> str:
         """Save calibration results to disk. Returns output path."""
         session_id = self.runner._session_id or "calibration"

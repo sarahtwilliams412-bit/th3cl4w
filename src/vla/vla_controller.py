@@ -40,6 +40,7 @@ class TaskState(Enum):
 @dataclass
 class ExecutionStep:
     """Record of one step in the execution."""
+
     step_num: int
     state: str
     action: Optional[str] = None
@@ -56,6 +57,7 @@ class ExecutionStep:
 @dataclass
 class TaskResult:
     """Result of a VLA task execution."""
+
     success: bool
     task: str
     total_time_s: float = 0.0
@@ -110,8 +112,12 @@ class VLAController:
 
     @property
     def is_busy(self) -> bool:
-        return self._state not in (TaskState.IDLE, TaskState.COMPLETED,
-                                    TaskState.FAILED, TaskState.ABORTED)
+        return self._state not in (
+            TaskState.IDLE,
+            TaskState.COMPLETED,
+            TaskState.FAILED,
+            TaskState.ABORTED,
+        )
 
     def abort(self):
         """Signal the controller to abort the current task."""
@@ -152,7 +158,11 @@ class VLAController:
                 json={"id": joint_id, "angle": angle},
             )
             if resp.status_code != 200:
-                data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+                data = (
+                    resp.json()
+                    if resp.headers.get("content-type", "").startswith("application/json")
+                    else {}
+                )
                 logger.error("set-joint failed: %s %s", resp.status_code, data.get("error", ""))
                 return False
         await asyncio.sleep(self._settle_time)
@@ -175,11 +185,10 @@ class VLAController:
             if result.contacted:
                 logger.info(
                     "Contact detected at %.1fmm after %d steps",
-                    result.final_mm, result.steps_taken,
+                    result.final_mm,
+                    result.steps_taken,
                 )
-                self._history.append(
-                    f"CONTACT at {result.final_mm:.1f}mm"
-                )
+                self._history.append(f"CONTACT at {result.final_mm:.1f}mm")
             else:
                 logger.warning("No contact detected — gripper closed to %.1fmm", result.final_mm)
                 self._history.append("NO_CONTACT — grip missed")
@@ -276,7 +285,9 @@ class VLAController:
 
                 logger.info(
                     "VLA plan: phase=%s, confidence=%.2f, %d actions, reasoning='%s'",
-                    plan.phase, plan.confidence, len(plan.actions),
+                    plan.phase,
+                    plan.confidence,
+                    len(plan.actions),
                     plan.reasoning[:100],
                 )
 
@@ -290,20 +301,24 @@ class VLAController:
 
                 # 3. DECODE & VALIDATE
                 decoded = self._decoder.decode(
-                    plan.actions, obs.joints, obs.gripper_mm,
+                    plan.actions,
+                    obs.joints,
+                    obs.gripper_mm,
                 )
 
                 if not decoded:
                     logger.warning("No actions decoded from plan")
-                    result.steps.append(ExecutionStep(
-                        step_num=total_actions,
-                        state="no_actions",
-                        planning_time_ms=plan_ms,
-                        observation_time_ms=obs_ms,
-                        phase=plan.phase,
-                        confidence=plan.confidence,
-                        notes="Model returned no valid actions",
-                    ))
+                    result.steps.append(
+                        ExecutionStep(
+                            step_num=total_actions,
+                            state="no_actions",
+                            planning_time_ms=plan_ms,
+                            observation_time_ms=obs_ms,
+                            phase=plan.phase,
+                            confidence=plan.confidence,
+                            notes="Model returned no valid actions",
+                        )
+                    )
                     continue
 
                 # 4. EXECUTE actions until verify checkpoint
@@ -386,7 +401,10 @@ class VLAController:
         logger.info(
             "VLA task %s: '%s' in %.1fs (%d actions, %d observations)",
             "SUCCEEDED" if result.success else "FAILED",
-            task, result.total_time_s, result.actions_executed, result.observations_made,
+            task,
+            result.total_time_s,
+            result.actions_executed,
+            result.observations_made,
         )
 
         return result

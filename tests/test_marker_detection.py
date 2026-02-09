@@ -62,11 +62,13 @@ class TestJointDetectorMarkers:
     def test_detect_multiple_markers(self):
         from src.vision.joint_detector import JointDetector
 
-        frame = _make_frame_with_markers(markers=[
-            (100, 200, NEON_GREEN_BGR),
-            (300, 200, NEON_ORANGE_BGR),
-            (500, 200, HOT_PINK_BGR),
-        ])
+        frame = _make_frame_with_markers(
+            markers=[
+                (100, 200, NEON_GREEN_BGR),
+                (300, 200, NEON_ORANGE_BGR),
+                (500, 200, HOT_PINK_BGR),
+            ]
+        )
         det = JointDetector()
         markers = det.detect_markers(frame)
         assert len(markers) == 3
@@ -83,11 +85,13 @@ class TestJointDetectorMarkers:
         from src.vision.joint_detector import JointDetector, DetectionSource
         from src.vision.arm_segmenter import ArmSegmentation
 
-        frame = _make_frame_with_markers(markers=[
-            (100, 240, NEON_GREEN_BGR),
-            (300, 240, NEON_ORANGE_BGR),
-            (500, 240, HOT_PINK_BGR),
-        ])
+        frame = _make_frame_with_markers(
+            markers=[
+                (100, 240, NEON_GREEN_BGR),
+                (300, 240, NEON_ORANGE_BGR),
+                (500, 240, HOT_PINK_BGR),
+            ]
+        )
         seg = ArmSegmentation(
             silhouette_mask=np.zeros((480, 640), dtype=np.uint8),
             gold_centroids=[],
@@ -133,11 +137,13 @@ class TestArmSegmenterMarkers:
     def test_segment_arm_marker_mode(self):
         from src.vision.arm_segmenter import ArmSegmenter
 
-        frame = _make_frame_with_markers(markers=[
-            (100, 240, NEON_GREEN_BGR),
-            (300, 240, NEON_ORANGE_BGR),
-            (500, 240, HOT_PINK_BGR),
-        ])
+        frame = _make_frame_with_markers(
+            markers=[
+                (100, 240, NEON_GREEN_BGR),
+                (300, 240, NEON_ORANGE_BGR),
+                (500, 240, HOT_PINK_BGR),
+            ]
+        )
         seg = ArmSegmenter()
         result = seg.segment_arm(frame)
         assert len(result.marker_centroids) >= 2

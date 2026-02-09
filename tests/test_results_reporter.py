@@ -41,15 +41,17 @@ def _make_results(n=5):
             _jc("wrist", cv_px=(250, 120), llm_px=(260, 130), cv_err=20.0, llm_err=35.0),
             _jc("end_effector", cv_px=(300, 100), llm_px=(310, 105), cv_err=8.0, llm_err=12.0),
         ]
-        results.append(ComparisonResult(
-            pose_index=i,
-            camera_id=0,
-            joint_angles=[10.0 * i, 20.0, 30.0],
-            joints=joints,
-            cv_latency_ms=5.0,
-            llm_latency_ms=2500.0,
-            llm_tokens=1200,
-        ))
+        results.append(
+            ComparisonResult(
+                pose_index=i,
+                camera_id=0,
+                joint_angles=[10.0 * i, 20.0, 30.0],
+                joints=joints,
+                cv_latency_ms=5.0,
+                llm_latency_ms=2500.0,
+                llm_tokens=1200,
+            )
+        )
     return results
 
 
@@ -125,8 +127,17 @@ class TestMarkdownGeneration:
             _jc("wrist", llm_px=(260, 130), llm_err=60.0),
             _jc("end_effector", llm_px=(310, 105), llm_err=12.0),
         ]
-        results = [ComparisonResult(pose_index=0, camera_id=0, joint_angles=[], joints=joints,
-                                     cv_latency_ms=5.0, llm_latency_ms=2500.0, llm_tokens=1200)]
+        results = [
+            ComparisonResult(
+                pose_index=0,
+                camera_id=0,
+                joint_angles=[],
+                joints=joints,
+                cv_latency_ms=5.0,
+                llm_latency_ms=2500.0,
+                llm_tokens=1200,
+            )
+        ]
         report = _make_report(results=results)
         reporter = CalibrationReporter()
         md = reporter.generate_markdown(report)
@@ -148,19 +159,30 @@ class TestRecommendation:
             for ji, name in enumerate(JOINT_NAMES):
                 cv_det = (pi / n_poses) < cv_rates[ji]
                 llm_det = (pi / n_poses) < llm_rates[ji]
-                joints.append(JointComparison(
-                    name=name,
-                    fk_pixel=(100, 100),
-                    cv_pixel=(100, 100) if cv_det else None,
-                    llm_pixel=(110, 110) if llm_det else None,
-                    cv_error_px=10.0 if cv_det else None,
-                    llm_error_px=llm_errors[ji] if llm_det else None,
-                    agreement_px=None, cv_source=None, llm_confidence=None,
-                ))
-            results.append(ComparisonResult(
-                pose_index=pi, camera_id=0, joint_angles=[],
-                joints=joints, cv_latency_ms=5.0, llm_latency_ms=2000.0, llm_tokens=1000,
-            ))
+                joints.append(
+                    JointComparison(
+                        name=name,
+                        fk_pixel=(100, 100),
+                        cv_pixel=(100, 100) if cv_det else None,
+                        llm_pixel=(110, 110) if llm_det else None,
+                        cv_error_px=10.0 if cv_det else None,
+                        llm_error_px=llm_errors[ji] if llm_det else None,
+                        agreement_px=None,
+                        cv_source=None,
+                        llm_confidence=None,
+                    )
+                )
+            results.append(
+                ComparisonResult(
+                    pose_index=pi,
+                    camera_id=0,
+                    joint_angles=[],
+                    joints=joints,
+                    cv_latency_ms=5.0,
+                    llm_latency_ms=2000.0,
+                    llm_tokens=1000,
+                )
+            )
         return _make_report(results=results)
 
     def test_archive_low_llm_detection(self):
@@ -253,8 +275,17 @@ class TestEmptyPartialReports:
 
     def test_no_joints_in_results(self):
         reporter = CalibrationReporter()
-        results = [ComparisonResult(pose_index=0, camera_id=0, joint_angles=[],
-                                     joints=[], cv_latency_ms=0, llm_latency_ms=0, llm_tokens=0)]
+        results = [
+            ComparisonResult(
+                pose_index=0,
+                camera_id=0,
+                joint_angles=[],
+                joints=[],
+                cv_latency_ms=0,
+                llm_latency_ms=0,
+                llm_tokens=0,
+            )
+        ]
         report = _make_report(results=results)
         md = reporter.generate_markdown(report)
         assert "# Calibration Comparison Report" in md
@@ -264,11 +295,30 @@ class TestEmptyPartialReports:
     def test_all_none_detections(self):
         """Results with no detections at all."""
         reporter = CalibrationReporter()
-        joints = [JointComparison(name="base", fk_pixel=(100, 100), cv_pixel=None, llm_pixel=None,
-                                   cv_error_px=None, llm_error_px=None, agreement_px=None,
-                                   cv_source=None, llm_confidence=None)]
-        results = [ComparisonResult(pose_index=0, camera_id=0, joint_angles=[],
-                                     joints=joints, cv_latency_ms=0, llm_latency_ms=0, llm_tokens=0)]
+        joints = [
+            JointComparison(
+                name="base",
+                fk_pixel=(100, 100),
+                cv_pixel=None,
+                llm_pixel=None,
+                cv_error_px=None,
+                llm_error_px=None,
+                agreement_px=None,
+                cv_source=None,
+                llm_confidence=None,
+            )
+        ]
+        results = [
+            ComparisonResult(
+                pose_index=0,
+                camera_id=0,
+                joint_angles=[],
+                joints=joints,
+                cv_latency_ms=0,
+                llm_latency_ms=0,
+                llm_tokens=0,
+            )
+        ]
         report = _make_report(results=results)
         md = reporter.generate_markdown(report)
         assert "0/1" in md
@@ -278,6 +328,7 @@ class TestAsciiVisualizations:
     def test_bar_chart_renders(self):
         reporter = CalibrationReporter()
         from src.calibration.results_reporter import _joint_stats
+
         jstats = _joint_stats(_make_report())
         chart = reporter._ascii_detection_bar_chart(jstats)
         assert "█" in chart or "▓" in chart

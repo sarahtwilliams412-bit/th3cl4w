@@ -72,7 +72,9 @@ class TestOvercurrentRecovery:
         # Detect overcurrent via state check
         state = make_state(torques=[25.0, 0, 0, 0, 0, 0, 0])  # exceeds 20 Nm limit
         violations = m.check_state(state)
-        torque_violations = [v for v in violations if v.violation_type == ViolationType.TORQUE_LIMIT]
+        torque_violations = [
+            v for v in violations if v.violation_type == ViolationType.TORQUE_LIMIT
+        ]
         assert len(torque_violations) > 0
         # Caller triggers e-stop
         m.trigger_estop("overcurrent detected")

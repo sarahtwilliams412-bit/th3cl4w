@@ -269,23 +269,22 @@ class CommandSmoother:
 
         # SAFETY: Check feedback freshness — refuse commands if feedback is stale
         # Use feedback monitor if available (filters zero-reads), else wall-clock
-        _fb_monitor = getattr(self._arm, '_feedback_monitor', None) if self._arm else None
+        _fb_monitor = getattr(self._arm, "_feedback_monitor", None) if self._arm else None
         if _fb_monitor is not None:
             if not _fb_monitor.is_feedback_fresh(max_age_s=0.5):
                 if self._ticks % 50 == 0:
                     health = _fb_monitor.get_health()
                     logger.error(
                         "Reliable feedback stale (last good %.1fs ago, zero_rate=%.0f%%) — refusing commands",
-                        health.last_good_age_s, health.zero_rate * 100,
+                        health.last_good_age_s,
+                        health.zero_rate * 100,
                     )
                 return
         elif self._last_feedback_time > 0:
             feedback_age = time.time() - self._last_feedback_time
             if feedback_age > 0.5:  # 500ms staleness threshold
                 if self._ticks % 50 == 0:  # Log every ~5s to avoid spam
-                    logger.error(
-                        "Feedback stale (%.1fs old) — refusing commands", feedback_age
-                    )
+                    logger.error("Feedback stale (%.1fs old) — refusing commands", feedback_age)
                 return
 
         # SAFETY: Check e-stop on safety monitor
@@ -350,12 +349,16 @@ class CommandSmoother:
             # SAFETY: Validate command through SafetyMonitor before sending
             if self._safety_monitor is not None:
                 from src.safety.limits import JOINT_LIMITS_DEG as _LIM
+
                 for i, angle in enumerate(send_angles):
                     lo, hi = float(_LIM[i, 0]), float(_LIM[i, 1])
                     if angle < lo or angle > hi:
                         logger.warning(
                             "Safety: J%d=%.2f° outside [%.1f, %.1f] — blocking command",
-                            i, angle, lo, hi,
+                            i,
+                            angle,
+                            lo,
+                            hi,
                         )
                         return
 

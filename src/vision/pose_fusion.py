@@ -32,8 +32,9 @@ class FusionSource(Enum):
 @dataclass
 class FusionResult:
     """Result of fusing FK and visual joint positions."""
-    positions: list[list[float]]          # [[x,y,z], ...] in meters
-    confidence: list[float]               # per-joint confidence 0-1
+
+    positions: list[list[float]]  # [[x,y,z], ...] in meters
+    confidence: list[float]  # per-joint confidence 0-1
     source: FusionSource
     per_joint_source: list[FusionSource] = field(default_factory=list)
     disagreements: list[float] = field(default_factory=list)  # per-joint FK-visual distance (m)
@@ -43,6 +44,7 @@ class FusionResult:
 @dataclass
 class CameraCalib:
     """Minimal camera calibration for back-projection."""
+
     fx: float
     fy: float
     cx: float
@@ -58,11 +60,13 @@ class CameraCalib:
         k = rv / angle
         c, s = math.cos(angle), math.sin(angle)
         v = 1 - c
-        return np.array([
-            [k[0]*k[0]*v + c,      k[0]*k[1]*v - k[2]*s, k[0]*k[2]*v + k[1]*s],
-            [k[1]*k[0]*v + k[2]*s, k[1]*k[1]*v + c,      k[1]*k[2]*v - k[0]*s],
-            [k[2]*k[0]*v - k[1]*s, k[2]*k[1]*v + k[0]*s, k[2]*k[2]*v + c],
-        ])
+        return np.array(
+            [
+                [k[0] * k[0] * v + c, k[0] * k[1] * v - k[2] * s, k[0] * k[2] * v + k[1] * s],
+                [k[1] * k[0] * v + k[2] * s, k[1] * k[1] * v + c, k[1] * k[2] * v - k[0] * s],
+                [k[2] * k[0] * v - k[1] * s, k[2] * k[1] * v + k[0] * s, k[2] * k[2] * v + c],
+            ]
+        )
 
 
 class PoseFusion:
@@ -89,6 +93,7 @@ class PoseFusion:
         """Load camera extrinsics from calibration file."""
         try:
             import json
+
             with open(path) as f:
                 data = json.load(f)
             cameras = data.get("cameras", {})
@@ -135,8 +140,12 @@ class PoseFusion:
         then blends with FK positions weighted by visual confidence.
         """
         n_joints = len(fk_positions_3d)
-        has_cam0 = cam0_detections is not None and cam0_calib is not None and len(cam0_detections) > 0
-        has_cam1 = cam1_detections is not None and cam1_calib is not None and len(cam1_detections) > 0
+        has_cam0 = (
+            cam0_detections is not None and cam0_calib is not None and len(cam0_detections) > 0
+        )
+        has_cam1 = (
+            cam1_detections is not None and cam1_calib is not None and len(cam1_detections) > 0
+        )
 
         # FK-only mode
         if not has_cam0 and not has_cam1:
@@ -216,7 +225,9 @@ class PoseFusion:
             if dist > DISAGREEMENT_THRESHOLD_M:
                 logger.warning(
                     "Joint %d: FK-visual disagreement %.1fmm (threshold %.1fmm)",
-                    i, dist * 1000, DISAGREEMENT_THRESHOLD_M * 1000,
+                    i,
+                    dist * 1000,
+                    DISAGREEMENT_THRESHOLD_M * 1000,
                 )
 
             # Weighted fusion: α depends on average visual confidence
@@ -261,7 +272,9 @@ class PoseFusion:
         n_joints = len(self._quality_history[0]["disagreements"]) if self._quality_history else 0
         joint_metrics = {}
         for j in range(n_joints):
-            dists = [h["disagreements"][j] for h in self._quality_history if j < len(h["disagreements"])]
+            dists = [
+                h["disagreements"][j] for h in self._quality_history if j < len(h["disagreements"])
+            ]
             if dists:
                 joint_metrics[f"joint_{j}"] = {
                     "mean_disagreement_mm": round(float(np.mean(dists)) * 1000, 1),
@@ -282,11 +295,13 @@ class PoseFusion:
         }
 
     def _record_quality(self, result: FusionResult) -> None:
-        self._quality_history.append({
-            "disagreements": result.disagreements,
-            "source": result.source.value,
-            "timestamp": result.timestamp,
-        })
+        self._quality_history.append(
+            {
+                "disagreements": result.disagreements,
+                "source": result.source.value,
+                "timestamp": result.timestamp,
+            }
+        )
         # Keep last 100 entries
         if len(self._quality_history) > 100:
             self._quality_history = self._quality_history[-100:]

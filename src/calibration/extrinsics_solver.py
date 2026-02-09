@@ -22,6 +22,7 @@ import numpy as np
 
 # Add project root so src.* imports work
 import sys
+
 _project_root = str(Path(__file__).resolve().parent.parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
@@ -31,7 +32,9 @@ from src.vision.fk_engine import fk_positions
 logger = logging.getLogger("th3cl4w.calibration.extrinsics")
 
 # Path to calibrated intrinsics (from scripts/calibrate_intrinsics.py)
-_INTRINSICS_PATH = Path(__file__).resolve().parent.parent.parent / "calibration_results" / "camera_intrinsics.json"
+_INTRINSICS_PATH = (
+    Path(__file__).resolve().parent.parent.parent / "calibration_results" / "camera_intrinsics.json"
+)
 
 # Fallback defaults for 1920×1080 (Logitech BRIO wide-angle estimate)
 DEFAULT_FX = 1200.0
@@ -54,16 +57,17 @@ def load_camera_intrinsics(cam_id: str = "cam0") -> tuple[float, float, float, f
             logger.warning("Failed to load intrinsics: %s", e)
     if _intrinsics_cache and cam_id in _intrinsics_cache:
         c = _intrinsics_cache[cam_id]
-        return c["fx"], c["fy"], c["cx"], c["cy"], c.get("dist_coeffs", [0]*5)
-    return DEFAULT_FX, DEFAULT_FY, DEFAULT_CX, DEFAULT_CY, [0]*5
+        return c["fx"], c["fy"], c["cx"], c["cy"], c.get("dist_coeffs", [0] * 5)
+    return DEFAULT_FX, DEFAULT_FY, DEFAULT_CX, DEFAULT_CY, [0] * 5
 
 
 @dataclass
 class ExtrinsicsResult:
     """Result of camera extrinsics calibration."""
+
     camera_id: str
-    rvec: list[float]        # Rodrigues rotation vector (3,)
-    tvec: list[float]        # Translation vector (3,)
+    rvec: list[float]  # Rodrigues rotation vector (3,)
+    tvec: list[float]  # Translation vector (3,)
     reprojection_error_mean: float
     reprojection_error_max: float
     num_poses_used: int
@@ -75,26 +79,29 @@ class ExtrinsicsResult:
 # Bootstrap poses from calibration plan (manually annotated pixel positions)
 # Format: (joint_angles, cam0_pixel_or_None, cam1_pixel_or_None)
 BOOTSTRAP_POSES = [
-    ((0, 0, 0, 0, 0, 0),       (1130, 220), (760, 135)),
-    ((45, 0, 0, 0, 0, 0),      (1430, 105), (680, 520)),
-    ((-45, 0, 0, 0, 0, 0),     (920, 175),  (660, 290)),
-    ((0, 45, 0, 0, 0, 0),      (1050, 220), (760, 270)),
-    ((0, -45, 0, 0, 0, 0),     (540, 230),  (760, 470)),
-    ((0, 0, 45, 0, 0, 0),      None,        (660, 330)),
-    ((0, 0, -45, 0, 0, 0),     None,        (830, 490)),
-    ((0, 0, 0, 0, 45, 0),      None,        (760, 290)),
-    ((0, 0, 0, 0, -45, 0),     None,        (760, 200)),
+    ((0, 0, 0, 0, 0, 0), (1130, 220), (760, 135)),
+    ((45, 0, 0, 0, 0, 0), (1430, 105), (680, 520)),
+    ((-45, 0, 0, 0, 0, 0), (920, 175), (660, 290)),
+    ((0, 45, 0, 0, 0, 0), (1050, 220), (760, 270)),
+    ((0, -45, 0, 0, 0, 0), (540, 230), (760, 470)),
+    ((0, 0, 45, 0, 0, 0), None, (660, 330)),
+    ((0, 0, -45, 0, 0, 0), None, (830, 490)),
+    ((0, 0, 0, 0, 45, 0), None, (760, 290)),
+    ((0, 0, 0, 0, -45, 0), None, (760, 200)),
 ]
 
 
 def get_default_camera_matrix(cam_id: str = "cam0") -> np.ndarray:
     """Return 3x3 camera intrinsic matrix, loading from calibration file if available."""
     fx, fy, cx, cy, _ = load_camera_intrinsics(cam_id)
-    return np.array([
-        [fx, 0, cx],
-        [0, fy, cy],
-        [0, 0, 1],
-    ], dtype=np.float64)
+    return np.array(
+        [
+            [fx, 0, cx],
+            [0, fy, cy],
+            [0, 0, 1],
+        ],
+        dtype=np.float64,
+    )
 
 
 def get_dist_coeffs(cam_id: str = "cam0") -> np.ndarray:
@@ -158,7 +165,10 @@ def solve_camera_pnp(
 
     if use_ransac and n >= 6:
         success, rvec, tvec, inliers = cv2.solvePnPRansac(
-            obj, img, camera_matrix, dist_coeffs,
+            obj,
+            img,
+            camera_matrix,
+            dist_coeffs,
             iterationsCount=5000,
             reprojectionError=50.0,  # generous for manually annotated points
             flags=pnp_flag,
@@ -167,7 +177,10 @@ def solve_camera_pnp(
             # Fallback to non-RANSAC
             logger.warning("solvePnPRansac failed, trying solvePnP")
             success, rvec, tvec = cv2.solvePnP(
-                obj, img, camera_matrix, dist_coeffs,
+                obj,
+                img,
+                camera_matrix,
+                dist_coeffs,
                 flags=pnp_flag,
             )
             if not success:
@@ -176,7 +189,10 @@ def solve_camera_pnp(
             inliers = np.arange(n).reshape(-1, 1)
     else:
         success, rvec, tvec = cv2.solvePnP(
-            obj, img, camera_matrix, dist_coeffs,
+            obj,
+            img,
+            camera_matrix,
+            dist_coeffs,
             flags=pnp_flag,
         )
         if not success:
@@ -186,7 +202,12 @@ def solve_camera_pnp(
 
     # Refine with Levenberg-Marquardt
     rvec, tvec = cv2.solvePnPRefineLM(
-        obj, img, camera_matrix, dist_coeffs, rvec, tvec,
+        obj,
+        img,
+        camera_matrix,
+        dist_coeffs,
+        rvec,
+        tvec,
     )
 
     return rvec, tvec, inliers
@@ -213,7 +234,10 @@ def compute_reprojection_error(
 
     projected, _ = cv2.projectPoints(
         object_points.reshape(-1, 1, 3).astype(np.float64),
-        rvec, tvec, camera_matrix, dist_coeffs,
+        rvec,
+        tvec,
+        camera_matrix,
+        dist_coeffs,
     )
     projected = projected.reshape(-1, 2)
     actual = image_points.reshape(-1, 2)
@@ -260,20 +284,31 @@ def solve_from_bootstrap(
         dist_coeffs = np.zeros(5, dtype=np.float64)
 
     rvec, tvec, inliers = solve_camera_pnp(
-        object_points, image_points, camera_matrix, dist_coeffs,
+        object_points,
+        image_points,
+        camera_matrix,
+        dist_coeffs,
         use_ransac=(len(obj_pts) >= 6),
     )
     if rvec is None:
         return None
 
     mean_err, max_err, _ = compute_reprojection_error(
-        object_points, image_points, rvec, tvec, camera_matrix, dist_coeffs,
+        object_points,
+        image_points,
+        rvec,
+        tvec,
+        camera_matrix,
+        dist_coeffs,
     )
 
     logger.info(
         "%s bootstrap solve: mean_err=%.2fpx, max_err=%.2fpx, inliers=%d/%d",
-        camera_id, mean_err, max_err,
-        len(inliers) if inliers is not None else len(obj_pts), len(obj_pts),
+        camera_id,
+        mean_err,
+        max_err,
+        len(inliers) if inliers is not None else len(obj_pts),
+        len(obj_pts),
     )
 
     return ExtrinsicsResult(
@@ -315,7 +350,7 @@ def solve_from_session_data(
     for i, cap in enumerate(captures):
         if i >= len(pixel_positions) or pixel_positions[i] is None:
             continue
-        chain = fk_positions(cap['actual_angles'])
+        chain = fk_positions(cap["actual_angles"])
         ee = chain[-1]
         obj_pts.append(ee)
         img_pts.append(list(pixel_positions[i]))
@@ -333,13 +368,21 @@ def solve_from_session_data(
         dist_coeffs = np.zeros(5, dtype=np.float64)
 
     rvec, tvec, inliers = solve_camera_pnp(
-        object_points, image_points, camera_matrix, dist_coeffs,
+        object_points,
+        image_points,
+        camera_matrix,
+        dist_coeffs,
     )
     if rvec is None:
         return None
 
     mean_err, max_err, _ = compute_reprojection_error(
-        object_points, image_points, rvec, tvec, camera_matrix, dist_coeffs,
+        object_points,
+        image_points,
+        rvec,
+        tvec,
+        camera_matrix,
+        dist_coeffs,
     )
 
     return ExtrinsicsResult(
@@ -463,7 +506,7 @@ def save_extrinsics(
         }
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w') as f:
+    with open(path, "w") as f:
         json.dump(output, f, indent=2)
     logger.info("Saved extrinsics to %s", path)
 
@@ -488,7 +531,8 @@ def run_bootstrap_calibration(
     if output_path is None:
         output_path = str(
             Path(__file__).resolve().parent.parent.parent
-            / "calibration_results" / "camera_extrinsics.json"
+            / "calibration_results"
+            / "camera_extrinsics.json"
         )
 
     results = {}
@@ -498,7 +542,9 @@ def run_bootstrap_calibration(
             results[cam_id] = result
             logger.info(
                 "%s: mean_reproj=%.2fpx, max_reproj=%.2fpx",
-                cam_id, result.reprojection_error_mean, result.reprojection_error_max,
+                cam_id,
+                result.reprojection_error_mean,
+                result.reprojection_error_max,
             )
         else:
             logger.warning("Failed to solve extrinsics for %s", cam_id)

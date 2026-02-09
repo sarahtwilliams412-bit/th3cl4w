@@ -10,32 +10,35 @@ import numpy as np
 from typing import Optional
 import requests
 
-
 # Link lengths (meters)
-D0 = 0.1215   # base to shoulder height
-L1 = 0.2085   # shoulder to elbow
-L2 = 0.2085   # elbow to wrist
-L3 = 0.1130   # wrist to end-effector
+D0 = 0.1215  # base to shoulder height
+L1 = 0.2085  # shoulder to elbow
+L2 = 0.2085  # elbow to wrist
+L3 = 0.1130  # wrist to end-effector
 
 
 def _rz(a: float) -> np.ndarray:
     """Rotation about Z axis."""
     c, s = math.cos(a), math.sin(a)
-    return np.array([
-        [c, -s, 0],
-        [s,  c, 0],
-        [0,  0, 1],
-    ])
+    return np.array(
+        [
+            [c, -s, 0],
+            [s, c, 0],
+            [0, 0, 1],
+        ]
+    )
 
 
 def _ry(a: float) -> np.ndarray:
     """Rotation about Y axis."""
     c, s = math.cos(a), math.sin(a)
-    return np.array([
-        [ c, 0, s],
-        [ 0, 1, 0],
-        [-s, 0, c],
-    ])
+    return np.array(
+        [
+            [c, 0, s],
+            [0, 1, 0],
+            [-s, 0, c],
+        ]
+    )
 
 
 def fk_positions(joints_deg: list[float]) -> list[list[float]]:
@@ -54,8 +57,7 @@ def fk_positions(joints_deg: list[float]) -> list[list[float]]:
     function exactly as the JS does it.
     """
     # Pad to 6 joints, convert to radians
-    j = [(joints_deg[i] if i < len(joints_deg) else 0.0) * math.pi / 180.0
-         for i in range(6)]
+    j = [(joints_deg[i] if i < len(joints_deg) else 0.0) * math.pi / 180.0 for i in range(6)]
 
     base = [0.0, 0.0, 0.0]
     shoulder = [0.0, 0.0, D0]
@@ -108,7 +110,10 @@ def project_to_camera(
 
 def project_to_camera_pinhole(
     positions_3d: list[list[float]],
-    fx: float, fy: float, cx: float, cy: float,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
     rvec: list[float],
     tvec: list[float],
 ) -> list[Optional[tuple[float, float]]]:
@@ -133,11 +138,13 @@ def project_to_camera_pinhole(
         k = rv / angle
         c, s = math.cos(angle), math.sin(angle)
         v = 1 - c
-        R = np.array([
-            [k[0]*k[0]*v + c,      k[0]*k[1]*v - k[2]*s, k[0]*k[2]*v + k[1]*s],
-            [k[1]*k[0]*v + k[2]*s, k[1]*k[1]*v + c,      k[1]*k[2]*v - k[0]*s],
-            [k[2]*k[0]*v - k[1]*s, k[2]*k[1]*v + k[0]*s, k[2]*k[2]*v + c],
-        ])
+        R = np.array(
+            [
+                [k[0] * k[0] * v + c, k[0] * k[1] * v - k[2] * s, k[0] * k[2] * v + k[1] * s],
+                [k[1] * k[0] * v + k[2] * s, k[1] * k[1] * v + c, k[1] * k[2] * v - k[0] * s],
+                [k[2] * k[0] * v - k[1] * s, k[2] * k[1] * v + k[0] * s, k[2] * k[2] * v + c],
+            ]
+        )
 
     t = np.array(tvec, dtype=np.float64)
     results = []
@@ -150,22 +157,22 @@ def project_to_camera_pinhole(
     return results
 
 
-def joints_from_api(host: str = 'localhost', port: int = 8080) -> list[float]:
+def joints_from_api(host: str = "localhost", port: int = 8080) -> list[float]:
     """
     Fetch current joint angles from the robot API.
 
     Returns:
         List of joint angles in degrees.
     """
-    resp = requests.get(f'http://{host}:{port}/api/state', timeout=5)
+    resp = requests.get(f"http://{host}:{port}/api/state", timeout=5)
     resp.raise_for_status()
     data = resp.json()
     # Extract joint positions - adapt to actual API response format
-    if 'joints' in data:
-        return [float(j) for j in data['joints']]
-    elif 'joint_positions' in data:
-        return [float(j) for j in data['joint_positions']]
-    elif 'position' in data:
-        return [float(j) for j in data['position']]
+    if "joints" in data:
+        return [float(j) for j in data["joints"]]
+    elif "joint_positions" in data:
+        return [float(j) for j in data["joint_positions"]]
+    elif "position" in data:
+        return [float(j) for j in data["position"]]
     else:
         raise ValueError(f"Cannot find joint data in API response: {list(data.keys())}")

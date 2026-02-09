@@ -28,22 +28,22 @@ NUM_JOINTS = 7  # 6 arm + 1 gripper (matches d1_connection.NUM_JOINTS)
 JOINT_LIMITS_DEG = np.array(
     [
         [-135.0, 135.0],  # J0 — base yaw
-        [-80.0, 80.0],    # J1 — shoulder pitch (±85° hw, 5° margin)
-        [-80.0, 80.0],    # J2 — elbow pitch   (±85° hw, 5° margin)
+        [-80.0, 80.0],  # J1 — shoulder pitch (±85° hw, 5° margin)
+        [-80.0, 80.0],  # J2 — elbow pitch   (±85° hw, 5° margin)
         [-135.0, 135.0],  # J3 — elbow roll
-        [-80.0, 80.0],    # J4 — wrist pitch   (±85° hw, 5° margin)
+        [-80.0, 80.0],  # J4 — wrist pitch   (±85° hw, 5° margin)
         [-135.0, 135.0],  # J5 — wrist roll
     ]
 )
 
 # Same limits in radians for the SafetyMonitor / DDS layer (7 joints, last = gripper)
-JOINT_LIMITS_RAD_MIN = np.array([
-    math.radians(JOINT_LIMITS_DEG[i, 0]) for i in range(NUM_ARM_JOINTS)
-] + [0.0])  # gripper min = 0.0 (normalized)
+JOINT_LIMITS_RAD_MIN = np.array(
+    [math.radians(JOINT_LIMITS_DEG[i, 0]) for i in range(NUM_ARM_JOINTS)] + [0.0]
+)  # gripper min = 0.0 (normalized)
 
-JOINT_LIMITS_RAD_MAX = np.array([
-    math.radians(JOINT_LIMITS_DEG[i, 1]) for i in range(NUM_ARM_JOINTS)
-] + [1.0])  # gripper max = 1.0 (normalized)
+JOINT_LIMITS_RAD_MAX = np.array(
+    [math.radians(JOINT_LIMITS_DEG[i, 1]) for i in range(NUM_ARM_JOINTS)] + [1.0]
+)  # gripper max = 1.0 (normalized)
 
 # ---------------------------------------------------------------------------
 # Velocity limits

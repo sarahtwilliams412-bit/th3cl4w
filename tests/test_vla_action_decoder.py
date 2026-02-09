@@ -126,8 +126,8 @@ class TestSafetySequencing:
     def test_blocks_simultaneous_shoulder_lift_elbow_extend(self, decoder, home_joints):
         """CRITICAL: shoulder lift (J1+) and elbow extend (J2+) must not happen simultaneously."""
         actions = [
-            {"type": "joint", "id": 1, "delta": 5.0},   # shoulder UP
-            {"type": "joint", "id": 2, "delta": 5.0},   # elbow EXTEND
+            {"type": "joint", "id": 1, "delta": 5.0},  # shoulder UP
+            {"type": "joint", "id": 2, "delta": 5.0},  # elbow EXTEND
         ]
         decoded = decoder.decode(actions, home_joints, 0.0)
         # Should have a verify checkpoint inserted between them
@@ -136,16 +136,17 @@ class TestSafetySequencing:
         j2_idx = next(i for i, a in enumerate(decoded) if a.joint_id == 2)
         # There should be a verify between J1 and J2
         verify_between = any(
-            decoded[i].action_type == ActionType.VERIFY
-            for i in range(j1_idx + 1, j2_idx)
+            decoded[i].action_type == ActionType.VERIFY for i in range(j1_idx + 1, j2_idx)
         )
-        assert verify_between, "Safety verify must be inserted between shoulder lift and elbow extend"
+        assert (
+            verify_between
+        ), "Safety verify must be inserted between shoulder lift and elbow extend"
 
     def test_allows_shoulder_lower_with_elbow_extend(self, decoder, home_joints):
         """Shoulder LOWER (J1-) with elbow extend is OK."""
         actions = [
             {"type": "joint", "id": 1, "delta": -5.0},  # shoulder DOWN (safe)
-            {"type": "joint", "id": 2, "delta": 5.0},    # elbow EXTEND
+            {"type": "joint", "id": 2, "delta": 5.0},  # elbow EXTEND
         ]
         decoded = decoder.decode(actions, home_joints, 0.0)
         # No extra verify should be inserted

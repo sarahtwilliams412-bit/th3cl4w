@@ -32,12 +32,12 @@ CAMERA_DESCRIPTIONS = {
 
 @dataclass
 class LLMJointPosition:
-    name: str           # base, shoulder, elbow, wrist, end_effector
-    norm_x: float       # 0-1 normalized
-    norm_y: float       # 0-1 normalized
-    pixel_x: int        # scaled to camera resolution
-    pixel_y: int        # scaled to camera resolution
-    confidence: str     # high/medium/low from LLM
+    name: str  # base, shoulder, elbow, wrist, end_effector
+    norm_x: float  # 0-1 normalized
+    norm_y: float  # 0-1 normalized
+    pixel_x: int  # scaled to camera resolution
+    pixel_y: int  # scaled to camera resolution
+    confidence: str  # high/medium/low from LLM
 
 
 @dataclass
@@ -69,7 +69,9 @@ class LLMJointDetector:
         camera_height: int = 1080,
     ):
         if genai is None:
-            raise RuntimeError("google-generativeai package required: pip install google-generativeai")
+            raise RuntimeError(
+                "google-generativeai package required: pip install google-generativeai"
+            )
 
         self.model_name = model
         self.ascii_width = ascii_width
@@ -78,8 +80,10 @@ class LLMJointDetector:
         self.camera_height = camera_height
 
         self.converter = AsciiConverter(
-            width=ascii_width, height=ascii_height,
-            charset=CHARSET_DETAILED, invert=True,
+            width=ascii_width,
+            height=ascii_height,
+            charset=CHARSET_DETAILED,
+            invert=True,
         )
 
         resolved_key = api_key or os.environ.get("GEMINI_API_KEY")
@@ -110,8 +114,17 @@ class LLMJointDetector:
 
         angle_section = ""
         if joint_angles:
-            labels = ["J0(base)", "J1(shoulder)", "J2(elbow)", "J3(wrist_flex)", "J4(wrist_rot)", "J5(gripper)"]
-            parts = [f"{labels[i]}={joint_angles[i]:.1f}°" for i in range(min(len(joint_angles), 6))]
+            labels = [
+                "J0(base)",
+                "J1(shoulder)",
+                "J2(elbow)",
+                "J3(wrist_flex)",
+                "J4(wrist_rot)",
+                "J5(gripper)",
+            ]
+            parts = [
+                f"{labels[i]}={joint_angles[i]:.1f}°" for i in range(min(len(joint_angles), 6))
+            ]
             angle_section = f"\nCurrent joint angles: {' '.join(parts)}\n"
 
         hint_section = ""
@@ -184,14 +197,16 @@ Use confidence "high", "medium", or "low". Report all 5 joints — use your best
             norm_x = max(0.0, min(1.0, float(x)))
             norm_y = max(0.0, min(1.0, float(y)))
 
-            positions.append(LLMJointPosition(
-                name=name,
-                norm_x=norm_x,
-                norm_y=norm_y,
-                pixel_x=int(norm_x * self.camera_width),
-                pixel_y=int(norm_y * self.camera_height),
-                confidence=confidence,
-            ))
+            positions.append(
+                LLMJointPosition(
+                    name=name,
+                    norm_x=norm_x,
+                    norm_y=norm_y,
+                    pixel_x=int(norm_x * self.camera_width),
+                    pixel_y=int(norm_y * self.camera_height),
+                    confidence=confidence,
+                )
+            )
 
         return positions
 
@@ -209,27 +224,34 @@ Use confidence "high", "medium", or "low". Report all 5 joints — use your best
             ascii_text = self.converter.decode_jpeg_to_ascii(jpeg_bytes)
         except Exception as e:
             return LLMDetectionResult(
-                joints=[], camera_id=camera_id, model=self.model_name,
-                tokens_used=0, latency_ms=(time.monotonic() - t0) * 1000,
-                raw_response="", success=False, error=f"ASCII conversion failed: {e}",
+                joints=[],
+                camera_id=camera_id,
+                model=self.model_name,
+                tokens_used=0,
+                latency_ms=(time.monotonic() - t0) * 1000,
+                raw_response="",
+                success=False,
+                error=f"ASCII conversion failed: {e}",
             )
 
         prompt = self._build_prompt(ascii_text, camera_id, joint_angles, fk_hints)
 
         for attempt in range(self.MAX_RETRIES + 1):
             try:
-                response = await asyncio.to_thread(
-                    self.model.generate_content, prompt
-                )
+                response = await asyncio.to_thread(self.model.generate_content, prompt)
                 break
             except Exception as e:
                 if attempt == self.MAX_RETRIES:
                     latency_ms = (time.monotonic() - t0) * 1000
                     logger.error("Gemini API failed after %d retries: %s", self.MAX_RETRIES + 1, e)
                     return LLMDetectionResult(
-                        joints=[], camera_id=camera_id, model=self.model_name,
-                        tokens_used=0, latency_ms=latency_ms,
-                        raw_response=str(e), success=False,
+                        joints=[],
+                        camera_id=camera_id,
+                        model=self.model_name,
+                        tokens_used=0,
+                        latency_ms=latency_ms,
+                        raw_response=str(e),
+                        success=False,
                         error=f"API error: {e}",
                     )
                 await asyncio.sleep(1.0 * (attempt + 1))
@@ -254,21 +276,32 @@ Use confidence "high", "medium", or "low". Report all 5 joints — use your best
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning("Failed to parse LLM response: %s", e)
             return LLMDetectionResult(
-                joints=[], camera_id=camera_id, model=self.model_name,
-                tokens_used=tokens_used, latency_ms=latency_ms,
-                raw_response=raw, success=False,
+                joints=[],
+                camera_id=camera_id,
+                model=self.model_name,
+                tokens_used=tokens_used,
+                latency_ms=latency_ms,
+                raw_response=raw,
+                success=False,
                 error=f"Parse error: {e}",
             )
 
         logger.info(
             "LLM detection cam=%d: %d joints, %d tokens, %.0fms",
-            camera_id, len(joints), tokens_used, latency_ms,
+            camera_id,
+            len(joints),
+            tokens_used,
+            latency_ms,
         )
 
         return LLMDetectionResult(
-            joints=joints, camera_id=camera_id, model=self.model_name,
-            tokens_used=tokens_used, latency_ms=latency_ms,
-            raw_response=raw, success=True,
+            joints=joints,
+            camera_id=camera_id,
+            model=self.model_name,
+            tokens_used=tokens_used,
+            latency_ms=latency_ms,
+            raw_response=raw,
+            success=True,
         )
 
     async def detect_joints_batch(self, frames: list[dict]) -> list[LLMDetectionResult]:

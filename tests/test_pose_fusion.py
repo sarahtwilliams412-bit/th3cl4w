@@ -16,8 +16,12 @@ from src.vision.joint_detector import JointDetection, DetectionSource
 
 
 def _make_calib(
-    fx=500.0, fy=500.0, cx=320.0, cy=240.0,
-    rvec=None, tvec=None,
+    fx=500.0,
+    fy=500.0,
+    cx=320.0,
+    cy=240.0,
+    rvec=None,
+    tvec=None,
 ) -> CameraCalib:
     """Create a simple camera calibration (identity rotation, offset translation).
 
@@ -26,7 +30,10 @@ def _make_calib(
     are at camera Z=1.5 (in front of camera).
     """
     return CameraCalib(
-        fx=fx, fy=fy, cx=cx, cy=cy,
+        fx=fx,
+        fy=fy,
+        cx=cx,
+        cy=cy,
         rvec=rvec or [0.0, 0.0, 0.0],
         tvec=tvec or [0.0, 0.0, 1.0],  # camera 1m in front of origin along Z
     )
@@ -42,6 +49,7 @@ def _make_detection(joint_index: int, px: float, py: float, confidence: float) -
 
 
 # --- FK-only mode ---
+
 
 class TestFKOnly:
     def test_no_visual_data_returns_fk_positions(self):
@@ -70,6 +78,7 @@ class TestFKOnly:
 
 
 # --- Fusion with visual data ---
+
 
 class TestFusion:
     def test_high_confidence_shifts_toward_visual(self):
@@ -113,6 +122,7 @@ class TestFusion:
 
 # --- Disagreement detection ---
 
+
 class TestDisagreement:
     def test_large_disagreement_logs_warning(self, caplog):
         """Disagreement > 20mm should trigger a warning."""
@@ -149,6 +159,7 @@ class TestDisagreement:
 
 # --- Tracking quality ---
 
+
 class TestTrackingQuality:
     def test_quality_after_multiple_fusions(self):
         fusion = PoseFusion()
@@ -172,6 +183,7 @@ class TestTrackingQuality:
 
 
 # --- Graceful degradation ---
+
 
 class TestDegradation:
     def test_single_camera_fusion(self):

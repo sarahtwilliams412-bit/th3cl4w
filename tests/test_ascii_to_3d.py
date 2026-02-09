@@ -17,7 +17,6 @@ from tools.ascii_to_3d.mesh import TriMesh, voxels_to_mesh
 from tools.ascii_to_3d.exporter import export_obj, export_stl
 from tools.ascii_to_3d.renderer import render_isometric, render_slices, render_projections
 
-
 # ── Parser ──────────────────────────────────────────────────────────
 
 
@@ -79,7 +78,7 @@ class TestParser:
     def test_empty_grid(self):
         art = "   \n   "
         img = parse_ascii(art, trim=True)
-        assert img.filled_count if hasattr(img, 'filled_count') else True  # just shouldn't crash
+        assert img.filled_count if hasattr(img, "filled_count") else True  # just shouldn't crash
 
     def test_parse_file(self, tmp_path: Path):
         f = tmp_path / "test.txt"
@@ -112,7 +111,7 @@ class TestReconstructor:
     def test_l_shape(self):
         """Non-square front and side produce expected volume."""
         front = parse_ascii("##\n##\n##")  # 2 wide, 3 tall
-        side = parse_ascii("#\n#\n#")       # 1 deep, 3 tall
+        side = parse_ascii("#\n#\n#")  # 1 deep, 3 tall
         vg = reconstruct(front, side)
         assert vg.size_x == 2
         assert vg.size_y == 3
@@ -130,8 +129,8 @@ class TestReconstructor:
 
     def test_height_alignment(self):
         """Different heights should be aligned by padding."""
-        front = parse_ascii("##\n##")       # height 2
-        side = parse_ascii("#\n#\n#\n#")    # height 4
+        front = parse_ascii("##\n##")  # height 2
+        side = parse_ascii("#\n#\n#\n#")  # height 4
         vg = reconstruct(front, side)
         assert vg.size_y == 4  # max of the two
 
@@ -201,7 +200,9 @@ class TestMesh:
         """An empty voxel grid should produce an empty mesh."""
         vg = VoxelGrid(
             voxels=np.zeros((2, 2, 2), dtype=bool),
-            size_x=2, size_y=2, size_z=2,
+            size_x=2,
+            size_y=2,
+            size_z=2,
         )
         mesh = voxels_to_mesh(vg)
         assert mesh.face_count == 0
@@ -307,7 +308,9 @@ class TestRenderer:
     def test_empty_grid_isometric(self):
         vg = VoxelGrid(
             voxels=np.zeros((2, 2, 2), dtype=bool),
-            size_x=2, size_y=2, size_z=2,
+            size_x=2,
+            size_y=2,
+            size_z=2,
         )
         result = render_isometric(vg)
         assert "empty" in result.lower()
@@ -315,7 +318,9 @@ class TestRenderer:
     def test_empty_grid_slices(self):
         vg = VoxelGrid(
             voxels=np.zeros((2, 2, 2), dtype=bool),
-            size_x=2, size_y=2, size_z=2,
+            size_x=2,
+            size_y=2,
+            size_z=2,
         )
         result = render_slices(vg)
         assert "empty" in result.lower()
@@ -342,11 +347,16 @@ class TestCLI:
         from tools.ascii_to_3d.cli import main
 
         out = tmp_path / "out.obj"
-        rc = main([
-            "--front-inline", "##\\n##",
-            "--side-inline", "##\\n##",
-            "-o", str(out),
-        ])
+        rc = main(
+            [
+                "--front-inline",
+                "##\\n##",
+                "--side-inline",
+                "##\\n##",
+                "-o",
+                str(out),
+            ]
+        )
         assert rc == 0
         assert out.exists()
 

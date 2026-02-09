@@ -30,6 +30,7 @@ DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "dem
 @dataclass
 class DemoStep:
     """One step of a demonstration."""
+
     step: int
     timestamp: float
     joints_before: List[float]
@@ -43,6 +44,7 @@ class DemoStep:
 @dataclass
 class DemoMetadata:
     """Metadata for a recorded demonstration."""
+
     demo_id: str
     task: str
     start_time: float
@@ -154,8 +156,10 @@ class DataCollector:
         demo_path = str(self._demo_dir)
         logger.info(
             "Demo recording stopped: %s (%d steps, %.1fs, success=%s)",
-            self._demo_id, self._step_counter,
-            end_time - self._start_time, success,
+            self._demo_id,
+            self._step_counter,
+            end_time - self._start_time,
+            success,
         )
 
         self._demo_id = None
@@ -288,11 +292,13 @@ class DataCollector:
                 with open(meta_path) as f:
                     demos.append(json.load(f))
             else:
-                demos.append({
-                    "demo_id": demo_dir.name,
-                    "task": "unknown",
-                    "num_steps": 0,
-                })
+                demos.append(
+                    {
+                        "demo_id": demo_dir.name,
+                        "task": "unknown",
+                        "num_steps": 0,
+                    }
+                )
         return demos
 
     def get_status(self) -> Dict[str, Any]:

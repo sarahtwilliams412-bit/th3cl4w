@@ -30,7 +30,9 @@ class ArmSegmentation:
     gold_centroids: list[tuple[int, int]]  # (x, y) centers of gold segments
     contour: Optional[np.ndarray] = None  # largest contour
     bounding_box: Optional[tuple[int, int, int, int]] = None  # (x, y, w, h)
-    marker_centroids: list[tuple[float, float]] = field(default_factory=list)  # detected neon markers
+    marker_centroids: list[tuple[float, float]] = field(
+        default_factory=list
+    )  # detected neon markers
 
 
 class ArmSegmenter:
@@ -69,7 +71,10 @@ class ArmSegmenter:
 
         # Import here to avoid circular dependency
         from .joint_detector import DEFAULT_MARKER_COLORS
-        self.marker_colors = marker_colors if marker_colors is not None else dict(DEFAULT_MARKER_COLORS)
+
+        self.marker_colors = (
+            marker_colors if marker_colors is not None else dict(DEFAULT_MARKER_COLORS)
+        )
 
         self._background: Optional[np.ndarray] = None  # float64 running average
         self._roi: Optional[tuple[int, int, int, int]] = None  # (x, y, w, h)
@@ -251,7 +256,9 @@ class ArmSegmenter:
             )
 
         # Fallback: background subtraction
-        logger.debug("Marker detection found %d markers, falling back to bg-sub", len(marker_centroids))
+        logger.debug(
+            "Marker detection found %d markers, falling back to bg-sub", len(marker_centroids)
+        )
 
         # Apply ROI if set
         roi_offset_x, roi_offset_y = 0, 0
@@ -270,8 +277,10 @@ class ArmSegmenter:
         # Background subtraction — crop background to match ROI if needed
         saved_bg = self._background
         if self._roi is not None and self._background is not None:
-            self._background = self._background[roi_offset_y : roi_offset_y + proc_frame.shape[0],
-                                                  roi_offset_x : roi_offset_x + proc_frame.shape[1]]
+            self._background = self._background[
+                roi_offset_y : roi_offset_y + proc_frame.shape[0],
+                roi_offset_x : roi_offset_x + proc_frame.shape[1],
+            ]
         fg_mask = self.subtract_background(proc_frame)
         self._background = saved_bg
 
@@ -309,9 +318,7 @@ class ArmSegmenter:
             full_mask = fg_mask
 
         # Offset gold centroids to full-frame coords
-        gold_centroids = [
-            (cx + roi_offset_x, cy + roi_offset_y) for cx, cy in gold_centroids_local
-        ]
+        gold_centroids = [(cx + roi_offset_x, cy + roi_offset_y) for cx, cy in gold_centroids_local]
 
         return ArmSegmentation(
             silhouette_mask=full_mask,

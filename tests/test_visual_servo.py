@@ -11,7 +11,7 @@ from src.control.visual_servo import ServoStep, ServoResult
 
 class TestServoDataStructures:
     def test_servo_step_defaults(self):
-        step = ServoStep(step=0, joints_before=[0.0]*7, joints_after=[0.1]*7)
+        step = ServoStep(step=0, joints_before=[0.0] * 7, joints_after=[0.1] * 7)
         assert step.pixel_distance == 0.0
         assert step.action == ""
         assert step.gripper_pixel is None
@@ -20,8 +20,8 @@ class TestServoDataStructures:
     def test_servo_step_with_pixels(self):
         step = ServoStep(
             step=1,
-            joints_before=[0.0]*7,
-            joints_after=[0.1]*7,
+            joints_before=[0.0] * 7,
+            joints_after=[0.1] * 7,
             gripper_pixel=(100.0, 200.0),
             target_pixel=(300.0, 400.0),
             pixel_distance=283.0,
@@ -39,8 +39,8 @@ class TestServoDataStructures:
 
     def test_servo_result_success(self):
         steps = [
-            ServoStep(step=0, joints_before=[0]*7, joints_after=[0.1]*7, pixel_distance=200),
-            ServoStep(step=1, joints_before=[0.1]*7, joints_after=[0.2]*7, pixel_distance=50),
+            ServoStep(step=0, joints_before=[0] * 7, joints_after=[0.1] * 7, pixel_distance=200),
+            ServoStep(step=1, joints_before=[0.1] * 7, joints_after=[0.2] * 7, pixel_distance=50),
         ]
         result = ServoResult(success=True, steps=steps, total_time_s=3.5, final_distance_px=50)
         assert result.success
@@ -59,9 +59,11 @@ class TestServoDataStructures:
     def test_visual_servo_requires_api_key(self):
         """VisualServo should fail without GEMINI_API_KEY."""
         import os
+
         old = os.environ.pop("GEMINI_API_KEY", None)
         try:
             from src.control.visual_servo import VisualServo
+
             with pytest.raises(ValueError, match="GEMINI_API_KEY"):
                 VisualServo()
         finally:

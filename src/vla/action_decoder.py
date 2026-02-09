@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 # Joint limits (degrees) — with 5° safety margin
 JOINT_LIMITS = {
-    0: (-130.0, 130.0),   # J0 base yaw (135 - 5)
-    1: (-80.0, 80.0),     # J1 shoulder pitch (85 - 5)
-    2: (-130.0, 130.0),   # J2 elbow pitch
-    3: (-130.0, 130.0),   # J3 forearm roll
-    4: (-80.0, 80.0),     # J4 wrist pitch (85 - 5)
-    5: (-130.0, 130.0),   # J5 gripper roll
+    0: (-130.0, 130.0),  # J0 base yaw (135 - 5)
+    1: (-80.0, 80.0),  # J1 shoulder pitch (85 - 5)
+    2: (-130.0, 130.0),  # J2 elbow pitch
+    3: (-130.0, 130.0),  # J3 forearm roll
+    4: (-80.0, 80.0),  # J4 wrist pitch (85 - 5)
+    5: (-130.0, 130.0),  # J5 gripper roll
 }
 
 MAX_DELTA_DEG = 10.0  # Maximum degrees per single action
@@ -38,6 +38,7 @@ class ActionType(Enum):
 @dataclass
 class ArmAction:
     """A single validated, safe action for the arm."""
+
     action_type: ActionType
     joint_id: Optional[int] = None  # For JOINT actions
     target_angle: Optional[float] = None  # Absolute target angle for JOINT
@@ -113,23 +114,29 @@ class ActionDecoder:
                 decoded.append(arm_action)
 
             elif action_type == "verify":
-                decoded.append(ArmAction(
-                    action_type=ActionType.VERIFY,
-                    reason=raw.get("reason", "verification checkpoint"),
-                ))
+                decoded.append(
+                    ArmAction(
+                        action_type=ActionType.VERIFY,
+                        reason=raw.get("reason", "verification checkpoint"),
+                    )
+                )
 
             elif action_type == "done":
-                decoded.append(ArmAction(
-                    action_type=ActionType.DONE,
-                    reason=raw.get("reason", "task complete"),
-                ))
+                decoded.append(
+                    ArmAction(
+                        action_type=ActionType.DONE,
+                        reason=raw.get("reason", "task complete"),
+                    )
+                )
 
             else:
                 logger.warning("Unknown action type: %s", action_type)
-                decoded.append(ArmAction(
-                    action_type=ActionType.VERIFY,
-                    reason=f"Unknown action type '{action_type}' — treating as verify",
-                ))
+                decoded.append(
+                    ArmAction(
+                        action_type=ActionType.VERIFY,
+                        reason=f"Unknown action type '{action_type}' — treating as verify",
+                    )
+                )
 
         # Safety pass: check for dangerous sequences
         decoded = self._enforce_sequencing(decoded, current_joints)
@@ -208,7 +215,9 @@ class ActionDecoder:
         )
 
     def _enforce_sequencing(
-        self, actions: List[ArmAction], current_joints: List[float],
+        self,
+        actions: List[ArmAction],
+        current_joints: List[float],
     ) -> List[ArmAction]:
         """Enforce safety sequencing rules.
 
@@ -233,15 +242,22 @@ class ActionDecoder:
             for a in actions:
                 if a.action_type == ActionType.JOINT and a.joint_id == 1:
                     reordered.append(a)
-                elif a.action_type == ActionType.JOINT and a.joint_id == 2 and a.delta and a.delta > 0:
+                elif (
+                    a.action_type == ActionType.JOINT
+                    and a.joint_id == 2
+                    and a.delta
+                    and a.delta > 0
+                ):
                     other_actions.append(a)
                 else:
                     reordered.append(a)
 
-            reordered.append(ArmAction(
-                action_type=ActionType.VERIFY,
-                reason="Safety: verify after shoulder lift before elbow extension",
-            ))
+            reordered.append(
+                ArmAction(
+                    action_type=ActionType.VERIFY,
+                    reason="Safety: verify after shoulder lift before elbow extension",
+                )
+            )
             reordered.extend(other_actions)
             return reordered
 

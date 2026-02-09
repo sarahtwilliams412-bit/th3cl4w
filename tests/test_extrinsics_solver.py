@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.calibration.extrinsics_solver import (
@@ -44,8 +45,11 @@ class TestSyntheticPnP:
 
         # Project to 2D
         projected, _ = cv2.projectPoints(
-            obj_pts.reshape(-1, 1, 3), true_rvec, true_tvec,
-            camera_matrix, dist_coeffs,
+            obj_pts.reshape(-1, 1, 3),
+            true_rvec,
+            true_tvec,
+            camera_matrix,
+            dist_coeffs,
         )
         img_pts = projected.reshape(-1, 2).astype(np.float64)
 
@@ -102,9 +106,7 @@ class TestSyntheticPnP:
     def test_too_few_points(self):
         """PnP should fail gracefully with < 4 points."""
         obj_pts, img_pts, _, _, cam_mtx, dist = self._make_synthetic_data(n_points=3)
-        rvec, tvec, inliers = solve_camera_pnp(
-            obj_pts[:3], img_pts[:3], cam_mtx, dist
-        )
+        rvec, tvec, inliers = solve_camera_pnp(obj_pts[:3], img_pts[:3], cam_mtx, dist)
         assert rvec is None
 
 
@@ -123,12 +125,21 @@ class TestReprojectionError:
         obj_pts[:, 2] += 0.5
 
         projected, _ = cv2.projectPoints(
-            obj_pts.reshape(-1, 1, 3), rvec, tvec, cam_mtx, dist,
+            obj_pts.reshape(-1, 1, 3),
+            rvec,
+            tvec,
+            cam_mtx,
+            dist,
         )
         img_pts = projected.reshape(-1, 2)
 
         mean_err, max_err, per_point = compute_reprojection_error(
-            obj_pts, img_pts, rvec, tvec, cam_mtx, dist,
+            obj_pts,
+            img_pts,
+            rvec,
+            tvec,
+            cam_mtx,
+            dist,
         )
 
         assert mean_err < 0.01, f"Mean error should be ~0, got {mean_err}"
@@ -143,12 +154,21 @@ class TestReprojectionError:
 
         obj_pts = np.array([[0, 0, 0.5], [0.1, 0, 0.5], [0, 0.1, 0.5]], dtype=np.float64)
         projected, _ = cv2.projectPoints(
-            obj_pts.reshape(-1, 1, 3), rvec, tvec, cam_mtx, dist,
+            obj_pts.reshape(-1, 1, 3),
+            rvec,
+            tvec,
+            cam_mtx,
+            dist,
         )
         img_pts = projected.reshape(-1, 2) + 5.0  # 5px offset
 
         mean_err, max_err, per_point = compute_reprojection_error(
-            obj_pts, img_pts, rvec, tvec, cam_mtx, dist,
+            obj_pts,
+            img_pts,
+            rvec,
+            tvec,
+            cam_mtx,
+            dist,
         )
 
         assert abs(mean_err - 5.0 * math.sqrt(2)) < 0.1  # diagonal offset
@@ -210,7 +230,7 @@ class TestFKPositions:
 
     def test_home_position(self):
         """Home position should give known FK output.
-        
+
         FK has a 90° elbow bend at home, so the arm extends forward (X)
         rather than being purely vertical.
         """

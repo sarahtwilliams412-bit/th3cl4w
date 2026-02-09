@@ -24,6 +24,7 @@ logger = logging.getLogger("th3cl4w.vision.detection_comparator")
 @dataclass
 class JointComparison:
     """Per-joint comparison metrics."""
+
     name: str
     fk_pixel: Optional[tuple[float, float]]
     cv_pixel: Optional[tuple[float, float]]
@@ -38,6 +39,7 @@ class JointComparison:
 @dataclass
 class ComparisonResult:
     """Result of comparing CV and LLM on a single frame."""
+
     pose_index: int
     camera_id: int
     joint_angles: list[float]
@@ -50,6 +52,7 @@ class ComparisonResult:
 @dataclass
 class ComparisonReport:
     """Aggregated report across all poses."""
+
     results: list[ComparisonResult]
     cv_detection_rate: float
     llm_detection_rate: float
@@ -64,6 +67,7 @@ class ComparisonReport:
 @dataclass
 class PoseCapture:
     """Input data for a single pose comparison."""
+
     pose_index: int
     camera_id: int
     frame_bytes: bytes
@@ -164,17 +168,19 @@ class DetectionComparator:
                 if cv_det.source != DetectionSource.FK_ONLY:
                     cv_pixel = cv_det.pixel_pos
 
-            joints.append(JointComparison(
-                name=name,
-                fk_pixel=fk_px,
-                cv_pixel=cv_pixel,
-                llm_pixel=llm_pixels[i],
-                cv_error_px=_pixel_dist(cv_pixel, fk_px),
-                llm_error_px=_pixel_dist(llm_pixels[i], fk_px),
-                agreement_px=_pixel_dist(cv_pixel, llm_pixels[i]),
-                cv_source=cv_source,
-                llm_confidence=llm_confidences[i],
-            ))
+            joints.append(
+                JointComparison(
+                    name=name,
+                    fk_pixel=fk_px,
+                    cv_pixel=cv_pixel,
+                    llm_pixel=llm_pixels[i],
+                    cv_error_px=_pixel_dist(cv_pixel, fk_px),
+                    llm_error_px=_pixel_dist(llm_pixels[i], fk_px),
+                    agreement_px=_pixel_dist(cv_pixel, llm_pixels[i]),
+                    cv_source=cv_source,
+                    llm_confidence=llm_confidences[i],
+                )
+            )
 
         return ComparisonResult(
             pose_index=pose_index,
@@ -193,19 +199,17 @@ class DetectionComparator:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     import concurrent.futures
+
                     with concurrent.futures.ThreadPoolExecutor() as pool:
                         return pool.submit(
-                            asyncio.run,
-                            self.llm_detector.detect_joints(frame_bytes, camera_id)
+                            asyncio.run, self.llm_detector.detect_joints(frame_bytes, camera_id)
                         ).result(timeout=30)
                 else:
                     return loop.run_until_complete(
                         self.llm_detector.detect_joints(frame_bytes, camera_id)
                     )
             except RuntimeError:
-                return asyncio.run(
-                    self.llm_detector.detect_joints(frame_bytes, camera_id)
-                )
+                return asyncio.run(self.llm_detector.detect_joints(frame_bytes, camera_id))
         except Exception as e:
             logger.warning("LLM detection failed: %s", e)
             return {"joints": [], "input_tokens": 0, "output_tokens": 0}
@@ -228,9 +232,15 @@ class DetectionComparator:
         """Compute aggregate metrics."""
         if not results:
             return ComparisonReport(
-                results=[], cv_detection_rate=0.0, llm_detection_rate=0.0,
-                cv_mean_error_px=0.0, llm_mean_error_px=0.0, agreement_rate=0.0,
-                total_llm_tokens=0, total_llm_cost_usd=0.0, recommendation="inconclusive",
+                results=[],
+                cv_detection_rate=0.0,
+                llm_detection_rate=0.0,
+                cv_mean_error_px=0.0,
+                llm_mean_error_px=0.0,
+                agreement_rate=0.0,
+                total_llm_tokens=0,
+                total_llm_cost_usd=0.0,
+                recommendation="inconclusive",
             )
 
         total_joints = 0

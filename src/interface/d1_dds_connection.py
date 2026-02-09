@@ -107,6 +107,7 @@ class D1DDSConnection:
             self._feedback_monitor = feedback_monitor
         else:
             from .feedback_monitor import FeedbackMonitor
+
             self._feedback_monitor = FeedbackMonitor()
 
     def _get_collector(self):
@@ -160,15 +161,15 @@ class D1DDSConnection:
                 )
                 # Try by IP address (more reliable than autodetermine which may pick wrong iface)
                 import subprocess
+
                 ip_result = subprocess.run(
-                    ["ip", "-4", "addr", "show", interface_name],
-                    capture_output=True, text=True
+                    ["ip", "-4", "addr", "show", interface_name], capture_output=True, text=True
                 )
                 ip_addr = None
-                for line in ip_result.stdout.split('\n'):
+                for line in ip_result.stdout.split("\n"):
                     line = line.strip()
-                    if line.startswith('inet '):
-                        ip_addr = line.split()[1].split('/')[0]
+                    if line.startswith("inet "):
+                        ip_addr = line.split()[1].split("/")[0]
                         break
 
                 if ip_addr:
@@ -185,7 +186,9 @@ class D1DDSConnection:
                         "</CycloneDDS>"
                     )
                 else:
-                    logger.warning("Could not determine IP for %s, using autodetermine", interface_name)
+                    logger.warning(
+                        "Could not determine IP for %s, using autodetermine", interface_name
+                    )
                     os.environ["CYCLONEDDS_URI"] = (
                         "<CycloneDDS>"
                         "  <Domain>"

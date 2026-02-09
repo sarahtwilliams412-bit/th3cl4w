@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Observation:
     """Sensor observation from the arm."""
+
     cam0_jpeg: bytes  # Front camera JPEG
     cam1_jpeg: bytes  # Overhead camera JPEG
     joints: List[float]  # 6 joint angles in degrees
@@ -36,10 +37,11 @@ class Observation:
 @dataclass
 class ActionPlan:
     """Planned actions from the model."""
+
     reasoning: str = ""
     scene_description: str = ""
     gripper_position: Optional[Dict] = None  # pixel coords per camera
-    target_position: Optional[Dict] = None   # pixel coords per camera
+    target_position: Optional[Dict] = None  # pixel coords per camera
     actions: List[Dict[str, Any]] = field(default_factory=list)
     phase: str = "unknown"
     confidence: float = 0.0
@@ -90,8 +92,7 @@ class VLABackend(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
 
 class GeminiVLABackend(VLABackend):
@@ -107,6 +108,7 @@ class GeminiVLABackend(VLABackend):
             raise ValueError("GEMINI_API_KEY required for GeminiVLABackend")
 
         import google.generativeai as genai
+
         genai.configure(api_key=self.api_key)
         self._model = genai.GenerativeModel(
             model_name,
@@ -117,6 +119,7 @@ class GeminiVLABackend(VLABackend):
 
     def _get_system_prompt(self) -> str:
         from src.vla.prompts import SYSTEM_PROMPT
+
         return SYSTEM_PROMPT
 
     @property
@@ -124,33 +127,52 @@ class GeminiVLABackend(VLABackend):
         return f"gemini:{self._model_name}"
 
     def _build_observe_prompt(
-        self, obs: Observation, task: str, history: Optional[List[str]] = None,
+        self,
+        obs: Observation,
+        task: str,
+        history: Optional[List[str]] = None,
     ) -> str:
         from src.vla.prompts import OBSERVE_TEMPLATE
+
         hist_str = "\n".join(history[-10:]) if history else "None (first step)"
         return OBSERVE_TEMPLATE.format(
-            j0=obs.joints[0], j1=obs.joints[1], j2=obs.joints[2],
-            j3=obs.joints[3], j4=obs.joints[4], j5=obs.joints[5],
-            gripper=obs.gripper_mm, enabled=obs.enabled,
-            task=task, history=hist_str,
+            j0=obs.joints[0],
+            j1=obs.joints[1],
+            j2=obs.joints[2],
+            j3=obs.joints[3],
+            j4=obs.joints[4],
+            j5=obs.joints[5],
+            gripper=obs.gripper_mm,
+            enabled=obs.enabled,
+            task=task,
+            history=hist_str,
         )
 
     def _build_verify_prompt(
-        self, obs: Observation, task: str, actions_taken: List[str],
+        self,
+        obs: Observation,
+        task: str,
+        actions_taken: List[str],
     ) -> str:
         from src.vla.prompts import VERIFY_TEMPLATE
+
         return VERIFY_TEMPLATE.format(
             actions_taken="\n".join(actions_taken[-5:]),
-            j0=obs.joints[0], j1=obs.joints[1], j2=obs.joints[2],
-            j3=obs.joints[3], j4=obs.joints[4], j5=obs.joints[5],
-            gripper=obs.gripper_mm, task=task,
+            j0=obs.joints[0],
+            j1=obs.joints[1],
+            j2=obs.joints[2],
+            j3=obs.joints[3],
+            j4=obs.joints[4],
+            j5=obs.joints[5],
+            gripper=obs.gripper_mm,
+            task=task,
         )
 
     def _parse_response(self, text: str) -> ActionPlan:
         """Parse Gemini JSON response into ActionPlan."""
         # Strip markdown code fences
-        text = re.sub(r'^```(?:json)?\s*', '', text.strip())
-        text = re.sub(r'\s*```$', '', text.strip())
+        text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+        text = re.sub(r"\s*```$", "", text.strip())
 
         try:
             data = json.loads(text)
@@ -196,7 +218,10 @@ class GeminiVLABackend(VLABackend):
             plan.inference_time_ms = (time.monotonic() - t0) * 1000
             logger.info(
                 "Gemini VLA inference: %.0fms, phase=%s, %d actions, confidence=%.2f",
-                plan.inference_time_ms, plan.phase, len(plan.actions), plan.confidence,
+                plan.inference_time_ms,
+                plan.phase,
+                len(plan.actions),
+                plan.confidence,
             )
             return plan
         except Exception as e:
@@ -249,13 +274,15 @@ class OctoVLABackend(VLABackend):
     def name(self) -> str:
         return "octo-small"
 
-    async def plan(self, observation: Observation, task: str,
-                   history: Optional[List[str]] = None) -> ActionPlan:
+    async def plan(
+        self, observation: Observation, task: str, history: Optional[List[str]] = None
+    ) -> ActionPlan:
         raise NotImplementedError(
             "Octo backend not yet available. Collect demonstrations first, "
             "then fine-tune. See docs/vla-architecture.md"
         )
 
-    async def verify(self, observation: Observation, task: str,
-                     actions_taken: List[str]) -> ActionPlan:
+    async def verify(
+        self, observation: Observation, task: str, actions_taken: List[str]
+    ) -> ActionPlan:
         raise NotImplementedError("Octo backend not yet available")

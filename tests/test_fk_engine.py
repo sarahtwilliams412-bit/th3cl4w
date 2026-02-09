@@ -117,9 +117,10 @@ class TestReadyPose:
     def test_combined_pose(self):
         """Test J0=30, J1=-45, J2=45 combined."""
         pts = fk_positions([30, -45, 45, 0, 0, 0])
+
         # Verify it's a valid kinematic chain (distances between joints match link lengths)
         def dist(a, b):
-            return math.sqrt(sum((a[i] - b[i])**2 for i in range(3)))
+            return math.sqrt(sum((a[i] - b[i]) ** 2 for i in range(3)))
 
         assert dist(pts[0], pts[1]) == pytest.approx(D0, abs=1e-6)
         assert dist(pts[1], pts[2]) == pytest.approx(L1, abs=1e-6)
@@ -130,17 +131,20 @@ class TestReadyPose:
 class TestLinkLengths:
     """Link lengths should be preserved for any joint configuration."""
 
-    @pytest.mark.parametrize("joints", [
-        [0, 0, 0, 0, 0, 0],
-        [45, -30, 60, 0, 20, 0],
-        [-90, 45, -45, 30, -30, 15],
-        [135, 85, 135, 135, 85, 135],
-    ])
+    @pytest.mark.parametrize(
+        "joints",
+        [
+            [0, 0, 0, 0, 0, 0],
+            [45, -30, 60, 0, 20, 0],
+            [-90, 45, -45, 30, -30, 15],
+            [135, 85, 135, 135, 85, 135],
+        ],
+    )
     def test_link_distances(self, joints):
         pts = fk_positions(joints)
 
         def dist(a, b):
-            return math.sqrt(sum((a[i] - b[i])**2 for i in range(3)))
+            return math.sqrt(sum((a[i] - b[i]) ** 2 for i in range(3)))
 
         assert dist(pts[0], pts[1]) == pytest.approx(D0, abs=1e-6)
         assert dist(pts[1], pts[2]) == pytest.approx(L1, abs=1e-6)
@@ -161,7 +165,7 @@ class TestJ3Roll:
         pts_a = fk_positions([0, 0, 0, 0, 45, 0])
         pts_b = fk_positions([0, 0, 0, 90, 45, 0])
         # EE should differ
-        diff = sum((pts_a[4][i] - pts_b[4][i])**2 for i in range(3))
+        diff = sum((pts_a[4][i] - pts_b[4][i]) ** 2 for i in range(3))
         assert diff > 0.001  # meaningfully different
 
 
@@ -172,7 +176,10 @@ class TestProjection:
         """Point at [0, 0, 1] with identity camera should project to (cx, cy)."""
         pts = project_to_camera_pinhole(
             [[0, 0, 1]],
-            fx=500, fy=500, cx=320, cy=240,
+            fx=500,
+            fy=500,
+            cx=320,
+            cy=240,
             rvec=[0, 0, 0],
             tvec=[0, 0, 0],
         )
@@ -183,7 +190,10 @@ class TestProjection:
         """Point behind camera returns None."""
         pts = project_to_camera_pinhole(
             [[0, 0, -1]],
-            fx=500, fy=500, cx=320, cy=240,
+            fx=500,
+            fy=500,
+            cx=320,
+            cy=240,
             rvec=[0, 0, 0],
             tvec=[0, 0, 0],
         )
