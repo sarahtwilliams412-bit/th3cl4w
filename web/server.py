@@ -142,6 +142,9 @@ if _web_dir not in sys.path:
 
 from command_smoother import CommandSmoother
 
+from src.safety.limits import JOINT_LIMITS_DEG as _UNIFIED_JOINT_LIMITS_DEG, GRIPPER_MIN_MM, GRIPPER_MAX_MM, MAX_STEP_DEG
+from src.safety.safety_monitor import SafetyMonitor
+
 # ---------------------------------------------------------------------------
 # CLI args (parsed early so lifespan can access them)
 # ---------------------------------------------------------------------------
@@ -162,19 +165,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("th3cl4w.web")
 
 # ---------------------------------------------------------------------------
-# D1 Joint specs
+# D1 Joint specs — imported from unified limits
 # ---------------------------------------------------------------------------
 
 JOINT_LIMITS_DEG = {
-    0: (-135.0, 135.0),  # J0 base yaw
-    1: (-90.0, 90.0),  # J1 shoulder pitch
-    2: (-90.0, 90.0),  # J2 elbow pitch
-    3: (-135.0, 135.0),  # J3 wrist roll
-    4: (-90.0, 90.0),  # J4 wrist pitch
-    5: (-135.0, 135.0),  # J5 wrist roll
+    i: (float(_UNIFIED_JOINT_LIMITS_DEG[i, 0]), float(_UNIFIED_JOINT_LIMITS_DEG[i, 1]))
+    for i in range(6)
 }
 
-GRIPPER_RANGE = (0.0, 65.0)  # mm
+GRIPPER_RANGE = (GRIPPER_MIN_MM, GRIPPER_MAX_MM)
 
 # ---------------------------------------------------------------------------
 # Structured action log
@@ -305,6 +304,7 @@ class SimulatedArm:
 
 arm: Any = None
 smoother: Optional[CommandSmoother] = None
+safety_monitor: Optional[SafetyMonitor] = None
 task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
 workspace_mapper: Any = None  # WorkspaceMapper for bifocal vision
 collision_preview: Any = None  # CollisionPreview for path checking
@@ -385,15 +385,21 @@ async def lifespan(app: FastAPI):
             logger.exception("Failed to initialize DDS connection")
             arm = None
 
+    # Instantiate the safety monitor — must exist before smoother
+    global safety_monitor
+    safety_monitor = SafetyMonitor()
+    action_log.add("SYSTEM", "Safety monitor initialized", "info")
+
     # Start the command smoother for smooth motion
     if arm is not None:
         tc_ref = get_collector() if _HAS_TELEMETRY else None
         smoother = CommandSmoother(
-            arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=15.0, collector=tc_ref
+            arm, rate_hz=10.0, smoothing_factor=0.35, max_step_deg=MAX_STEP_DEG,
+            collector=tc_ref, safety_monitor=safety_monitor,
         )
         await smoother.start()
         action_log.add(
-            "SYSTEM", f"Command smoother started (10Hz, α=0.35, synced={smoother.synced})", "info"
+            "SYSTEM", f"Command smoother started (10Hz, α=0.35, max_step={MAX_STEP_DEG}°, synced={smoother.synced})", "info"
         )
 
     # Initialize task planner for pre-built motion sequences
@@ -612,6 +618,9 @@ def get_arm_state() -> Dict[str, Any]:
     # SAFETY: Sync smoother from arm feedback if not yet synced
     if smoother and not smoother.synced:
         smoother.sync_from_feedback(angles, gripper)
+    # Keep feedback timestamp fresh for staleness gating
+    elif smoother and smoother.synced:
+        smoother._last_feedback_time = time.time()
 
     # Auto-sync enable state from DDS feedback on server restart:
     # If DDS reports enabled but smoother doesn't know, sync it.
@@ -901,6 +910,8 @@ async def cmd_stop():
     cid = _new_cid()
     _telem_cmd_sent("stop", {}, cid)
     action_log.add("EMERGENCY_STOP", "⚠ TRIGGERED", "error")
+    if safety_monitor:
+        safety_monitor.trigger_estop("API emergency stop")
     if smoother:
         smoother.emergency_stop()
     if _HAS_TELEMETRY:

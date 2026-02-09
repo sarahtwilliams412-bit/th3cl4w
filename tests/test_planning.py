@@ -136,7 +136,7 @@ class TestTrajectory:
 class TestMotionPlanner:
     def test_validate_joint_angles_valid(self, planner, home):
         assert planner.validate_joint_angles(home)
-        assert planner.validate_joint_angles(np.array([130.0, 85.0, 85.0, 130.0, 85.0, 130.0]))
+        assert planner.validate_joint_angles(np.array([130.0, 75.0, 75.0, 130.0, 75.0, 130.0]))
 
     def test_validate_joint_angles_invalid(self, planner):
         # J0 out of range
@@ -148,7 +148,7 @@ class TestMotionPlanner:
         angles = np.array([200.0, -100.0, 50.0, -200.0, 0.0, 150.0])
         clamped = planner.clamp_joint_angles(angles)
         assert clamped[0] == 135.0
-        assert clamped[1] == -90.0
+        assert clamped[1] == -80.0
         assert clamped[2] == 50.0
         assert clamped[3] == -135.0
         assert clamped[5] == 135.0

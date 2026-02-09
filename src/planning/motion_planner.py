@@ -17,31 +17,17 @@ from typing import Optional
 import numpy as np
 
 from src.kinematics.kinematics import D1Kinematics
-from src.safety.safety_monitor import SafetyMonitor, d1_default_limits
-
-logger = logging.getLogger(__name__)
-
-NUM_ARM_JOINTS = 6
-NUM_JOINTS = 7  # 6 arm + gripper
-
-# Default limits (degrees/s and degrees/s²)
-DEFAULT_MAX_JOINT_SPEED = np.array([90.0, 90.0, 120.0, 120.0, 150.0, 150.0])  # deg/s
-DEFAULT_MAX_JOINT_ACCEL = np.array([180.0, 180.0, 240.0, 240.0, 300.0, 300.0])  # deg/s²
-
-# Joint limits in degrees
-JOINT_LIMITS_DEG = np.array(
-    [
-        [-135.0, 135.0],  # J0
-        [-90.0, 90.0],  # J1
-        [-90.0, 90.0],  # J2
-        [-135.0, 135.0],  # J3
-        [-90.0, 90.0],  # J4
-        [-135.0, 135.0],  # J5
-    ]
+from src.safety.limits import (
+    NUM_ARM_JOINTS,
+    NUM_JOINTS,
+    JOINT_LIMITS_DEG,
+    MAX_JOINT_SPEED_DEG as DEFAULT_MAX_JOINT_SPEED,
+    MAX_JOINT_ACCEL_DEG as DEFAULT_MAX_JOINT_ACCEL,
+    GRIPPER_MIN_MM,
+    GRIPPER_MAX_MM,
 )
 
-GRIPPER_MIN_MM = 0.0
-GRIPPER_MAX_MM = 65.0
+logger = logging.getLogger(__name__)
 
 
 @dataclass

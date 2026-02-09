@@ -18,12 +18,17 @@ from typing import Optional
 import numpy as np
 
 from src.interface.d1_connection import D1Command, D1State, NUM_JOINTS
+from src.safety.limits import (
+    JOINT_LIMITS_RAD_MIN,
+    JOINT_LIMITS_RAD_MAX,
+    VELOCITY_MAX_RAD,
+    TORQUE_MAX_NM,
+    MAX_WORKSPACE_RADIUS_MM,
+    MAX_WORKSPACE_RADIUS_M,
+    FEEDBACK_MAX_AGE_S,
+)
 
 logger = logging.getLogger(__name__)
-
-# Unitree D1: 550mm max reach
-MAX_WORKSPACE_RADIUS_MM = 550.0
-MAX_WORKSPACE_RADIUS_M = MAX_WORKSPACE_RADIUS_MM / 1000.0
 
 
 class ViolationType(Enum):
@@ -98,23 +103,13 @@ class JointLimits:
 def d1_default_limits() -> JointLimits:
     """Default joint limits for the Unitree D1 arm.
 
-    D1 is a 7-DOF arm (6 arm joints + 1 gripper) with 550mm reach,
-    1kg rated payload, 500Hz control loop.
-
-    Joint layout (approximate for a small 7-DOF collaborative arm):
-      J0 - Shoulder yaw:    ±2.9 rad, 2.0 rad/s, 20 Nm
-      J1 - Shoulder pitch:  ±2.9 rad, 2.0 rad/s, 20 Nm
-      J2 - Elbow pitch:     ±2.9 rad, 2.5 rad/s, 15 Nm
-      J3 - Elbow roll:      ±2.9 rad, 2.5 rad/s, 10 Nm
-      J4 - Wrist pitch:     ±3.14 rad, 3.0 rad/s, 5 Nm
-      J5 - Wrist roll:      ±3.14 rad, 3.0 rad/s, 5 Nm
-      J6 - Gripper:         0.0–1.0 (normalized), 2.0 /s, 5 Nm
+    Limits are imported from src.safety.limits — the single source of truth.
     """
     return JointLimits(
-        position_min=np.array([-2.9, -2.9, -2.9, -2.9, -3.14, -3.14, 0.0]),
-        position_max=np.array([2.9, 2.9, 2.9, 2.9, 3.14, 3.14, 1.0]),
-        velocity_max=np.array([2.0, 2.0, 2.5, 2.5, 3.0, 3.0, 2.0]),
-        torque_max=np.array([20.0, 20.0, 15.0, 10.0, 5.0, 5.0, 5.0]),
+        position_min=JOINT_LIMITS_RAD_MIN.copy(),
+        position_max=JOINT_LIMITS_RAD_MAX.copy(),
+        velocity_max=VELOCITY_MAX_RAD.copy(),
+        torque_max=TORQUE_MAX_NM.copy(),
     )
 
 
@@ -128,18 +123,30 @@ _LINK_LENGTHS_M = np.array([0.0, 0.15, 0.22, 0.0, 0.18, 0.0, 0.05])  # rough
 
 
 def _estimate_reach(joint_positions: np.ndarray) -> float:
-    """Rough upper-bound estimate of end-effector distance from base (meters).
+    """Estimate end-effector distance from base using simplified 2D planar FK.
 
-    For a conservative safety check we use the sum of link lengths as the
-    maximum possible reach, and compare against the workspace radius. A full
-    FK implementation would be more precise, but the spherical bound is always
-    safe (never overestimates the reachable workspace).
+    Uses shoulder (J1), elbow (J2), and wrist (J4) pitch joints with the
+    approximate link lengths to compute a rough but configuration-dependent
+    reach estimate. This is more accurate than the old constant (sum of all
+    links) while remaining fast and conservative enough for a safety check.
+
+    Returns distance in meters.
     """
-    # Conservative: sum of all link lengths is the maximum possible reach
-    # regardless of configuration.  We use this as an upper bound.
-    # A proper FK would give exact distance, but for safety we want a
-    # fast, always-conservative check.
-    return float(np.sum(_LINK_LENGTHS_M))
+    # Use pitch joints (J1, J2, J4) for a planar arm approximation
+    # J0/J3/J5 are yaw/roll and don't change reach distance from base
+    q1 = float(joint_positions[1])  # shoulder pitch
+    q2 = float(joint_positions[2])  # elbow pitch
+    q4 = float(joint_positions[4]) if len(joint_positions) > 4 else 0.0  # wrist pitch
+
+    L1 = _LINK_LENGTHS_M[1]  # shoulder-to-elbow
+    L2 = _LINK_LENGTHS_M[2]  # elbow-to-wrist
+    L3 = _LINK_LENGTHS_M[4] + _LINK_LENGTHS_M[6]  # wrist-to-EE
+
+    # Cumulative angles in the pitch plane
+    x = L1 * math.cos(q1) + L2 * math.cos(q1 + q2) + L3 * math.cos(q1 + q2 + q4)
+    z = L1 * math.sin(q1) + L2 * math.sin(q1 + q2) + L3 * math.sin(q1 + q2 + q4)
+
+    return math.sqrt(x * x + z * z)
 
 
 class SafetyMonitor:
@@ -175,6 +182,17 @@ class SafetyMonitor:
         """Reset emergency stop, allowing commands again."""
         logger.info("E-STOP RESET")
         self._estop = False
+
+    # -- Feedback Freshness --------------------------------------------------
+
+    def is_feedback_fresh(self, state: D1State) -> bool:
+        """Check whether feedback is recent enough to trust.
+
+        Returns False if the state timestamp is older than FEEDBACK_MAX_AGE_S.
+        """
+        import time as _time
+        age = _time.time() - state.timestamp
+        return age <= FEEDBACK_MAX_AGE_S
 
     # -- Command Validation --------------------------------------------------
 
