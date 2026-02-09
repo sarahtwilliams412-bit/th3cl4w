@@ -60,6 +60,13 @@ except ImportError:
     _HAS_PLANNING = False
 
 try:
+    from src.planning.text_command import parse_command, CommandType, ParsedCommand
+
+    _HAS_TEXT_CMD = True
+except ImportError:
+    _HAS_TEXT_CMD = False
+
+try:
     from src.vision.workspace_mapper import WorkspaceMapper
     from src.planning.collision_preview import CollisionPreview
 
@@ -582,6 +589,10 @@ class RawCommandRequest(BaseModel):
     payload: dict
 
 
+class TextCommandRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1004,6 +1015,209 @@ async def cmd_stop():
     )
     await broadcast_ack("EMERGENCY_STOP", ok)
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Text command interface — natural language arm control
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/command/text")
+async def cmd_text(req: TextCommandRequest):
+    """Parse a natural language command and execute the corresponding arm action.
+
+    Examples:
+        "wave hello", "go home", "open gripper", "move joint 0 to 45",
+        "reach forward", "point left", "close the claw", "stop"
+    """
+    if not _HAS_TEXT_CMD:
+        return JSONResponse(
+            {"ok": False, "error": "text command module not available"}, status_code=501
+        )
+
+    cid = _new_cid()
+    parsed = parse_command(req.text)
+    action_log.add(
+        "TEXT_CMD",
+        f"Input: {req.text!r} -> {parsed.command_type.value}: {parsed.description}",
+        "info",
+    )
+
+    if parsed.command_type == CommandType.UNKNOWN:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": f"Could not understand command: {req.text}",
+                "parsed": {
+                    "type": parsed.command_type.value,
+                    "description": parsed.description,
+                    "confidence": parsed.confidence,
+                },
+            },
+            status_code=400,
+        )
+
+    # --- Stop ---
+    if parsed.command_type == CommandType.STOP:
+        return await cmd_stop()
+
+    # --- Power commands ---
+    if parsed.command_type == CommandType.POWER:
+        if parsed.action == "power-on":
+            return await cmd_power_on()
+        elif parsed.action == "power-off":
+            return await cmd_power_off()
+        elif parsed.action == "enable":
+            return await cmd_enable()
+        elif parsed.action == "disable":
+            return await cmd_disable()
+
+    # --- Gripper ---
+    if parsed.command_type == CommandType.SET_GRIPPER:
+        if parsed.gripper_mm is not None:
+            return await cmd_set_gripper(SetGripperRequest(position=parsed.gripper_mm))
+
+    # --- Tasks (wave, home, ready, nod, shake) ---
+    if parsed.command_type == CommandType.TASK:
+        if parsed.action == "wave":
+            return await task_wave(WaveRequest(speed=parsed.speed))
+        elif parsed.action == "home":
+            return await task_home(TaskRequest(speed=parsed.speed))
+        elif parsed.action == "ready":
+            return await task_ready(TaskRequest(speed=parsed.speed))
+        elif parsed.action == "nod":
+            return await _execute_nod(parsed.speed, cid)
+        elif parsed.action == "shake":
+            return await _execute_shake(parsed.speed, cid)
+
+    # --- Set single joint ---
+    if parsed.command_type == CommandType.SET_JOINT and parsed.joints:
+        joint_id, angle = next(iter(parsed.joints.items()))
+        return await cmd_set_joint(SetJointRequest(id=joint_id, angle=angle))
+
+    # --- Set all joints (directional moves, named poses) ---
+    if parsed.command_type == CommandType.SET_ALL_JOINTS and parsed.all_joints:
+        if len(parsed.all_joints) == 6:
+            # Use task planner for smooth trajectory if available
+            if _HAS_PLANNING and smoother and smoother.arm_enabled:
+                current = _get_current_joints()
+                gripper = armState_gripper()
+                traj = task_planner.planner.linear_joint_trajectory(
+                    current,
+                    np.array(parsed.all_joints),
+                    parsed.speed,
+                    gripper,
+                    gripper,
+                )
+                global _active_task
+                if _active_task and not _active_task.done():
+                    _active_task.cancel()
+                _active_task = asyncio.create_task(_execute_trajectory(traj, parsed.description))
+                action_log.add(
+                    "TEXT_CMD",
+                    f"Executing: {parsed.description} ({len(traj.points)} pts, {traj.duration:.1f}s)",
+                    "info",
+                )
+                return {
+                    "ok": True,
+                    "action": "TEXT_CMD",
+                    "description": parsed.description,
+                    "points": len(traj.points),
+                    "duration_s": round(traj.duration, 1),
+                    "parsed": {
+                        "type": parsed.command_type.value,
+                        "confidence": parsed.confidence,
+                    },
+                }
+            else:
+                return await cmd_set_all_joints(SetAllJointsRequest(angles=parsed.all_joints))
+
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": f"Parsed but could not execute: {parsed.description}",
+            "parsed": {
+                "type": parsed.command_type.value,
+                "description": parsed.description,
+                "confidence": parsed.confidence,
+            },
+        },
+        status_code=400,
+    )
+
+
+async def _execute_nod(speed: float, cid: str | None) -> dict:
+    """Execute a nodding (yes) gesture by pitching the wrist up and down."""
+    global _active_task
+    if not _HAS_PLANNING:
+        return JSONResponse(
+            {"ok": False, "error": "planning module not available"}, status_code=501
+        )
+    if not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
+
+    current = _get_current_joints()
+    gripper = armState_gripper()
+    waypoints = [Waypoint(current, gripper, speed)]
+
+    nod_up = current.copy()
+    nod_up[4] = max(current[4] - 20.0, -80.0)
+    nod_down = current.copy()
+    nod_down[4] = min(current[4] + 20.0, 80.0)
+
+    for _ in range(2):
+        waypoints.append(Waypoint(nod_up, gripper, speed))
+        waypoints.append(Waypoint(nod_down, gripper, speed))
+    waypoints.append(Waypoint(current, gripper, speed))
+
+    traj = task_planner.planner.plan_waypoints(waypoints)
+    if _active_task and not _active_task.done():
+        _active_task.cancel()
+    _active_task = asyncio.create_task(_execute_trajectory(traj, "Nod"))
+    return {
+        "ok": True,
+        "action": "TEXT_CMD",
+        "description": "Nod gesture",
+        "points": len(traj.points),
+        "duration_s": round(traj.duration, 1),
+    }
+
+
+async def _execute_shake(speed: float, cid: str | None) -> dict:
+    """Execute a shaking (no) gesture by rotating the base yaw side to side."""
+    global _active_task
+    if not _HAS_PLANNING:
+        return JSONResponse(
+            {"ok": False, "error": "planning module not available"}, status_code=501
+        )
+    if not (smoother and smoother.arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
+
+    current = _get_current_joints()
+    gripper = armState_gripper()
+    waypoints = [Waypoint(current, gripper, speed)]
+
+    shake_left = current.copy()
+    shake_left[0] = max(current[0] - 25.0, -135.0)
+    shake_right = current.copy()
+    shake_right[0] = min(current[0] + 25.0, 135.0)
+
+    for _ in range(2):
+        waypoints.append(Waypoint(shake_left, gripper, speed))
+        waypoints.append(Waypoint(shake_right, gripper, speed))
+    waypoints.append(Waypoint(current, gripper, speed))
+
+    traj = task_planner.planner.plan_waypoints(waypoints)
+    if _active_task and not _active_task.done():
+        _active_task.cancel()
+    _active_task = asyncio.create_task(_execute_trajectory(traj, "Shake"))
+    return {
+        "ok": True,
+        "action": "TEXT_CMD",
+        "description": "Shake gesture",
+        "points": len(traj.points),
+        "duration_s": round(traj.duration, 1),
+    }
 
 
 # ---------------------------------------------------------------------------
