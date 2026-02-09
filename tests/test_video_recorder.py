@@ -19,7 +19,6 @@ from src.vision.video_recorder import (
 )
 from src.vision.camera_pipeline import AsciiFrame, StereoAsciiFrame
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

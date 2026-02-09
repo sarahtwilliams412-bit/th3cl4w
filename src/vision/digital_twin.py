@@ -41,11 +41,12 @@ ARM_LINK_LENGTHS_MM = [100.0, 220.0, 220.0, 60.0, 60.0, 40.0]  # approximate
 
 class WaypointStatus(Enum):
     """Status of a user-set waypoint."""
-    PENDING = "pending"          # waiting for arm to reach
-    ACTIVE = "active"            # currently being approached
-    REACHED = "reached"          # arm arrived
-    SKIPPED = "skipped"          # skipped due to collision or unreachable
-    CANCELLED = "cancelled"      # user cancelled
+
+    PENDING = "pending"  # waiting for arm to reach
+    ACTIVE = "active"  # currently being approached
+    REACHED = "reached"  # arm arrived
+    SKIPPED = "skipped"  # skipped due to collision or unreachable
+    CANCELLED = "cancelled"  # user cancelled
 
 
 @dataclass
@@ -138,11 +139,16 @@ class DigitalTwinSnapshot:
 
     # Workspace boundaries
     workspace_radius_mm: float = ARM_MAX_REACH_MM
-    workspace_bounds: dict = field(default_factory=lambda: {
-        "x_min": -600.0, "x_max": 600.0,
-        "y_min": -600.0, "y_max": 600.0,
-        "z_min": -50.0, "z_max": 500.0,
-    })
+    workspace_bounds: dict = field(
+        default_factory=lambda: {
+            "x_min": -600.0,
+            "x_max": 600.0,
+            "y_min": -600.0,
+            "y_max": 600.0,
+            "z_min": -50.0,
+            "z_max": 500.0,
+        }
+    )
 
     # Waypoints
     waypoints: list[dict] = field(default_factory=list)
@@ -276,9 +282,7 @@ class DigitalTwin:
                 timestamp=time.monotonic(),
             )
 
-    def _approximate_joint_positions(
-        self, angles_deg: np.ndarray
-    ) -> list[np.ndarray]:
+    def _approximate_joint_positions(self, angles_deg: np.ndarray) -> list[np.ndarray]:
         """Rough joint position approximation when FK isn't available."""
         positions = [np.array([0.0, 0.0, 0.0])]  # base
         z_offset = 0.0
@@ -288,21 +292,25 @@ class DigitalTwin:
             prev = positions[-1]
 
             if i == 0:  # base rotation (yaw)
-                pos = np.array([
-                    length * math.cos(angle_rad),
-                    length * math.sin(angle_rad),
-                    z_offset,
-                ])
+                pos = np.array(
+                    [
+                        length * math.cos(angle_rad),
+                        length * math.sin(angle_rad),
+                        z_offset,
+                    ]
+                )
             elif i % 2 == 1:  # pitch joints
                 z_offset += length * math.cos(angle_rad)
                 r = math.sqrt(prev[0] ** 2 + prev[1] ** 2)
                 r += length * math.sin(angle_rad)
                 base_angle = math.atan2(prev[1], prev[0]) if r > 0 else 0
-                pos = np.array([
-                    r * math.cos(base_angle),
-                    r * math.sin(base_angle),
-                    z_offset,
-                ])
+                pos = np.array(
+                    [
+                        r * math.cos(base_angle),
+                        r * math.sin(base_angle),
+                        z_offset,
+                    ]
+                )
             else:
                 pos = prev + np.array([0, 0, length])
                 z_offset += length
@@ -335,7 +343,9 @@ class DigitalTwin:
             waypoint_id=wp_id,
             label=label or f"Waypoint {self._waypoint_counter}",
             position_mm=np.asarray(position_mm, dtype=float) if position_mm is not None else None,
-            joint_angles_deg=np.asarray(joint_angles_deg, dtype=float) if joint_angles_deg is not None else None,
+            joint_angles_deg=(
+                np.asarray(joint_angles_deg, dtype=float) if joint_angles_deg is not None else None
+            ),
             gripper_mm=gripper_mm,
             speed_factor=speed_factor,
             approach_from=approach_from,
@@ -354,9 +364,7 @@ class DigitalTwin:
         """Remove a waypoint by ID."""
         with self._lock:
             before = len(self._waypoints)
-            self._waypoints = [
-                wp for wp in self._waypoints if wp.waypoint_id != waypoint_id
-            ]
+            self._waypoints = [wp for wp in self._waypoints if wp.waypoint_id != waypoint_id]
             removed = len(self._waypoints) < before
         if removed:
             logger.info("Waypoint removed: %s", waypoint_id)
@@ -373,9 +381,7 @@ class DigitalTwin:
                     wp.order = i + 1
                     reordered.append(wp)
             # Add any waypoints not in the reorder list at the end
-            remaining = [
-                wp for wp in self._waypoints if wp.waypoint_id not in set(waypoint_ids)
-            ]
+            remaining = [wp for wp in self._waypoints if wp.waypoint_id not in set(waypoint_ids)]
             for wp in remaining:
                 wp.order = len(reordered) + 1
                 reordered.append(wp)

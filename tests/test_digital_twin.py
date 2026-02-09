@@ -14,7 +14,6 @@ from src.vision.digital_twin import (
 )
 from src.vision.vla_model import DetectedObject3D, ObjectShape
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -121,9 +120,7 @@ class TestArmState:
         snap = twin.snapshot()
         assert snap.arm is not None
         assert snap.arm.gripper_mm == 30.0
-        np.testing.assert_array_almost_equal(
-            snap.arm.joint_angles_deg, angles
-        )
+        np.testing.assert_array_almost_equal(snap.arm.joint_angles_deg, angles)
 
     def test_arm_state_to_dict(self):
         state = ArmState(
@@ -297,6 +294,7 @@ class TestSnapshot:
 
         # Should be JSON serializable
         import json
+
         json_str = json.dumps(d)
         assert len(json_str) > 0
 

@@ -135,9 +135,7 @@ class PipelineConfig:
         if self.ascii_height < 5 or self.ascii_height > 200:
             raise ValueError(f"ascii_height must be 5-200, got {self.ascii_height}")
         if self.ascii_fps <= 0 or self.ascii_fps > self.capture_fps:
-            raise ValueError(
-                f"ascii_fps must be >0 and <= capture_fps ({self.capture_fps})"
-            )
+            raise ValueError(f"ascii_fps must be >0 and <= capture_fps ({self.capture_fps})")
 
 
 # Callback type: called with each new StereoAsciiFrame

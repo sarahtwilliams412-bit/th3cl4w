@@ -235,9 +235,7 @@ class VideoRecorder:
 
             # Save annotation
             if self.config.capture_annotations:
-                self._save_annotation(
-                    stereo, scene_objects, arm_state, action_label
-                )
+                self._save_annotation(stereo, scene_objects, arm_state, action_label)
 
     def _record_video_frame(self, stereo: StereoAsciiFrame):
         """Write raw BGR frames to video files."""
@@ -246,9 +244,7 @@ class VideoRecorder:
                 h, w = stereo.cam0.raw_frame.shape[:2]
                 fourcc = cv2.VideoWriter_fourcc(*self.config.video_codec)
                 path = str(self._session_dir / "cam0.avi")
-                self._writer_cam0 = cv2.VideoWriter(
-                    path, fourcc, self.config.video_fps, (w, h)
-                )
+                self._writer_cam0 = cv2.VideoWriter(path, fourcc, self.config.video_fps, (w, h))
             self._writer_cam0.write(stereo.cam0.raw_frame)
 
         if stereo.cam1 is not None and stereo.cam1.raw_frame is not None:
@@ -256,9 +252,7 @@ class VideoRecorder:
                 h, w = stereo.cam1.raw_frame.shape[:2]
                 fourcc = cv2.VideoWriter_fourcc(*self.config.video_codec)
                 path = str(self._session_dir / "cam1.avi")
-                self._writer_cam1 = cv2.VideoWriter(
-                    path, fourcc, self.config.video_fps, (w, h)
-                )
+                self._writer_cam1 = cv2.VideoWriter(path, fourcc, self.config.video_fps, (w, h))
             self._writer_cam1.write(stereo.cam1.raw_frame)
 
     def _capture_screenshot(
@@ -367,8 +361,13 @@ class VideoRecorder:
         # Timestamp overlay
         ts_text = f"F{ascii_frame.frame_number} cam{ascii_frame.camera_id}"
         cv2.putText(
-            frame, ts_text, (w - 200, h - 10),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1,
+            frame,
+            ts_text,
+            (w - 200, h - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (200, 200, 200),
+            1,
         )
 
         return frame

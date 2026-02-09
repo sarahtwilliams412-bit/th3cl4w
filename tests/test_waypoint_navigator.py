@@ -15,7 +15,6 @@ from src.planning.waypoint_navigator import (
 from src.planning.motion_planner import MotionPlanner, NUM_ARM_JOINTS
 from src.vision.digital_twin import DigitalTwin, WaypointStatus
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -179,7 +178,8 @@ class TestPathOrdering:
         )
 
         plan = nav.plan_navigation(
-            twin, _home_angles(),
+            twin,
+            _home_angles(),
             order_strategy=PathOrderStrategy.NEAREST_NEIGHBOR,
         )
         assert plan.success is True
@@ -200,7 +200,8 @@ class TestPathOrdering:
         )
 
         plan = nav.plan_navigation(
-            twin, _home_angles(),
+            twin,
+            _home_angles(),
             order_strategy=PathOrderStrategy.USER_DEFINED,
         )
         # User-defined order should be preserved
@@ -217,9 +218,7 @@ class TestPlanFromPositions:
     def test_single_position(self):
         nav = WaypointNavigator()
         positions = [np.array([200.0, 0.0, 200.0])]
-        plan = nav.plan_from_positions(
-            positions, _home_angles()
-        )
+        plan = nav.plan_from_positions(positions, _home_angles())
         assert plan.num_waypoints == 1
 
     def test_multiple_positions(self):
@@ -229,9 +228,7 @@ class TestPlanFromPositions:
             np.array([200.0, 100.0, 200.0]),
             np.array([300.0, 0.0, 150.0]),
         ]
-        plan = nav.plan_from_positions(
-            positions, _home_angles()
-        )
+        plan = nav.plan_from_positions(positions, _home_angles())
         assert plan.num_waypoints == 3
 
 

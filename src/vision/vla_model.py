@@ -43,13 +43,15 @@ ARM_MIN_REACH_MM = 80.0
 
 class VLAMode(Enum):
     """Operating mode for the VLA model."""
-    VISION = "vision"    # send frames to a vision-language model
-    TEXT = "text"        # send ASCII text to a text LLM
-    LOCAL = "local"      # local rule-based analysis (no external API)
+
+    VISION = "vision"  # send frames to a vision-language model
+    TEXT = "text"  # send ASCII text to a text LLM
+    LOCAL = "local"  # local rule-based analysis (no external API)
 
 
 class ObjectShape(Enum):
     """Rough shape classification from ASCII silhouette."""
+
     RECTANGULAR = "rectangular"
     CYLINDRICAL = "cylindrical"
     SPHERICAL = "spherical"
@@ -64,6 +66,7 @@ class AsciiMeasurement:
     Each cell in the ASCII grid maps to a physical area. By counting
     occupied cells, we estimate physical dimensions.
     """
+
     label: str
     # ASCII grid bounds (col, row coordinates)
     grid_min_col: int = 0
@@ -122,8 +125,8 @@ class DetectedObject3D:
 
     object_id: str
     label: str
-    position_mm: np.ndarray     # (3,) XYZ in arm-base frame
-    dimensions_mm: np.ndarray   # (3,) width, height, depth
+    position_mm: np.ndarray  # (3,) XYZ in arm-base frame
+    dimensions_mm: np.ndarray  # (3,) width, height, depth
     shape: ObjectShape
     confidence: float
     reachable: bool
@@ -205,8 +208,8 @@ class VLAModel:
     # Physical scale factors (mm per ASCII cell)
     # These map the ASCII grid to physical workspace dimensions.
     # Default assumes overhead camera covers ~800x500mm workspace at 120x40 chars.
-    DEFAULT_MM_PER_COL = 6.67   # 800mm / 120 cols
-    DEFAULT_MM_PER_ROW = 12.5   # 500mm / 40 rows
+    DEFAULT_MM_PER_COL = 6.67  # 800mm / 120 cols
+    DEFAULT_MM_PER_ROW = 12.5  # 500mm / 40 rows
 
     def __init__(
         self,
@@ -356,9 +359,7 @@ class VLAModel:
             result.measurements.extend(measurements_cam0)
 
         # Fuse measurements into 3D objects
-        objects_3d = self._fuse_measurements(
-            measurements_cam1, measurements_cam0, stereo
-        )
+        objects_3d = self._fuse_measurements(measurements_cam1, measurements_cam0, stereo)
         result.objects = objects_3d
 
         # Track reachable objects
@@ -389,9 +390,7 @@ class VLAModel:
     # ASCII measurement
     # ------------------------------------------------------------------
 
-    def _measure_from_ascii(
-        self, ascii_frame: AsciiFrame, source: str
-    ) -> list[AsciiMeasurement]:
+    def _measure_from_ascii(self, ascii_frame: AsciiFrame, source: str) -> list[AsciiMeasurement]:
         """Detect and measure objects from an ASCII frame using density analysis.
 
         Scans the ASCII grid for connected regions of dense characters,
@@ -514,9 +513,7 @@ class VLAModel:
             confidence=confidence,
         )
 
-    def _classify_shape(
-        self, fill_ratio: float, grid_w: int, grid_h: int
-    ) -> ObjectShape:
+    def _classify_shape(self, fill_ratio: float, grid_w: int, grid_h: int) -> ObjectShape:
         """Classify shape from fill ratio and aspect ratio."""
         aspect = grid_w / max(grid_h, 1)
 
@@ -589,7 +586,7 @@ class VLAModel:
                     break
 
             # Compute reach distance
-            reach_dist = math.sqrt(x_mm ** 2 + y_mm ** 2)
+            reach_dist = math.sqrt(x_mm**2 + y_mm**2)
             reachable = ARM_MIN_REACH_MM <= reach_dist <= ARM_MAX_REACH_MM
 
             self._object_counter += 1
@@ -597,9 +594,7 @@ class VLAModel:
 
             # Generate simple box mesh for Factory 3D
             dims = np.array([m_cam1.width_mm, height_mm, m_cam1.depth_mm])
-            vertices, faces = self._generate_box_mesh(
-                np.array([x_mm, y_mm, z_mm]), dims
-            )
+            vertices, faces = self._generate_box_mesh(np.array([x_mm, y_mm, z_mm]), dims)
 
             obj_3d = DetectedObject3D(
                 object_id=obj_id,
@@ -624,16 +619,14 @@ class VLAModel:
             y_mm = 250.0  # assume mid-range depth from front view
             z_mm = m_cam0.height_mm / 2.0
 
-            reach_dist = math.sqrt(x_mm ** 2 + y_mm ** 2)
+            reach_dist = math.sqrt(x_mm**2 + y_mm**2)
             reachable = ARM_MIN_REACH_MM <= reach_dist <= ARM_MAX_REACH_MM
 
             self._object_counter += 1
             obj_id = f"vla_obj_{self._object_counter}"
 
             dims = np.array([m_cam0.width_mm, m_cam0.height_mm, m_cam0.depth_mm])
-            vertices, faces = self._generate_box_mesh(
-                np.array([x_mm, y_mm, z_mm]), dims
-            )
+            vertices, faces = self._generate_box_mesh(np.array([x_mm, y_mm, z_mm]), dims)
 
             obj_3d = DetectedObject3D(
                 object_id=obj_id,
@@ -653,9 +646,7 @@ class VLAModel:
 
         return objects_3d
 
-    def _generate_box_mesh(
-        self, center: np.ndarray, dims: np.ndarray
-    ) -> tuple[list, list]:
+    def _generate_box_mesh(self, center: np.ndarray, dims: np.ndarray) -> tuple[list, list]:
         """Generate a simple box mesh (8 vertices, 12 triangles).
 
         Suitable for sending to Factory 3D WebGL visualization.
@@ -677,12 +668,18 @@ class VLAModel:
 
         # 12 triangles (2 per face)
         faces = [
-            [0, 1, 2], [0, 2, 3],  # bottom
-            [4, 6, 5], [4, 7, 6],  # top
-            [0, 4, 5], [0, 5, 1],  # front
-            [2, 6, 7], [2, 7, 3],  # back
-            [0, 3, 7], [0, 7, 4],  # left
-            [1, 5, 6], [1, 6, 2],  # right
+            [0, 1, 2],
+            [0, 2, 3],  # bottom
+            [4, 6, 5],
+            [4, 7, 6],  # top
+            [0, 4, 5],
+            [0, 5, 1],  # front
+            [2, 6, 7],
+            [2, 7, 3],  # back
+            [0, 3, 7],
+            [0, 7, 4],  # left
+            [1, 5, 6],
+            [1, 6, 2],  # right
         ]
 
         return vertices, faces

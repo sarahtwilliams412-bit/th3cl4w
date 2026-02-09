@@ -45,18 +45,20 @@ logger = logging.getLogger("th3cl4w.planning.waypoint_navigator")
 
 class NavigationStatus(Enum):
     """Status of a navigation plan."""
-    READY = "ready"          # plan generated, ready to execute
+
+    READY = "ready"  # plan generated, ready to execute
     EXECUTING = "executing"  # currently navigating
     COMPLETED = "completed"  # all waypoints reached
-    FAILED = "failed"        # planning or execution failed
-    PARTIAL = "partial"      # some waypoints reached, some failed
+    FAILED = "failed"  # planning or execution failed
+    PARTIAL = "partial"  # some waypoints reached, some failed
 
 
 class PathOrderStrategy(Enum):
     """Strategy for ordering waypoints."""
-    USER_DEFINED = "user_defined"      # respect user-set order
-    NEAREST_NEIGHBOR = "nearest"       # greedy nearest-neighbor
-    SHORTEST_PATH = "shortest_path"    # attempt TSP optimization
+
+    USER_DEFINED = "user_defined"  # respect user-set order
+    NEAREST_NEIGHBOR = "nearest"  # greedy nearest-neighbor
+    SHORTEST_PATH = "shortest_path"  # attempt TSP optimization
 
 
 @dataclass
@@ -65,7 +67,7 @@ class WaypointPlanEntry:
 
     waypoint_id: str
     label: str
-    joint_angles_deg: np.ndarray    # (6,) resolved joint angles
+    joint_angles_deg: np.ndarray  # (6,) resolved joint angles
     gripper_mm: float = 30.0
     speed_factor: float = 0.6
     position_mm: Optional[np.ndarray] = None  # (3,) if Cartesian
@@ -441,9 +443,7 @@ class WaypointNavigator:
             ik_error_mm=999.0,
         )
 
-    def _position_to_pose(
-        self, position_mm: np.ndarray, approach: str = "auto"
-    ) -> np.ndarray:
+    def _position_to_pose(self, position_mm: np.ndarray, approach: str = "auto") -> np.ndarray:
         """Convert a 3D position to a 4x4 homogeneous transform.
 
         The orientation is set based on the approach direction:
@@ -465,18 +465,22 @@ class WaypointNavigator:
 
         if approach == "top":
             # EE z-axis pointing down
-            T[:3, :3] = np.array([
-                [math.cos(yaw), math.sin(yaw), 0.0],
-                [math.sin(yaw), -math.cos(yaw), 0.0],
-                [0.0, 0.0, -1.0],
-            ])
+            T[:3, :3] = np.array(
+                [
+                    [math.cos(yaw), math.sin(yaw), 0.0],
+                    [math.sin(yaw), -math.cos(yaw), 0.0],
+                    [0.0, 0.0, -1.0],
+                ]
+            )
         else:
             # EE z-axis pointing toward object (horizontal approach)
-            T[:3, :3] = np.array([
-                [0.0, 0.0, math.cos(yaw)],
-                [0.0, -1.0, math.sin(yaw)],
-                [1.0, 0.0, 0.0],
-            ])
+            T[:3, :3] = np.array(
+                [
+                    [0.0, 0.0, math.cos(yaw)],
+                    [0.0, -1.0, math.sin(yaw)],
+                    [1.0, 0.0, 0.0],
+                ]
+            )
 
         return T
 
@@ -542,9 +546,7 @@ class WaypointNavigator:
                 for j in range(i + 2, len(ordered)):
                     # Try reversing the segment between i+1 and j
                     new_order = (
-                        ordered[: i + 1]
-                        + list(reversed(ordered[i + 1 : j + 1]))
-                        + ordered[j + 1 :]
+                        ordered[: i + 1] + list(reversed(ordered[i + 1 : j + 1])) + ordered[j + 1 :]
                     )
 
                     old_cost = self._path_cost(ordered, start_angles)
@@ -556,9 +558,7 @@ class WaypointNavigator:
 
         return ordered
 
-    def _path_cost(
-        self, entries: list[WaypointPlanEntry], start: np.ndarray
-    ) -> float:
+    def _path_cost(self, entries: list[WaypointPlanEntry], start: np.ndarray) -> float:
         """Compute total joint-space distance for a path ordering."""
         cost = 0.0
         current = start.copy()
@@ -572,9 +572,7 @@ class WaypointNavigator:
     # Collision checking
     # ------------------------------------------------------------------
 
-    def _check_collisions(
-        self, entries: list[WaypointPlanEntry], start_angles: np.ndarray
-    ):
+    def _check_collisions(self, entries: list[WaypointPlanEntry], start_angles: np.ndarray):
         """Check each waypoint for collisions against the world model."""
         if self.world_model is None:
             return
