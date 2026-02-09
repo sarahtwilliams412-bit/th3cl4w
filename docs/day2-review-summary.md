@@ -36,15 +36,11 @@
 3. Fix DDS zero-feedback: gate ALL commands on non-zero feedback
 4. Fix NaN bypass in safety validation
 
-### P1 — First pick
-5. Hardcode a scripted pick sequence using known-good position (J0=17°, J1=50°, J2=60°, J4=60°)
-6. Run it 5x to prove it works
-7. Add gripper contact detection (monitor gripper position during close — if stops > 35mm, something's there)
-
-### P2 — VLA pick
-8. Run VLA with corrected prompts on a simple pick task
-9. Add contact detection to VLA controller
-10. Record demonstrations for future fine-tuning
+### P1 — Contact detection + VLA pick
+5. Add gripper contact detection (monitor gripper position during close — if stops > 35mm, something's there)
+6. Wire contact detection into VLA controller
+7. Run VLA with corrected prompts on a pick task — the J1 fix + contact sensing should nail it
+8. Record demonstrations for future fine-tuning
 
 ### P3 — Cleanup
 11. Unify action_decoder.py limits to use limits.py
