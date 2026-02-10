@@ -262,9 +262,11 @@ action_log = ActionLog()
 # ---------------------------------------------------------------------------
 
 from src.interface.simulated_arm import SimulatedArm
+from src.telemetry.sim_bridge import SimTelemetryBridge
 
 # Track whether we're in simulation mode (can be toggled at runtime)
 _sim_mode: bool = False
+_sim_bridge: Optional[SimTelemetryBridge] = None
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +331,8 @@ async def lifespan(app: FastAPI):
         arm = SimulatedArm()
         arm.start_feedback_loop(rate_hz=10.0)
         _sim_mode = True
+        _sim_bridge = SimTelemetryBridge(arm, get_collector() if _HAS_TELEMETRY else None)
+        await _sim_bridge.start()
         action_log.add("SYSTEM", "Simulated arm initialized (SIM mode)", "info")
         logger.info("Running in SIMULATION mode")
     else:
@@ -1080,6 +1084,14 @@ async def api_sim_status():
     return {"sim_mode": _sim_mode}
 
 
+@app.get("/api/sim-bridge/status")
+async def api_sim_bridge_status():
+    """Return sim telemetry bridge status."""
+    if _sim_bridge is not None:
+        return _sim_bridge.stats
+    return {"running": False, "event_count": 0, "seq": 0}
+
+
 @app.post("/api/sim/toggle")
 async def api_sim_toggle():
     """Toggle between SIM and LIVE mode at runtime.
@@ -1087,7 +1099,7 @@ async def api_sim_toggle():
     When switching to SIM: creates a SimulatedArm, stops DDS.
     When switching to LIVE: attempts DDS connection, falls back to SIM on failure.
     """
-    global arm, smoother, _sim_mode
+    global arm, smoother, _sim_mode, _sim_bridge
 
     if _sim_mode:
         # Switch SIM → LIVE
@@ -1099,6 +1111,9 @@ async def api_sim_toggle():
             new_arm = D1DDSConnection(collector=tc)
             if new_arm.connect(interface_name=args.interface):
                 # Tear down old sim arm
+                if _sim_bridge is not None:
+                    await _sim_bridge.stop()
+                    _sim_bridge = None
                 if arm is not None:
                     arm.disconnect()
                 if smoother is not None:
@@ -1147,6 +1162,9 @@ async def api_sim_toggle():
         _sim_mode = True
 
         tc_ref = get_collector() if _HAS_TELEMETRY else None
+        _sim_bridge = SimTelemetryBridge(arm, tc_ref)
+        await _sim_bridge.start()
+
         smoother = CommandSmoother(
             arm,
             rate_hz=10.0,
