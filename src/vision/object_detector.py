@@ -254,9 +254,9 @@ class ObjectDetector:
         if side_frame is not None:
             self._estimate_heights(merged, side_frame)
 
-        # Label objects using LLM vision (side camera + ontology)
+        # Label objects using LLM vision (both camera views + ontology)
         try:
-            self._labeler.label_objects(side_frame, merged)
+            self._labeler.label_objects(overhead_frame, side_frame, merged)
         except Exception as e:
             logger.debug("Object labeler error: %s", e)
 
@@ -425,9 +425,12 @@ class ObjectDetector:
 
             shape, _ = self._classify_shape(cnt, area, rect_w, rect_h)
 
+            # Derive color name from dominant color for background-detected objects
+            bg_color_name = self._color_name_from_bgr(color_bgr)
+
             obj = DetectedObject(
                 obj_id=self._next_id,
-                label=f"{bg_label} {shape}",
+                label=f"{bg_color_name} {shape}",
                 x_mm=ws_x,
                 y_mm=ws_y,
                 z_mm=_DEFAULT_OBJECT_HEIGHT_MM / 2.0,
