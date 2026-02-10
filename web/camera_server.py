@@ -10,6 +10,7 @@ import logging
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional
@@ -104,6 +105,7 @@ class CameraThread:
         self.fps = fps
         self.jpeg_quality = jpeg_quality
         self._frame: Optional[bytes] = None
+        self._raw_frame: Optional[np.ndarray] = None  # cached BGR frame
         self._frame_time: float = 0.0  # monotonic timestamp of last frame
         self._lock = threading.Lock()
         self._running = False
@@ -200,6 +202,7 @@ class CameraThread:
             _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             with self._lock:
                 self._frame = buf.tobytes()
+                self._raw_frame = frame
                 self._frame_time = time.monotonic()
 
             if self._health:
@@ -241,11 +244,10 @@ class CameraThread:
         Returns None if no frame is available or camera is disconnected.
         Used by the arm tracker and grasp planner for vision processing.
         """
-        jpeg_bytes = self.get_frame()
-        if jpeg_bytes is None or jpeg_bytes == self._no_signal_frame:
-            return None
-        frame = cv2.imdecode(np.frombuffer(jpeg_bytes, np.uint8), cv2.IMREAD_COLOR)
-        return frame
+        with self._lock:
+            if self._raw_frame is not None:
+                return self._raw_frame.copy()
+        return None
 
     @property
     def connected(self) -> bool:
@@ -480,23 +482,31 @@ class CameraHandler(BaseHTTPRequestHandler):
 
 
 class ThreadedHTTPServer(HTTPServer):
-    """Handle each request in a new thread."""
+    """Handle each request in a bounded thread pool."""
 
     daemon_threads = True
+    MAX_WORKERS = 12
+
+    def server_activate(self):
+        super().server_activate()
+        self._pool = ThreadPoolExecutor(
+            max_workers=self.MAX_WORKERS, thread_name_prefix="cam-http"
+        )
 
     def process_request(self, request, client_address):
-        t = threading.Thread(
-            target=self.process_request_thread, args=(request, client_address), daemon=True
-        )
-        t.start()
+        self._pool.submit(self._process_request_worker, request, client_address)
 
-    def process_request_thread(self, request, client_address):
+    def _process_request_worker(self, request, client_address):
         try:
             self.finish_request(request, client_address)
         except Exception:
             self.handle_error(request, client_address)
         finally:
             self.shutdown_request(request)
+
+    def server_close(self):
+        self._pool.shutdown(wait=False)
+        super().server_close()
 
 
 # ---------------------------------------------------------------------------
@@ -585,7 +595,7 @@ def main():
         scanner_kwargs = {"cam0": cameras[0], "cam1": cameras[1]}
         if 2 in cameras:
             scanner_kwargs["cam2"] = cameras[2]
-        startup_scanner = StartupScanner(**{k: v for k, v in scanner_kwargs.items() if k in ("cam0", "cam1")})
+        startup_scanner = StartupScanner(**scanner_kwargs)
         startup_scanner.on_model_ready(_on_world_model_ready)
         startup_scanner.start()
         logger.info("Startup scanner launched — building world model from camera feeds")
