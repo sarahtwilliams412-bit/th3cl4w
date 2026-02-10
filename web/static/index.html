@@ -3476,6 +3476,97 @@ async function jmApply() {
   rb.style.display = 'block';
 }
 
+// --- Pick Analytics ---
+async function paRefresh() {
+  try {
+    const resp = await fetch('/api/pick/analytics');
+    const data = await resp.json();
+    if (!data.ok) return;
+    const s = data.summary;
+
+    // Big number
+    const rateEl = document.getElementById('paSuccessRate');
+    const detailEl = document.getElementById('paSuccessDetail');
+    if (s.total_episodes === 0) {
+      rateEl.textContent = '—';
+      rateEl.style.color = 'var(--text-dim)';
+      detailEl.textContent = 'No episodes recorded yet';
+    } else {
+      const pct = (s.success_rate * 100).toFixed(1);
+      rateEl.textContent = pct + '%';
+      rateEl.style.color = s.success_rate >= 0.7 ? 'var(--success)' : s.success_rate >= 0.4 ? 'var(--warning)' : 'var(--danger)';
+      detailEl.textContent = `${s.successes}/${s.total_episodes} successful · avg ${s.avg_duration_s}s · total ${s.total_duration_s}s`;
+    }
+
+    // Phase bars
+    const phases = data.phase_breakdown || [];
+    const phasesEl = document.getElementById('paPhaseBars');
+    if (phases.length === 0) {
+      phasesEl.textContent = 'No phase data';
+    } else {
+      const maxTime = Math.max(...phases.map(p => p.avg_time_s), 0.001);
+      const colors = ['#4a90d9','#e8a838','#53d769','#e94560','#9b59b6','#1abc9c'];
+      phasesEl.innerHTML = phases.map((p, i) => {
+        const pct = Math.max(5, (p.avg_time_s / maxTime) * 100);
+        const c = colors[i % colors.length];
+        const sr = (p.success_rate * 100).toFixed(0);
+        return `<div style="margin-bottom:6px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+            <span>${p.phase}</span>
+            <span style="color:var(--text-dim)">${p.avg_time_s}s avg · ${sr}% ok · ×${p.count}</span>
+          </div>
+          <div style="background:#1a2744;border-radius:3px;height:16px;overflow:hidden;">
+            <div style="background:${c};height:100%;width:${pct}%;border-radius:3px;transition:width 0.3s;"></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // Mode comparison
+    const modes = data.by_mode || {};
+    const modeEl = document.getElementById('paModeCompare');
+    const modeKeys = Object.keys(modes);
+    if (modeKeys.length === 0) {
+      modeEl.textContent = 'No data';
+    } else {
+      modeEl.innerHTML = modeKeys.map(m => {
+        const d = modes[m];
+        const pct = (d.success_rate * 100).toFixed(1);
+        const barColor = m === 'simulation' ? '#f59e0b' : '#ef4444';
+        return `<div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+            <span style="font-weight:bold;">${m === 'simulation' ? '🔮 Simulation' : '🦾 Physical'}</span>
+            <span>${pct}% (${d.successes}/${d.total})</span>
+          </div>
+          <div style="background:#1a2744;border-radius:3px;height:20px;overflow:hidden;">
+            <div style="background:${barColor};height:100%;width:${d.success_rate*100}%;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:bold;">${pct}%</div>
+          </div>
+          <div style="color:var(--text-dim);font-size:10px;margin-top:2px;">avg ${d.avg_duration_s}s</div>
+        </div>`;
+      }).join('');
+    }
+
+    // Per target
+    const targets = data.by_target || {};
+    const targetEl = document.getElementById('paTargetStats');
+    const targetKeys = Object.keys(targets);
+    if (targetKeys.length === 0) {
+      targetEl.textContent = 'No data';
+    } else {
+      targetEl.innerHTML = targetKeys.map(t => {
+        const d = targets[t];
+        const pct = (d.success_rate * 100).toFixed(0);
+        return `<div style="padding:4px 0;border-bottom:1px solid var(--card-border);display:flex;justify-content:space-between;">
+          <span><strong>${t}</strong></span>
+          <span>${pct}% (${d.successes}/${d.total}) · ${d.avg_duration_s}s avg</span>
+        </div>`;
+      }).join('');
+    }
+  } catch (e) {
+    console.error('paRefresh error:', e);
+  }
+}
+
 // --- Diagnostics ---
 async function diagFeedback() { showResult('diagFeedbackResult', await apiCall('/api/debug/feedback')); }
 async function diagSmoother() { showResult('diagSmootherResult', await apiCall('/api/debug/smoother')); }

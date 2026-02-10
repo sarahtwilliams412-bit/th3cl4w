@@ -3928,6 +3928,74 @@ async def pick_episode_detail(episode_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Pick Video Recordings endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/pick/recordings")
+async def pick_recordings_list():
+    """List all pick recordings with frame counts."""
+    from pathlib import Path
+    recordings_dir = Path("data/pick_recordings")
+    if not recordings_dir.exists():
+        return {"ok": True, "recordings": []}
+    results = []
+    for ep_dir in sorted(recordings_dir.iterdir(), reverse=True):
+        if ep_dir.is_dir():
+            frames = list(ep_dir.glob("*.jpg"))
+            results.append({"episode_id": ep_dir.name, "frame_count": len(frames)})
+    return {"ok": True, "recordings": results}
+
+
+@app.get("/api/pick/recordings/{episode_id}")
+async def pick_recording_frames(episode_id: str):
+    """List frames for a specific recording episode."""
+    from pathlib import Path
+    ep_dir = Path("data/pick_recordings") / episode_id
+    if not ep_dir.exists():
+        return JSONResponse({"ok": False, "error": "Recording not found"}, status_code=404)
+    frames = sorted(f.name for f in ep_dir.glob("*.jpg"))
+    return {"ok": True, "episode_id": episode_id, "frames": frames, "frame_count": len(frames)}
+
+
+@app.get("/api/pick/recordings/{episode_id}/{filename}")
+async def pick_recording_frame(episode_id: str, filename: str):
+    """Serve a single JPEG frame from a recording."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    frame_path = Path("data/pick_recordings") / episode_id / filename
+    if not frame_path.exists() or not filename.endswith(".jpg"):
+        return JSONResponse({"ok": False, "error": "Frame not found"}, status_code=404)
+    return FileResponse(frame_path, media_type="image/jpeg")
+
+
+# ---------------------------------------------------------------------------
+# Pick Analytics endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/pick/analytics")
+async def pick_analytics_summary():
+    """Full pick analytics summary."""
+    from src.telemetry.pick_analytics import PickAnalytics
+    analytics = PickAnalytics()
+    return {
+        "ok": True,
+        "summary": analytics.summary(),
+        "by_target": analytics.by_target(),
+        "by_mode": analytics.by_mode(),
+        "phase_breakdown": analytics.phase_breakdown(),
+    }
+
+
+@app.get("/api/pick/analytics/phases")
+async def pick_analytics_phases():
+    """Per-phase timing breakdown."""
+    from src.telemetry.pick_analytics import PickAnalytics
+    analytics = PickAnalytics()
+    return {"ok": True, "phases": analytics.phase_breakdown()}
+
+
+# ---------------------------------------------------------------------------
 # Vision Task Planning endpoints — look at camera, build a plan
 # ---------------------------------------------------------------------------
 
