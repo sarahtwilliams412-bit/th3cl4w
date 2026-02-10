@@ -177,14 +177,14 @@ class TestSmootherTick:
         # alpha=1.0 wants to jump 100°, but max_step=5° caps it
         assert s._current[0] == pytest.approx(5.0, abs=0.1)
 
-    def test_multiple_joints_batch(self, smoother, mock_arm):
-        """3+ joints should send set_all_joints instead of individual."""
+    def test_multiple_joints_individual(self, smoother, mock_arm):
+        """3+ joints should still use individual set_joint (set_all_joints causes freezes)."""
         smoother.set_joint_target(0, 10.0)
         smoother.set_joint_target(1, 20.0)
         smoother.set_joint_target(2, 30.0)
         smoother._tick()
-        mock_arm.set_all_joints.assert_called_once()
-        mock_arm.set_joint.assert_not_called()
+        mock_arm.set_all_joints.assert_not_called()
+        assert mock_arm.set_joint.call_count == 3
 
     def test_gripper_smoothing(self, smoother, mock_arm):
         smoother.set_gripper_target(40.0)
