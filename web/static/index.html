@@ -975,8 +975,23 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <div id="autopickSimBadge" style="display:none;background:#7c3aed;color:white;padding:4px 10px;border-radius:4px;font-size:11px;margin-bottom:8px;">🔮 SIMULATION MODE</div>
         <div class="btn-row">
           <button class="btn primary" id="apStartBtn" onclick="apStart()" style="font-size:16px;padding:10px 24px;">🤖 AUTO PICK</button>
+          <button class="btn primary" id="apPickPlaceBtn" onclick="apPickAndPlace()" style="font-size:14px;padding:8px 16px;background:#7c3aed;display:none;">📦 PICK &amp; PLACE</button>
           <button class="btn danger" id="apStopBtn" onclick="apStop()" style="display:none;">⛔ STOP</button>
         </div>
+      </div>
+      <div class="panel-card">
+        <h3>📍 Place Target</h3>
+        <p style="font-size:10px;color:var(--text-dim);margin:0 0 6px;">Click overhead image to set place location</p>
+        <div style="position:relative;display:inline-block;width:100%;cursor:crosshair;" id="placeTargetWrap">
+          <img id="placeTargetImg" style="width:100%;border-radius:4px;background:#0d1525;" alt="Overhead" src="">
+          <svg id="placeCrosshair" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;">
+            <line id="placeCrossH" x1="0" y1="50%" x2="100%" y2="50%" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3"/>
+            <line id="placeCrossV" x1="50%" y1="0" x2="50%" y2="100%" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3"/>
+            <circle id="placeCrossDot" cx="50%" cy="50%" r="6" fill="none" stroke="#f59e0b" stroke-width="2"/>
+          </svg>
+        </div>
+        <div id="placeCoords" style="font-size:11px;color:var(--text-dim);margin-top:4px;">No target set</div>
+        <button class="btn" onclick="clearPlaceTarget()" style="margin-top:4px;font-size:10px;">Clear Target</button>
       </div>
       <div class="panel-card">
         <h3>Status</h3>
@@ -2963,6 +2978,74 @@ function vlaPreviewCams() {
 async function vlaDemoStart() { const task = document.getElementById('vlaDemoTask').value; showResult('vlaDemoResult', await apiPost('/api/vla/collect', {action:'start', task})); }
 async function vlaDemoStop() { showResult('vlaDemoResult', await apiPost('/api/vla/collect', {action:'stop', success:true})); }
 async function vlaDemoList() { showResult('vlaDemoResult', await apiCall('/api/vla/demos')); }
+
+// --- Place Target ---
+let _placeTarget = null; // {x_mm, y_mm}
+const PLACE_PX_TO_MM = 0.417;
+const PLACE_IMG_CX = 960;
+const PLACE_IMG_CY = 540;
+
+(function initPlaceTarget() {
+  document.addEventListener('DOMContentLoaded', () => {
+    const wrap = document.getElementById('placeTargetWrap');
+    if (!wrap) return;
+    const img = document.getElementById('placeTargetImg');
+    // Load overhead cam image
+    const snapBase = `http://${location.hostname}:8081`;
+    function refreshPlaceImg() { img.src = snapBase + '/snap/0?t=' + Date.now(); }
+    refreshPlaceImg();
+    setInterval(refreshPlaceImg, 3000);
+
+    img.addEventListener('click', (e) => {
+      const rect = img.getBoundingClientRect();
+      const scaleX = 1920 / rect.width;
+      const scaleY = 1080 / rect.height;
+      const px = (e.clientX - rect.left) * scaleX;
+      const py = (e.clientY - rect.top) * scaleY;
+      const x_mm = (px - PLACE_IMG_CX) * PLACE_PX_TO_MM;
+      const y_mm = (py - PLACE_IMG_CY) * PLACE_PX_TO_MM;
+      _placeTarget = { x_mm: Math.round(x_mm * 10) / 10, y_mm: Math.round(y_mm * 10) / 10 };
+      // Update crosshair
+      const pctX = (e.clientX - rect.left) / rect.width * 100;
+      const pctY = (e.clientY - rect.top) / rect.height * 100;
+      const svg = document.getElementById('placeCrosshair');
+      svg.style.display = '';
+      document.getElementById('placeCrossH').setAttribute('y1', pctY + '%');
+      document.getElementById('placeCrossH').setAttribute('y2', pctY + '%');
+      document.getElementById('placeCrossV').setAttribute('x1', pctX + '%');
+      document.getElementById('placeCrossV').setAttribute('x2', pctX + '%');
+      document.getElementById('placeCrossDot').setAttribute('cx', pctX + '%');
+      document.getElementById('placeCrossDot').setAttribute('cy', pctY + '%');
+      document.getElementById('placeCoords').textContent = `Place at: (${_placeTarget.x_mm}, ${_placeTarget.y_mm}) mm`;
+      document.getElementById('apPickPlaceBtn').style.display = '';
+    });
+  });
+})();
+
+function clearPlaceTarget() {
+  _placeTarget = null;
+  document.getElementById('placeCrosshair').style.display = 'none';
+  document.getElementById('placeCoords').textContent = 'No target set';
+  document.getElementById('apPickPlaceBtn').style.display = 'none';
+}
+
+async function apPickAndPlace() {
+  if (!_placeTarget) { alert('Click overhead image to set place target first'); return; }
+  const target = document.getElementById('apTarget').value;
+  const mode = document.getElementById('autopickMode').value;
+  const res = await apiPost('/api/autopick/start', {
+    target, mode,
+    place_target: { x_mm: _placeTarget.x_mm, y_mm: _placeTarget.y_mm }
+  });
+  if (res && res.ok) {
+    document.getElementById('apStartBtn').style.display = 'none';
+    document.getElementById('apPickPlaceBtn').style.display = 'none';
+    document.getElementById('apStopBtn').style.display = '';
+    apPollStatus();
+  } else {
+    document.getElementById('apPhase').textContent = 'ERROR: ' + (res?.error || 'Failed');
+  }
+}
 
 // --- Auto Pick ---
 let _apPollTimer = null;
