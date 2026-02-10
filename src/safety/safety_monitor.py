@@ -8,7 +8,6 @@ and humans. An emergency stop flag blocks all commands until manually reset.
 
 from __future__ import annotations
 
-import copy
 import logging
 import math
 from dataclasses import dataclass, field

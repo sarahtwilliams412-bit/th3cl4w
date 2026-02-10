@@ -8,6 +8,7 @@ via damped least-squares (Levenberg-Marquardt style).
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -64,19 +65,21 @@ assert len(_D1_DH) == NUM_JOINTS, f"DH table length {len(_D1_DH)} != NUM_JOINTS 
 # ---------------------------------------------------------------------------
 
 
-def _dh_transform(dh: DHParameters, theta: float) -> np.ndarray:
-    """Return the 4×4 homogeneous transform for a single DH frame."""
+def _dh_transform(dh: DHParameters, theta: float, out: np.ndarray | None = None) -> np.ndarray:
+    """Return the 4×4 homogeneous transform for a single DH frame.
+
+    Pass a pre-allocated (4,4) array as `out` to avoid allocation in hot paths.
+    """
     t = theta + dh.theta_offset
-    ct, st = np.cos(t), np.sin(t)
-    ca, sa = np.cos(dh.alpha), np.sin(dh.alpha)
-    return np.array(
-        [
-            [ct, -st * ca, st * sa, dh.a * ct],
-            [st, ct * ca, -ct * sa, dh.a * st],
-            [0.0, sa, ca, dh.d],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
-    )
+    ct, st = math.cos(t), math.sin(t)
+    ca, sa = math.cos(dh.alpha), math.sin(dh.alpha)
+    if out is None:
+        out = np.empty((4, 4))
+    out[0, 0] = ct;  out[0, 1] = -st * ca; out[0, 2] = st * sa;  out[0, 3] = dh.a * ct
+    out[1, 0] = st;  out[1, 1] = ct * ca;  out[1, 2] = -ct * sa; out[1, 3] = dh.a * st
+    out[2, 0] = 0.0; out[2, 1] = sa;       out[2, 2] = ca;       out[2, 3] = dh.d
+    out[3, 0] = 0.0; out[3, 1] = 0.0;      out[3, 2] = 0.0;      out[3, 3] = 1.0
+    return out
 
 
 def _pose_error(T_target: np.ndarray, T_current: np.ndarray) -> np.ndarray:

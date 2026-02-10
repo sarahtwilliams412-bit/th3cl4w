@@ -234,18 +234,24 @@ class StiffnessScheduler:
 
         self._current_stiffness = _STIFFNESS_PROFILES[ComplianceMode.MEDIUM].copy()
         self._current_damping = _DAMPING_PROFILES[ComplianceMode.MEDIUM].copy()
+        self._start_stiffness = self._current_stiffness.copy()
+        self._start_damping = self._current_damping.copy()
         self._target_stiffness = self._current_stiffness.copy()
         self._target_damping = self._current_damping.copy()
         self._transition_progress = 1.0  # 1.0 = complete
 
     def set_target_mode(self, mode: ComplianceMode) -> None:
         """Start transition to a new compliance mode."""
+        self._start_stiffness = self._current_stiffness.copy()
+        self._start_damping = self._current_damping.copy()
         self._target_stiffness = _STIFFNESS_PROFILES[mode].copy()
         self._target_damping = _DAMPING_PROFILES[mode].copy()
         self._transition_progress = 0.0
 
     def set_target_params(self, stiffness: np.ndarray, damping: np.ndarray) -> None:
         """Start transition to custom parameters."""
+        self._start_stiffness = self._current_stiffness.copy()
+        self._start_damping = self._current_damping.copy()
         self._target_stiffness = np.asarray(stiffness, dtype=np.float64)
         self._target_damping = np.asarray(damping, dtype=np.float64)
         self._transition_progress = 0.0
@@ -260,11 +266,9 @@ class StiffnessScheduler:
             s = self._transition_progress
             s_smooth = 10 * s**3 - 15 * s**4 + 6 * s**5
 
-            start_k = self._current_stiffness
-            start_d = self._current_damping
-
-            self._current_stiffness = start_k + (self._target_stiffness - start_k) * s_smooth
-            self._current_damping = start_d + (self._target_damping - start_d) * s_smooth
+            # Interpolate from saved start to target (not from drifting current)
+            self._current_stiffness = self._start_stiffness + (self._target_stiffness - self._start_stiffness) * s_smooth
+            self._current_damping = self._start_damping + (self._target_damping - self._start_damping) * s_smooth
 
             if self._transition_progress >= 1.0:
                 self._current_stiffness = self._target_stiffness.copy()

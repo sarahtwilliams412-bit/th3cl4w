@@ -22,7 +22,7 @@ References:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -134,8 +134,8 @@ class OneEuroFilter:
         self._dx_prev: np.ndarray = np.zeros(n_joints)
         self._initialized = False
 
-    def _alpha(self, cutoff: float) -> float:
-        """Compute EMA alpha from cutoff frequency."""
+    def _alpha(self, cutoff: float | np.ndarray) -> float | np.ndarray:
+        """Compute EMA alpha from cutoff frequency (scalar or array)."""
         te = 1.0 / self.rate
         tau = 1.0 / (2.0 * np.pi * cutoff)
         return 1.0 / (1.0 + tau / te)
@@ -166,25 +166,14 @@ class OneEuroFilter:
         # Compute adaptive cutoff per joint
         cutoffs = self.min_cutoff + self.beta * np.abs(dx_hat)
 
-        # Filter signal with adaptive cutoff
-        result = np.zeros(self.n_joints)
-        for i in range(self.n_joints):
-            a = self._alpha(float(cutoffs[i]))
-            result[i] = a * x[i] + (1.0 - a) * self._x_prev[i]
+        # Filter signal with adaptive cutoff (vectorized)
+        a = self._alpha(cutoffs)
+        result = a * x + (1.0 - a) * self._x_prev
 
         self._x_prev = result.copy()
         self._dx_prev = dx_hat.copy()
 
         return result
-
-
-@dataclass
-class JerkLimitState:
-    """Per-joint state for the jerk-limited rate limiter."""
-
-    position: float = 0.0
-    velocity: float = 0.0
-    acceleration: float = 0.0
 
 
 class JerkLimiter:
@@ -225,18 +214,17 @@ class JerkLimiter:
         self.max_jerk = np.asarray(max_jerk, dtype=np.float64)
         self.dt = dt
 
-        self._state = [JerkLimitState() for _ in range(n_joints)]
+        # Vectorized state arrays instead of per-joint dataclasses
+        self._positions = np.zeros(n_joints)
+        self._velocities = np.zeros(n_joints)
+        self._accelerations = np.zeros(n_joints)
         self._initialized = False
 
     def reset(self, positions: np.ndarray) -> None:
         """Reset limiter state to current positions with zero velocity/acceleration."""
-        positions = np.asarray(positions, dtype=np.float64)
-        for i in range(self.n_joints):
-            self._state[i] = JerkLimitState(
-                position=float(positions[i]),
-                velocity=0.0,
-                acceleration=0.0,
-            )
+        self._positions = np.asarray(positions, dtype=np.float64).copy()
+        self._velocities = np.zeros(self.n_joints)
+        self._accelerations = np.zeros(self.n_joints)
         self._initialized = True
 
     def limit(self, input_positions: np.ndarray) -> np.ndarray:
@@ -261,54 +249,48 @@ class JerkLimiter:
             self.reset(inp)
             return inp.copy()
 
-        result = np.zeros(self.n_joints)
         dt = self.dt
+        if dt <= 0:
+            return self._positions.copy()
 
-        for i in range(self.n_joints):
-            s = self._state[i]
+        inv_dt = 1.0 / dt
 
-            # Compute implied velocity of input signal
-            input_vel = (inp[i] - s.position) / dt if dt > 0 else 0.0
+        # Vectorized: compute implied velocity of input signal
+        input_vel = (inp - self._positions) * inv_dt
 
-            # Clamp velocity
-            clamped_vel = np.clip(input_vel, -self.max_velocity[i], self.max_velocity[i])
+        # Clamp velocity
+        clamped_vel = np.clip(input_vel, -self.max_velocity, self.max_velocity)
 
-            # Clamp acceleration (rate of velocity change)
-            desired_acc = (clamped_vel - s.velocity) / dt if dt > 0 else 0.0
-            clamped_acc = np.clip(desired_acc, -self.max_acceleration[i], self.max_acceleration[i])
+        # Clamp acceleration (rate of velocity change)
+        desired_acc = (clamped_vel - self._velocities) * inv_dt
+        clamped_acc = np.clip(desired_acc, -self.max_acceleration, self.max_acceleration)
 
-            # Clamp jerk (rate of acceleration change)
-            desired_jerk = (clamped_acc - s.acceleration) / dt if dt > 0 else 0.0
-            clamped_jerk = np.clip(desired_jerk, -self.max_jerk[i], self.max_jerk[i])
+        # Clamp jerk (rate of acceleration change)
+        desired_jerk = (clamped_acc - self._accelerations) * inv_dt
+        clamped_jerk = np.clip(desired_jerk, -self.max_jerk, self.max_jerk)
 
-            # Apply cascaded limits: jerk → acc → vel → pos
-            new_acc = s.acceleration + clamped_jerk * dt
-            new_vel = s.velocity + new_acc * dt
-            new_vel = np.clip(new_vel, -self.max_velocity[i], self.max_velocity[i])
-            new_pos = s.position + new_vel * dt
+        # Apply cascaded limits: jerk → acc → vel → pos
+        self._accelerations += clamped_jerk * dt
+        self._velocities += self._accelerations * dt
+        np.clip(self._velocities, -self.max_velocity, self.max_velocity, out=self._velocities)
+        self._positions += self._velocities * dt
 
-            s.position = new_pos
-            s.velocity = new_vel
-            s.acceleration = new_acc
-
-            result[i] = new_pos
-
-        return result
+        return self._positions.copy()
 
     @property
     def current_positions(self) -> np.ndarray:
         """Current limited positions."""
-        return np.array([s.position for s in self._state])
+        return self._positions.copy()
 
     @property
     def current_velocities(self) -> np.ndarray:
         """Current velocities."""
-        return np.array([s.velocity for s in self._state])
+        return self._velocities.copy()
 
     @property
     def current_accelerations(self) -> np.ndarray:
         """Current accelerations."""
-        return np.array([s.acceleration for s in self._state])
+        return self._accelerations.copy()
 
 
 class SmoothCommandPipeline:
