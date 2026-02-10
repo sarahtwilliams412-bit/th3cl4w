@@ -15,6 +15,8 @@ fi
 PIDFILE="/tmp/th3cl4w-server.pid"
 CAM_PIDFILE="/tmp/th3cl4w-cam.pid"
 LOC_PIDFILE="/tmp/th3cl4w-loc.pid"
+ASCII_PIDFILE="/tmp/th3cl4w-ascii.pid"
+MAP_PIDFILE="/tmp/th3cl4w-map.pid"
 
 kill_server() {
     # Use PID file for reliable kills, fall back to port-based kill
@@ -57,13 +59,35 @@ kill_location() {
     fuser -k 8082/tcp 2>/dev/null || true
 }
 
+kill_ascii() {
+    if [ -f "$ASCII_PIDFILE" ]; then
+        pid=$(cat "$ASCII_PIDFILE")
+        kill -TERM "$pid" 2>/dev/null
+        rm -f "$ASCII_PIDFILE"
+    fi
+    fuser -k 8084/tcp 2>/dev/null || true
+}
+
+kill_map() {
+    if [ -f "$MAP_PIDFILE" ]; then
+        pid=$(cat "$MAP_PIDFILE")
+        kill -TERM "$pid" 2>/dev/null
+        rm -f "$MAP_PIDFILE"
+    fi
+    fuser -k 8083/tcp 2>/dev/null || true
+}
+
 cleanup() {
     echo "[$(date)] Watchdog shutting down..."
     kill_server
     kill_camera
     kill_location
+    kill_map
+    kill_ascii
     kill "$CAM_WATCH_PID" 2>/dev/null
     kill "$LOC_WATCH_PID" 2>/dev/null
+    kill "$MAP_WATCH_PID" 2>/dev/null
+    kill "$ASCII_WATCH_PID" 2>/dev/null
     wait
     exit 0
 }
@@ -97,6 +121,36 @@ CAM_WATCH_PID=$!
     done
 ) &
 LOC_WATCH_PID=$!
+
+# --- Map server watchdog (background) ---
+(
+    # Wait for camera + location servers to start first
+    sleep 8
+    while true; do
+        echo "[$(date)] Starting map server..."
+        python3.12 web/map_server.py 2>&1 | tee -a /tmp/th3cl4w-map.log &
+        echo $! > "$MAP_PIDFILE"
+        wait $!
+        echo "[$(date)] Map server exited ($?), restarting in 3s..."
+        sleep 3
+    done
+) &
+MAP_WATCH_PID=$!
+
+# --- ASCII video server watchdog (background) ---
+(
+    # Wait for camera server to start first
+    sleep 6
+    while true; do
+        echo "[$(date)] Starting ASCII video server..."
+        python3.12 web/ascii_server.py 2>&1 | tee -a /tmp/th3cl4w-ascii.log &
+        echo $! > "$ASCII_PIDFILE"
+        wait $!
+        echo "[$(date)] ASCII video server exited ($?), restarting in 3s..."
+        sleep 3
+    done
+) &
+ASCII_WATCH_PID=$!
 
 # --- Main web server watchdog ---
 FIRST_RUN=true
