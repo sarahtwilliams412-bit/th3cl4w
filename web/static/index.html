@@ -416,6 +416,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <div class="nav-items">
       <div class="nav-item" data-panel="debug" onclick="showPanel(this)"><span class="nav-icon">🔧</span> <span class="nav-label">Debug Pipeline</span></div>
       <div class="nav-item" data-panel="diagnostics" onclick="showPanel(this)"><span class="nav-icon">🩺</span> <span class="nav-label">Diagnostics</span></div>
+      <div class="nav-item" data-panel="pick-analytics" onclick="showPanel(this)"><span class="nav-icon">📈</span> <span class="nav-label">Pick Analytics</span></div>
       <div class="nav-item ext" onclick="window.open('/telemetry','_blank')"><span class="nav-icon">📊</span> <span class="nav-label">Telemetry Page</span></div>
     </div>
   </div>
@@ -1402,6 +1403,45 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 </div>
 
 <!-- ============================================================ -->
+<!-- PANEL: Pick Analytics                                         -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-pick-analytics">
+  <div class="panel-body">
+    <div class="panel-header">📈 Pick Analytics</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="btn primary" onclick="paRefresh()">🔄 Refresh</button>
+    </div>
+
+    <!-- Success Rate Big Number -->
+    <div class="panel-card" style="text-align:center;margin-bottom:12px;">
+      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">Success Rate</div>
+      <div id="paSuccessRate" style="font-size:56px;font-weight:bold;color:var(--success);font-family:var(--mono);line-height:1.1;">—</div>
+      <div id="paSuccessDetail" style="font-size:12px;color:var(--text-dim);margin-top:4px;">No data</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;">
+      <!-- Phase Timing Breakdown -->
+      <div class="panel-card">
+        <h3>Phase Timing</h3>
+        <div id="paPhaseBars" style="font-family:var(--mono);font-size:11px;">No data</div>
+      </div>
+
+      <!-- Sim vs Physical -->
+      <div class="panel-card">
+        <h3>Sim vs Physical</h3>
+        <div id="paModeCompare" style="font-family:var(--mono);font-size:11px;">No data</div>
+      </div>
+
+      <!-- Per-Target -->
+      <div class="panel-card">
+        <h3>By Target</h3>
+        <div id="paTargetStats" style="font-family:var(--mono);font-size:11px;">No data</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
 <!-- PANEL: Debug Pipeline                                         -->
 <!-- ============================================================ -->
 <div class="panel" id="panel-debug">
@@ -2022,6 +2062,7 @@ function showPanel(navItem) {
     if (panelId === 'simulator' && typeof sim_activate === 'function') sim_activate();
     if (panelId === 'bifocal' && typeof wsCalibStartStreams === 'function') wsCalibStartStreams();
     if (PICK_PANELS.includes(panelId) && typeof activateMiniSim === 'function') activateMiniSim(panelId);
+    if (panelId === 'auto-pick') { loadPickHistory(); checkSimMode(); if (!_simModeInterval) _simModeInterval = setInterval(checkSimMode, 5000); }
     if (panelId === 'cameras') refreshCameraPanel();
     if (panelId === 'safety') safetyLoad();
     if (panelId === 'debug' && debugOn) pollDebug();
@@ -2972,21 +3013,98 @@ async function apPollStatus() {
     else { loadPickHistory(); }
   } catch(e) { console.error('apPollStatus error', e); }
 }
+let _pickEpisodes = [];
 async function loadPickHistory() {
   try {
     const data = await apiCall('/api/autopick/history?limit=20');
     if (!data || !data.episodes) return;
-    const el = document.getElementById('autopickHistory');
-    if (!el) return;
-    if (data.episodes.length === 0) { el.textContent = 'No episodes yet.'; return; }
-    el.innerHTML = data.episodes.reverse().map(ep => {
-      const dur = ep.end_time && ep.start_time ? (ep.end_time - ep.start_time).toFixed(1) + 's' : '?';
-      const icon = ep.success ? '✅' : '❌';
-      const mode = ep.mode === 'simulation' ? '🔮' : '🦾';
-      return `<div style="padding:2px 0;border-bottom:1px solid var(--card-border);">${icon} ${mode} <b>${ep.target||'?'}</b> — ${dur} — ${ep.phases?.length||0} phases${ep.failure_reason ? ' — '+ep.failure_reason : ''}</div>`;
+    _pickEpisodes = data.episodes.reverse();
+    const tbody = document.getElementById('autopickHistoryBody');
+    if (!tbody) return;
+    if (_pickEpisodes.length === 0) { tbody.innerHTML = '<tr><td colspan="6" style="padding:8px;color:var(--text-dim);">No episodes yet.</td></tr>'; return; }
+    tbody.innerHTML = _pickEpisodes.map((ep, i) => {
+      const dur = ep.end_time && ep.start_time ? (ep.end_time - ep.start_time).toFixed(1) + 's' : '—';
+      const ts = ep.start_time ? new Date(ep.start_time * 1000).toLocaleTimeString() : '—';
+      const hasJoints = ep.joint_trajectory && ep.joint_trajectory.length > 0;
+      const replayBtn = hasJoints ? `<button class="btn" onclick="event.stopPropagation();replayEpisode(${i})" style="font-size:9px;padding:1px 6px;" title="Replay in mini-sim">▶ Replay</button>` : '';
+      return `<tr onclick="showEpisodeDetail(${i})" style="cursor:pointer;border-bottom:1px solid var(--card-border);" onmouseenter="this.style.background='rgba(255,255,255,0.03)'" onmouseleave="this.style.background=''">
+        <td style="padding:4px 6px;">${ts}</td>
+        <td style="padding:4px 6px;font-weight:bold;">${ep.target||'?'}</td>
+        <td style="padding:4px 6px;">${ep.mode==='simulation'?'🔮 Sim':'🦾 Phys'}</td>
+        <td style="padding:4px 6px;">${ep.success?'✅':'❌'}${ep.failure_reason?' <span style="color:var(--danger);font-size:10px;">'+ep.failure_reason+'</span>':''}</td>
+        <td style="padding:4px 6px;">${dur}</td>
+        <td style="padding:4px 6px;">${replayBtn}</td>
+      </tr>`;
     }).join('');
   } catch(e) { console.error('loadPickHistory', e); }
 }
+
+function showEpisodeDetail(idx) {
+  const ep = _pickEpisodes[idx];
+  if (!ep) return;
+  const detail = document.getElementById('autopickEpisodeDetail');
+  detail.style.display = '';
+  // Phase breakdown
+  const pb = document.getElementById('autopickPhaseBreakdown');
+  if (ep.phases && ep.phases.length) {
+    pb.innerHTML = '<b>Phases:</b><table style="width:100%;margin-top:4px;font-size:10px;border-collapse:collapse;">' +
+      '<tr style="border-bottom:1px solid var(--card-border);"><th style="text-align:left;padding:2px 4px;">Phase</th><th style="padding:2px 4px;">Duration</th><th style="padding:2px 4px;">Status</th></tr>' +
+      ep.phases.map(p => {
+        const pdur = p.duration_s != null ? p.duration_s.toFixed(2) + 's' : '—';
+        const pstat = p.success === false ? '❌' : p.success === true ? '✅' : '—';
+        return `<tr style="border-bottom:1px solid var(--card-border);"><td style="padding:2px 4px;">${p.name||p.phase||'?'}</td><td style="padding:2px 4px;text-align:center;">${pdur}</td><td style="padding:2px 4px;text-align:center;">${pstat}</td></tr>`;
+      }).join('') + '</table>';
+  } else { pb.innerHTML = '<span style="color:var(--text-dim);">No phase data.</span>'; }
+  // Joint comparison
+  const jc = document.getElementById('autopickJointComparison');
+  if (ep.planned_joints || ep.actual_joints) {
+    let html = '<b>Joint Comparison:</b><br>';
+    if (ep.planned_joints) html += 'Planned: [' + ep.planned_joints.map(j=>j.toFixed(1)).join(', ') + ']<br>';
+    if (ep.actual_joints) html += 'Actual:&nbsp; [' + ep.actual_joints.map(j=>j.toFixed(1)).join(', ') + ']';
+    jc.innerHTML = html;
+  } else { jc.innerHTML = ''; }
+}
+
+let _replayTimer = null;
+function replayEpisode(idx) {
+  const ep = _pickEpisodes[idx];
+  if (!ep || !ep.joint_trajectory || !ep.joint_trajectory.length) return;
+  const ms = getMiniSim('auto-pick');
+  if (!ms) return;
+  ms.start();
+  // Show planned as ghost if available
+  if (ep.planned_joints) ms.setGhostJoints(ep.planned_joints);
+  clearInterval(_replayTimer);
+  let frame = 0;
+  const traj = ep.joint_trajectory;
+  _replayTimer = setInterval(() => {
+    if (frame >= traj.length) { clearInterval(_replayTimer); _replayTimer = null; return; }
+    const joints = traj[frame].joints || traj[frame];
+    if (Array.isArray(joints) && joints.length >= 5) ms.setJoints(joints);
+    frame++;
+  }, 50); // ~2x speed at 20fps original
+}
+
+// --- Sim mode auto-detect ---
+let _simModeInterval = null;
+async function checkSimMode() {
+  try {
+    const data = await apiCall('/api/sim-mode');
+    if (!data) return;
+    const isSim = data.sim === true || data.mode === 'simulation' || data.simulated === true;
+    const badge = document.getElementById('autopickSimBadge');
+    if (badge) badge.style.display = isSim ? '' : 'none';
+    const modeSelect = document.getElementById('autopickMode');
+    if (modeSelect && !modeSelect._userChanged) {
+      modeSelect.value = isSim ? 'simulation' : 'physical';
+    }
+  } catch(e) {}
+}
+document.addEventListener('DOMContentLoaded', function() {
+  var modeSelect = document.getElementById('autopickMode');
+  if (modeSelect) modeSelect.addEventListener('change', function() { modeSelect._userChanged = true; });
+});
+
 
 // --- Workspace Calibration ---
 let wsCalibStreaming = false;
