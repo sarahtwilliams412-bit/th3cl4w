@@ -4411,6 +4411,231 @@ async def vla_demos():
 
 
 # ---------------------------------------------------------------------------
+# 3D Workspace Scanning endpoints
+# ---------------------------------------------------------------------------
+
+try:
+    from src.vision.scan_manager import ScanManager as _ScanManager
+
+    _HAS_SCAN = True
+except ImportError:
+    _HAS_SCAN = False
+
+_scan_manager: Optional[Any] = None
+
+
+def _get_scan_manager():
+    """Lazy-init scan manager with arm control functions."""
+    global _scan_manager
+    if _scan_manager is not None:
+        return _scan_manager
+    if not _HAS_SCAN:
+        return None
+
+    async def move_arm(angles: list) -> bool:
+        if not (smoother and smoother._arm_enabled):
+            return False
+        if smoother and smoother.running:
+            smoother.set_all_joints_target(angles)
+        elif arm:
+            arm.set_all_joints(angles)
+        else:
+            return False
+        await asyncio.sleep(1.5)  # wait for move
+        return True
+
+    _scan_manager = _ScanManager(
+        arm_command_fn=move_arm,
+        get_state_fn=get_arm_state,
+    )
+    return _scan_manager
+
+
+@app.post("/api/scan/start")
+async def scan_start():
+    """Begin a workspace scan (moves arm through viewpoints)."""
+    mgr = _get_scan_manager()
+    if mgr is None:
+        return JSONResponse(
+            {"ok": False, "error": "Scan module not available"},
+            status_code=501,
+        )
+    result = await mgr.start_scan()
+    status = 200 if result.get("ok") else 409
+    return JSONResponse(result, status_code=status)
+
+
+@app.get("/api/scan/status")
+async def scan_status():
+    """Check scan progress."""
+    mgr = _get_scan_manager()
+    if mgr is None:
+        return {"running": False, "phase": "unavailable"}
+    return mgr.status.to_dict()
+
+
+@app.post("/api/scan/stop")
+async def scan_stop():
+    """Abort current scan."""
+    mgr = _get_scan_manager()
+    if mgr is None:
+        return JSONResponse(
+            {"ok": False, "error": "Scan module not available"},
+            status_code=501,
+        )
+    result = await mgr.stop_scan()
+    return result
+
+
+@app.get("/api/scan/result")
+async def scan_result(scan_id: Optional[str] = None):
+    """Download the latest (or specific) PLY point cloud."""
+    if not _HAS_SCAN:
+        return JSONResponse(
+            {"ok": False, "error": "Scan module not available"},
+            status_code=501,
+        )
+    from src.vision.scan_manager import ScanManager as _SM
+
+    ply_path = _SM.get_scan_ply(scan_id)
+    if ply_path is None:
+        return JSONResponse(
+            {"ok": False, "error": "No scan result found"},
+            status_code=404,
+        )
+    from starlette.responses import FileResponse
+
+    return FileResponse(
+        ply_path,
+        media_type="application/octet-stream",
+        filename=Path(ply_path).name,
+    )
+
+
+@app.get("/api/scan/list")
+async def scan_list():
+    """List previous scans."""
+    if not _HAS_SCAN:
+        return {"scans": []}
+    from src.vision.scan_manager import ScanManager as _SM
+
+    return {"scans": _SM.list_scans()}
+
+
+# ---------------------------------------------------------------------------
+# Multi-View Fusion Pick endpoints
+# ---------------------------------------------------------------------------
+
+try:
+    from src.vision.side_height_estimator import SideHeightEstimator
+    from src.vision.arm_camera_aligner import ArmCameraAligner
+    from src.control.multiview_controller import MultiviewController
+
+    _HAS_MULTIVIEW = True
+except ImportError:
+    _HAS_MULTIVIEW = False
+
+_multiview_controller: Optional[Any] = None
+
+
+def _get_multiview():
+    global _multiview_controller
+    if _multiview_controller is not None:
+        return _multiview_controller
+    if not _HAS_MULTIVIEW:
+        return None
+    _multiview_controller = MultiviewController()
+    return _multiview_controller
+
+
+class MultiviewPickRequest(BaseModel):
+    target: str = "redbull"
+    target_x_mm: Optional[float] = None
+    target_y_mm: Optional[float] = None
+
+
+class SideCalibrationRequest(BaseModel):
+    points: list[dict] = Field(default_factory=list)  # [{"pixel_y": ..., "z_mm": ...}]
+    image_height: int = 1080
+
+
+@app.post("/api/multiview/pick/start")
+async def multiview_pick_start(req: MultiviewPickRequest = MultiviewPickRequest()):
+    """Start full multi-view pick sequence."""
+    ctrl = _get_multiview()
+    if ctrl is None:
+        return JSONResponse(
+            {"ok": False, "error": "Multi-view module not available"},
+            status_code=501,
+        )
+    if ctrl._running:
+        return JSONResponse(
+            {"ok": False, "error": "Pick already in progress"},
+            status_code=409,
+        )
+    target_xy = None
+    if req.target_x_mm is not None and req.target_y_mm is not None:
+        target_xy = (req.target_x_mm, req.target_y_mm)
+    ctrl.start_pick(target=req.target, target_xy_mm=target_xy)
+    return {"ok": True, "action": "MULTIVIEW_PICK_START", "target": req.target}
+
+
+@app.get("/api/multiview/pick/status")
+async def multiview_pick_status():
+    """Get current multi-view pick status."""
+    ctrl = _get_multiview()
+    if ctrl is None:
+        return {"available": False, "error": "Multi-view module not available"}
+    status = ctrl.get_status()
+    status["available"] = True
+    return status
+
+
+@app.post("/api/multiview/pick/stop")
+async def multiview_pick_stop():
+    """Abort multi-view pick sequence."""
+    ctrl = _get_multiview()
+    if ctrl is None:
+        return JSONResponse(
+            {"ok": False, "error": "Multi-view module not available"},
+            status_code=501,
+        )
+    ctrl.abort()
+    return {"ok": True, "action": "MULTIVIEW_PICK_STOP"}
+
+
+@app.post("/api/calibration/side")
+async def calibrate_side_camera(req: SideCalibrationRequest):
+    """Calibrate the side camera with reference points."""
+    ctrl = _get_multiview()
+    if ctrl is None:
+        return JSONResponse(
+            {"ok": False, "error": "Multi-view module not available"},
+            status_code=501,
+        )
+    points = [(p["pixel_y"], p["z_mm"]) for p in req.points]
+    if len(points) < 2:
+        return JSONResponse(
+            {"ok": False, "error": "Need at least 2 calibration points"},
+            status_code=400,
+        )
+    ctrl.side.calibrate(points, image_height=req.image_height)
+    return {"ok": True, "calibration": ctrl.side.get_calibration_info()}
+
+
+@app.get("/api/calibration/side")
+async def get_side_calibration():
+    """Get current side camera calibration."""
+    ctrl = _get_multiview()
+    if ctrl is None:
+        return JSONResponse(
+            {"ok": False, "error": "Multi-view module not available"},
+            status_code=501,
+        )
+    return ctrl.side.get_calibration_info()
+
+
+# ---------------------------------------------------------------------------
 # Static files — versioned UIs all pointing to the same server
 # /v1/ → V1 stable base, /v2/ → V2 Cartesian controls, / → V1 (default)
 # ---------------------------------------------------------------------------
