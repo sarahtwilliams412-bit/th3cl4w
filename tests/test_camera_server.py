@@ -136,6 +136,51 @@ class TestCameraThread:
         # Should have released and tried to reopen
         assert mock_cap.release.called
 
+    def test_get_raw_frame_returns_none_before_capture(self, mock_camera):
+        """Before any capture, get_raw_frame returns None."""
+        assert mock_camera.get_raw_frame() is None
+
+    def test_get_raw_frame_returns_cached_bgr(self, mock_camera):
+        """get_raw_frame should return the cached BGR array without JPEG decode."""
+        fake = _make_fake_frame()
+        # Simulate what the capture loop does
+        import cv2
+
+        _, buf = cv2.imencode(".jpg", fake, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        mock_camera._frame = buf.tobytes()
+        mock_camera._raw_frame = fake
+
+        result = mock_camera.get_raw_frame()
+        assert result is not None
+        assert result.shape == fake.shape
+        assert result is not fake  # should be a copy
+
+    @patch("web.camera_server.cv2.VideoCapture")
+    def test_capture_loop_caches_raw_frame(self, mock_vc, mock_camera):
+        """Capture loop should store the raw BGR frame alongside the JPEG."""
+        fake = _make_fake_frame()
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.read.side_effect = [(True, fake)] * 5 + [KeyboardInterrupt]
+        mock_vc.return_value = mock_cap
+
+        mock_camera._running = True
+
+        def stop_after():
+            time.sleep(0.3)
+            mock_camera._running = False
+
+        threading.Thread(target=stop_after, daemon=True).start()
+
+        try:
+            mock_camera._capture_loop()
+        except KeyboardInterrupt:
+            pass
+
+        # Raw frame should have been cached
+        assert mock_camera._raw_frame is not None
+        assert mock_camera._raw_frame.shape == fake.shape
+
 
 # ---------------------------------------------------------------------------
 # Integration tests — HTTP endpoints
@@ -211,3 +256,25 @@ class TestHTTPEndpoints:
         resp = conn.getresponse()
         assert resp.status == 404
         conn.close()
+
+    def test_server_uses_bounded_thread_pool(self):
+        """ThreadedHTTPServer should use a bounded ThreadPoolExecutor."""
+        cameras.clear()
+        server = ThreadedHTTPServer(("127.0.0.1", 0), CameraHandler)
+        assert hasattr(server, "_pool")
+        assert server._pool._max_workers == ThreadedHTTPServer.MAX_WORKERS
+        server.server_close()
+        cameras.clear()
+
+    def test_concurrent_requests_within_pool_limit(self, running_server):
+        """Multiple concurrent requests should be handled by the thread pool."""
+        connections = []
+        for _ in range(4):
+            conn = HTTPConnection("127.0.0.1", running_server, timeout=5)
+            conn.request("GET", "/status")
+            connections.append(conn)
+
+        for conn in connections:
+            resp = conn.getresponse()
+            assert resp.status == 200
+            conn.close()

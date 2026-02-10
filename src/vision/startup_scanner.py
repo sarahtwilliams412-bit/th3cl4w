@@ -139,12 +139,14 @@ class StartupScanner:
         self,
         cam0: Optional[FrameProvider] = None,
         cam1: Optional[FrameProvider] = None,
+        cam2: Optional[FrameProvider] = None,
         estimator: Optional[ObjectDimensionEstimator] = None,
         world_model: Optional[WorldModel] = None,
         scene_analyzer: Optional[SceneAnalyzer] = None,
     ):
         self._cam0 = cam0
         self._cam1 = cam1
+        self._cam2 = cam2
         self._estimator = estimator or ObjectDimensionEstimator()
         self._world_model = world_model or WorldModel()
         self._scene_analyzer = scene_analyzer or SceneAnalyzer()
@@ -165,12 +167,15 @@ class StartupScanner:
         self,
         cam0: Optional[FrameProvider] = None,
         cam1: Optional[FrameProvider] = None,
+        cam2: Optional[FrameProvider] = None,
     ):
         """Set or update camera references (can be called before start)."""
         if cam0 is not None:
             self._cam0 = cam0
         if cam1 is not None:
             self._cam1 = cam1
+        if cam2 is not None:
+            self._cam2 = cam2
 
     def on_model_ready(self, callback: Callable[[WorldModelSnapshot], None]):
         """Register a callback for when the initial world model is ready."""
@@ -290,12 +295,14 @@ class StartupScanner:
         while self._running and time.monotonic() < deadline:
             cam0_ok = self._cam0 is not None and self._cam0.connected
             cam1_ok = self._cam1 is not None and self._cam1.connected
+            cam2_ok = self._cam2 is not None and self._cam2.connected
 
-            if cam0_ok or cam1_ok:
+            if cam0_ok or cam1_ok or cam2_ok:
                 logger.info(
-                    "Camera(s) ready: cam0=%s, cam1=%s",
+                    "Camera(s) ready: cam0=%s, cam1=%s, cam2=%s",
                     "connected" if cam0_ok else "offline",
                     "connected" if cam1_ok else "offline",
+                    "connected" if cam2_ok else "offline",
                 )
                 # Give cameras a moment to stabilize (auto-exposure, focus)
                 time.sleep(0.3)
@@ -305,25 +312,28 @@ class StartupScanner:
 
         return False
 
-    def _capture_frame_pair(self) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    def _capture_frame_pair(
+        self,
+    ) -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
         """Capture one frame from each available camera."""
         f0 = self._cam0.get_raw_frame() if self._cam0 else None
         f1 = self._cam1.get_raw_frame() if self._cam1 else None
-        return f0, f1
+        f2 = self._cam2.get_raw_frame() if self._cam2 else None
+        return f0, f1, f2
 
     def _initial_burst(self):
-        """Capture a rapid burst of frame pairs and analyze each one."""
+        """Capture a rapid burst of frames and analyze each set."""
         for i in range(self.INITIAL_BURST_COUNT):
             if not self._running:
                 break
 
-            f0, f1 = self._capture_frame_pair()
-            if f0 is None and f1 is None:
+            f0, f1, f2 = self._capture_frame_pair()
+            if f0 is None and f1 is None and f2 is None:
                 logger.warning("Burst frame %d: no frames available", i)
                 time.sleep(self.BURST_FRAME_DELAY_S)
                 continue
 
-            result = self._analyze_frame_pair(f0, f1, i)
+            result = self._analyze_frame_pair(f0, f1, i, overhead_frame=f2)
             with self._lock:
                 self._scan_results.append(result)
                 self._scan_count += 1
@@ -343,19 +353,22 @@ class StartupScanner:
         cam0_frame: Optional[np.ndarray],
         cam1_frame: Optional[np.ndarray],
         scan_index: int,
+        overhead_frame: Optional[np.ndarray] = None,
     ) -> ScanResult:
-        """Run full analysis on a frame pair: detect, estimate dimensions, grade."""
+        """Run full analysis on a frame set: detect, estimate dimensions, grade."""
         t0 = time.monotonic()
 
         # Dimension estimation (includes detection + grading + re-assessment)
         self._set_phase(ScanPhase.DIMENSION_ANALYSIS)
         estimates = self._estimator.estimate_from_frames(cam0_frame, cam1_frame)
 
-        # Scene analysis for spatial relationships
+        # Scene analysis for spatial relationships — prefer overhead camera
+        # for X/Y positioning as it has the best top-down perspective
         scene = None
-        if cam1_frame is not None:
+        primary = overhead_frame if overhead_frame is not None else cam1_frame
+        if primary is not None:
             scene = self._scene_analyzer.analyze(
-                cam1_frame,
+                primary,
                 cam0_frame=cam0_frame,
                 timestamp=time.monotonic(),
             )
@@ -419,11 +432,11 @@ class StartupScanner:
             if not self._running:
                 break
 
-            f0, f1 = self._capture_frame_pair()
-            if f0 is None and f1 is None:
+            f0, f1, f2 = self._capture_frame_pair()
+            if f0 is None and f1 is None and f2 is None:
                 continue
 
-            result = self._analyze_frame_pair(f0, f1, self._scan_count)
+            result = self._analyze_frame_pair(f0, f1, self._scan_count, overhead_frame=f2)
             with self._lock:
                 self._scan_results.append(result)
                 self._scan_count += 1
