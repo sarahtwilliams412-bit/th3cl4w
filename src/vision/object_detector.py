@@ -44,8 +44,8 @@ _MIN_CONTOUR_AREA = 800
 _MAX_CONTOUR_AREA = 200000
 
 # Estimated workspace table dimensions in overhead camera FOV
-_TABLE_WIDTH_MM = 800.0   # X extent
-_TABLE_DEPTH_MM = 800.0   # Y extent
+_TABLE_WIDTH_MM = 800.0  # X extent
+_TABLE_DEPTH_MM = 800.0  # Y extent
 
 # Default object height when front camera not available (mm)
 _DEFAULT_OBJECT_HEIGHT_MM = 50.0
@@ -216,7 +216,7 @@ class ObjectDetector:
         ry = int(self._roi_y * h)
         rw = int(self._roi_w * w)
         rh = int(self._roi_h * h)
-        roi = cam1_frame[ry:ry+rh, rx:rx+rw]
+        roi = cam1_frame[ry : ry + rh, rx : rx + rw]
 
         # Auto-estimate scale if not calibrated
         if self._scale is None:
@@ -238,14 +238,12 @@ class ObjectDetector:
         # Compute workspace position and reachability
         for obj in merged:
             obj.distance_from_base_mm = math.sqrt(obj.x_mm**2 + obj.y_mm**2)
-            obj.within_reach = (
-                self._min_reach <= obj.distance_from_base_mm <= self._max_reach
-            )
+            obj.within_reach = self._min_reach <= obj.distance_from_base_mm <= self._max_reach
             obj.timestamp = time.monotonic()
 
         # Sort by distance (closest first) and limit count
         merged.sort(key=lambda o: o.distance_from_base_mm)
-        merged = merged[:self._max_objects]
+        merged = merged[: self._max_objects]
 
         with self._lock:
             self._objects = merged
@@ -303,8 +301,8 @@ class ObjectDetector:
                 x, y, bw, bh = cv2.boundingRect(cnt)
 
                 # Get dominant color from the object region
-                obj_region = roi[y:y+bh, x:x+bw]
-                obj_mask = mask[y:y+bh, x:x+bw]
+                obj_region = roi[y : y + bh, x : x + bw]
+                obj_mask = mask[y : y + bh, x : x + bw]
                 color_bgr = self._get_dominant_color(obj_region, obj_mask)
 
                 # Map pixel position to workspace mm
@@ -355,8 +353,8 @@ class ObjectDetector:
                 continue
 
             x, y, bw, bh = cv2.boundingRect(cnt)
-            obj_region = roi[y:y+bh, x:x+bw]
-            obj_mask = fg_mask[y:y+bh, x:x+bw]
+            obj_region = roi[y : y + bh, x : x + bw]
+            obj_mask = fg_mask[y : y + bh, x : x + bw]
             color_bgr = self._get_dominant_color(obj_region, obj_mask)
 
             cx_px = x + bw / 2.0
@@ -404,9 +402,7 @@ class ObjectDetector:
 
         return merged
 
-    def _estimate_heights(
-        self, objects: list[DetectedObject], cam0_frame: np.ndarray
-    ):
+    def _estimate_heights(self, objects: list[DetectedObject], cam0_frame: np.ndarray):
         """Estimate object heights from the front camera (cam0).
 
         Uses vertical position in the front camera to estimate height above table.
@@ -505,17 +501,11 @@ class ObjectDetector:
             # Draw center cross
             cx = bx + bw // 2
             cy = by + bh // 2
-            cv2.drawMarker(
-                annotated, (cx, cy), box_color,
-                cv2.MARKER_CROSS, 12, 1
-            )
+            cv2.drawMarker(annotated, (cx, cy), box_color, cv2.MARKER_CROSS, 12, 1)
 
             # Label
             text = f"{label_prefix} {obj.label} d={obj.distance_from_base_mm:.0f}mm"
-            cv2.putText(
-                annotated, text, (bx, by - 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 1
-            )
+            cv2.putText(annotated, text, (bx, by - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 1)
 
         return annotated
 
