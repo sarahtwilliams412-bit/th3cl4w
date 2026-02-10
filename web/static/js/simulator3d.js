@@ -65,12 +65,17 @@ class D1ArmSimulator {
     this.onJointsChanged = null;  // called when sim joints change
     this.onExecute = null;        // called when user clicks Execute
 
+    // Camera3D objects
+    this.cameras3d = {};
+    this.showCameras = true;
+
     this._initScene();
     this._initArm();
     this._initEnvironment();
     this._initWorkspaceEnvelope();
     this._initTrail();
     this._initLighting();
+    this._initCameras();
 
     this._animId = null;
     this._clock = new THREE.Clock();
@@ -243,6 +248,67 @@ class D1ArmSimulator {
     const rim = new THREE.PointLight(0xe94560, 0.3, 2);
     rim.position.set(-0.3, 0.8, -0.5);
     this.scene.add(rim);
+  }
+
+  // ----------------------------------------------------------
+  //  Camera 3D objects
+  // ----------------------------------------------------------
+
+  _initCameras() {
+    if (typeof Camera3D === 'undefined') return;
+    fetch('/api/cameras/orientation')
+      .then(r => r.json())
+      .then(config => {
+        this._createCameras(config);
+      })
+      .catch(e => console.warn('Failed to load camera orientations:', e));
+  }
+
+  _createCameras(config) {
+    // Remove existing
+    for (const id in this.cameras3d) {
+      this.scene.remove(this.cameras3d[id].group);
+      this.cameras3d[id].dispose();
+    }
+    this.cameras3d = {};
+
+    for (const [id, cfg] of Object.entries(config)) {
+      const cam = new Camera3D({
+        id: parseInt(id),
+        label: cfg.label || `Cam ${id}`,
+        position: cfg.position || { x: 0, y: 0, z: 0 },
+        rotation: cfg.rotation || { rx: 0, ry: 0, rz: 0 },
+        fov: cfg.fov || 60,
+        perspective: cfg.perspective || 'custom',
+      });
+      cam.group.visible = this.showCameras;
+      this.scene.add(cam.group);
+      this.cameras3d[id] = cam;
+    }
+  }
+
+  /**
+   * Update camera configs (called from UI).
+   */
+  updateCameras(config) {
+    this._createCameras(config);
+  }
+
+  /**
+   * Update a single camera config in real-time.
+   */
+  updateSingleCamera(id, cfg) {
+    const cam = this.cameras3d[String(id)];
+    if (cam) {
+      cam.updateConfig(cfg);
+    }
+  }
+
+  toggleCameras(show) {
+    this.showCameras = show;
+    for (const id in this.cameras3d) {
+      this.cameras3d[id].group.visible = show;
+    }
   }
 
   // ----------------------------------------------------------
@@ -463,6 +529,16 @@ class D1ArmSimulator {
     this.arm.animate(dt);
     if (this.ghost.group.visible) {
       this.ghost.animate(dt);
+    }
+
+    // Update arm-mounted cameras to follow EE
+    if (this.arm.fkResult && this.arm.fkResult.eeTransform) {
+      for (const id in this.cameras3d) {
+        const cam = this.cameras3d[id];
+        if (cam.isArmMounted) {
+          cam.attachToEE(this.arm.fkResult.eeTransform);
+        }
+      }
     }
 
     this.controls.update();
