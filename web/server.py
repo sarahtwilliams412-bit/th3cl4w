@@ -4669,6 +4669,108 @@ if tools_dir.is_dir():
 app.mount("/ui", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 
+# ── Intrinsic Calibration (Auto-Calibrator) ────────────────────────────────
+
+_auto_calibrator = None
+_auto_calib_task: Optional[asyncio.Task] = None
+
+
+def _get_auto_calibrator(**kwargs):
+    global _auto_calibrator
+    if _auto_calibrator is None:
+        from src.calibration.auto_calibrator import AutoCalibrator
+        _auto_calibrator = AutoCalibrator(**kwargs)
+    else:
+        # Update params if provided
+        for k, v in kwargs.items():
+            if hasattr(_auto_calibrator, k):
+                setattr(_auto_calibrator, k, v)
+    return _auto_calibrator
+
+
+@app.post("/api/calibration/intrinsics/start")
+async def intrinsics_start(req: dict = {}):
+    """Start intrinsic calibration for a single camera."""
+    global _auto_calib_task
+    cam_id = req.get("camera_id", 0)
+    board_w = req.get("board_width", 8)
+    board_h = req.get("board_height", 5)
+    square_mm = req.get("square_mm", 19.0)
+    num_frames = req.get("num_frames", 10)
+
+    cal = _get_auto_calibrator(
+        board_size=(board_w, board_h),
+        square_size_mm=square_mm,
+        num_frames=num_frames,
+    )
+
+    if _auto_calib_task and not _auto_calib_task.done():
+        return JSONResponse({"error": "Calibration already in progress"}, status_code=409)
+
+    async def _run():
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, cal.calibrate_camera, cam_id)
+
+    _auto_calib_task = asyncio.create_task(_run())
+    return {"status": "started", "camera_id": cam_id}
+
+
+@app.get("/api/calibration/intrinsics/status")
+async def intrinsics_status():
+    """Get current intrinsic calibration progress."""
+    cal = _get_auto_calibrator()
+    return cal.progress.to_dict()
+
+
+@app.get("/api/calibration/intrinsics/result/{cam_id}")
+async def intrinsics_result(cam_id: int):
+    """Get latest calibration result for a camera."""
+    from src.calibration.auto_calibrator import CALIBRATION_RESULTS_DIR
+    cam_file = CALIBRATION_RESULTS_DIR / f"cam{cam_id}_checkerboard_calibration.json"
+    if not cam_file.exists():
+        return JSONResponse({"error": f"No calibration for cam{cam_id}"}, status_code=404)
+    return json.loads(cam_file.read_text())
+
+
+@app.post("/api/calibration/intrinsics/all")
+async def intrinsics_all(req: dict = {}):
+    """Calibrate all cameras sequentially."""
+    global _auto_calib_task
+    board_w = req.get("board_width", 8)
+    board_h = req.get("board_height", 5)
+    square_mm = req.get("square_mm", 19.0)
+    num_frames = req.get("num_frames", 10)
+    camera_ids = req.get("camera_ids", [0, 1, 2])
+
+    cal = _get_auto_calibrator(
+        board_size=(board_w, board_h),
+        square_size_mm=square_mm,
+        num_frames=num_frames,
+    )
+
+    if _auto_calib_task and not _auto_calib_task.done():
+        return JSONResponse({"error": "Calibration already in progress"}, status_code=409)
+
+    async def _run():
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, cal.calibrate_all, camera_ids)
+
+    _auto_calib_task = asyncio.create_task(_run())
+    return {"status": "started", "camera_ids": camera_ids}
+
+
+@app.post("/api/calibration/intrinsics/validate/{cam_id}")
+async def intrinsics_validate(cam_id: int):
+    """Validate existing calibration with a fresh frame."""
+    cal = _get_auto_calibrator()
+    import asyncio
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, cal.validate, cam_id)
+    return result
+
+
 @app.get("/")
 async def serve_root():
     """Redirect root to /ui/."""

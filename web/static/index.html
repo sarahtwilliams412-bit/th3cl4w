@@ -787,6 +787,42 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <button class="btn primary" id="btnCalibrateViz" title="Move arm through ~20 poses to calibrate visualization">📐 CALIBRATE VIZ</button>
         <div class="result-box" id="vizCalibResult" style="margin-top:8px;display:none;"></div>
       </div>
+      <div class="panel-card" style="grid-column: 1 / -1;">
+        <h3>📷 Intrinsic Calibration (Checkerboard)</h3>
+        <div class="form-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+          <div>
+            <label>Camera</label>
+            <select id="icalCamId" style="width:100px;">
+              <option value="0">cam0 — overhead</option>
+              <option value="1">cam1 — arm</option>
+              <option value="2">cam2 — side</option>
+            </select>
+          </div>
+          <div>
+            <label>Board W×H</label>
+            <div style="display:flex;gap:4px;">
+              <input type="number" id="icalBoardW" value="8" min="3" max="20" style="width:50px;">
+              <span style="line-height:28px;">×</span>
+              <input type="number" id="icalBoardH" value="5" min="3" max="20" style="width:50px;">
+            </div>
+          </div>
+          <div>
+            <label>Square (mm)</label>
+            <input type="number" id="icalSquareMm" value="19" min="1" max="100" step="0.1" style="width:60px;">
+          </div>
+          <div>
+            <label>Frames</label>
+            <input type="number" id="icalNumFrames" value="10" min="3" max="50" style="width:60px;">
+          </div>
+          <button class="btn primary" onclick="icalStart()">▶ CALIBRATE</button>
+          <button class="btn primary" onclick="icalStartAll()">▶ ALL CAMS</button>
+          <button class="btn" onclick="icalValidate()">✓ VALIDATE</button>
+        </div>
+        <div style="margin-top:8px;">
+          <div class="status-indicator stopped" id="icalStatus">IDLE</div>
+        </div>
+        <div class="result-box" id="icalResult" style="margin-top:8px;display:none;"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -1900,6 +1936,76 @@ async function calibListResults() { showResult('calibResultsBox', await apiCall(
 async function calibViewReport() { showResult('calibResultsBox', await apiCall('/api/calibration/report/latest/json')); }
 async function calibViewFrames() { const sid = document.getElementById('calibFrameSession').value; showResult('calibResultsBox', await apiCall(`/api/calibration/frames/${sid}`)); }
 async function calibViewExtrinsics() { showResult('calibExtrinsicsResult', await apiCall('/api/calibration/extrinsics')); }
+
+// --- Intrinsic Calibration ---
+let _icalPollTimer = null;
+function _icalParams() {
+  return {
+    camera_id: parseInt(document.getElementById('icalCamId').value),
+    board_width: parseInt(document.getElementById('icalBoardW').value),
+    board_height: parseInt(document.getElementById('icalBoardH').value),
+    square_mm: parseFloat(document.getElementById('icalSquareMm').value),
+    num_frames: parseInt(document.getElementById('icalNumFrames').value),
+  };
+}
+function _icalPoll() {
+  if (_icalPollTimer) clearInterval(_icalPollTimer);
+  _icalPollTimer = setInterval(async () => {
+    const st = await apiCall('/api/calibration/intrinsics/status');
+    const el = document.getElementById('icalStatus');
+    const rb = document.getElementById('icalResult');
+    el.textContent = `${st.state.toUpperCase()} — cam${st.camera_id} | frames: ${st.frames_captured}/${st.frames_total} | corners: ${st.corners_found}`;
+    el.className = 'status-indicator ' + (st.state === 'done' ? 'active' : st.state === 'error' ? 'danger' : 'running');
+    if (st.state === 'done' || st.state === 'error') {
+      clearInterval(_icalPollTimer);
+      _icalPollTimer = null;
+      if (st.state === 'done' && st.result) {
+        const r = st.result;
+        const cm = r.camera_matrix;
+        const fov = r.fov_deg;
+        const rmsClass = r.rms_reprojection_px < 0.5 ? '🟢' : r.rms_reprojection_px < 1.0 ? '🟡' : '🔴';
+        const fxfyRatio = cm.fx / cm.fy;
+        const ratioClass = Math.abs(fxfyRatio - 1) < 0.05 ? '🟢' : Math.abs(fxfyRatio - 1) < 0.10 ? '🟡' : '🔴';
+        let html = `<b>cam${r.camera || st.camera_id}</b> ${rmsClass} RMS: ${r.rms_reprojection_px}px<br>`;
+        html += `fx=${cm.fx} fy=${cm.fy} cx=${cm.cx} cy=${cm.cy} ${ratioClass} ratio=${fxfyRatio.toFixed(3)}<br>`;
+        html += `FOV: H=${fov.horizontal}° V=${fov.vertical}° D=${fov.diagonal}°<br>`;
+        html += `Frames: ${r.num_detected}/${r.num_frames} detected`;
+        if (r.warnings && r.warnings.length) html += '<br>⚠️ ' + r.warnings.join('<br>⚠️ ');
+        rb.innerHTML = html;
+        rb.style.display = 'block';
+      } else if (st.state === 'error') {
+        rb.innerHTML = `<span style="color:var(--danger)">❌ ${st.error_message}</span>`;
+        rb.style.display = 'block';
+      }
+    }
+  }, 500);
+}
+async function icalStart() {
+  const r = await apiPost('/api/calibration/intrinsics/start', _icalParams());
+  if (r.error) { showResult('icalResult', r); return; }
+  document.getElementById('icalStatus').textContent = 'STARTING...';
+  _icalPoll();
+}
+async function icalStartAll() {
+  const p = _icalParams();
+  delete p.camera_id;
+  const r = await apiPost('/api/calibration/intrinsics/all', p);
+  if (r.error) { showResult('icalResult', r); return; }
+  document.getElementById('icalStatus').textContent = 'STARTING ALL...';
+  _icalPoll();
+}
+async function icalValidate() {
+  const camId = document.getElementById('icalCamId').value;
+  const r = await apiPost(`/api/calibration/intrinsics/validate/${camId}`);
+  const rb = document.getElementById('icalResult');
+  if (r.valid) {
+    const q = r.quality === 'good' ? '🟢' : r.quality === 'fair' ? '🟡' : '🔴';
+    rb.innerHTML = `${q} Validation: ${r.quality} — reproj: ${r.mean_reprojection_px}px, ${r.corners_detected} corners`;
+  } else {
+    rb.innerHTML = `🔴 Validation failed: ${r.error}`;
+  }
+  rb.style.display = 'block';
+}
 
 // --- Diagnostics ---
 async function diagFeedback() { showResult('diagFeedbackResult', await apiCall('/api/debug/feedback')); }
