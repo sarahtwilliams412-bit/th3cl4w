@@ -1,0 +1,29 @@
+{
+  "description": "Successful Red Bull can grab — manually positioned by user 2026-02-10",
+  "timestamp": "2026-02-10T11:06:00-08:00",
+  "joints_deg": [1.0, 25.9, 6.7, 0.5, 88.7, 3.3],
+  "gripper_mm": 32.5,
+  "joint_names": ["J0_base_yaw", "J1_shoulder_pitch", "J2_elbow_pitch", "J3_forearm_roll", "J4_wrist_pitch", "J5_gripper_roll"],
+  "notes": {
+    "J0": "1.0° — nearly centered, slight right",
+    "J1": "25.9° — shoulder pitched forward (positive = down/forward)",
+    "J2": "6.7° — elbow barely extended",
+    "J3": "0.5° — no forearm roll",
+    "J4": "88.7° — wrist pointed nearly straight down (gripper faces floor)",
+    "J5": "3.3° — minimal gripper roll",
+    "gripper": "32.5mm — closed on Red Bull can (66mm diameter, gripper grips sides)"
+  },
+  "observations": {
+    "arm_posture": "Nearly vertical reach-down — shoulder forward, elbow barely bent, wrist pointed straight down",
+    "can_position": "Directly below arm base, on workspace mat with green tape marker",
+    "grip_style": "Side grip on can body, gripper at ~32.5mm (can is 66mm dia, so gripper compressed ~33mm)",
+    "dds_feedback_rate": "18.3/s",
+    "power_status": true,
+    "enable_status": true
+  },
+  "camera_snapshots": {
+    "overhead": "Arm extended up-right, holding object, Red Bull can visible on table",
+    "arm_mounted": "Looking down at workspace mat, can with barcode visible below gripper",
+    "side": "captured but not analyzed"
+  }
+}
