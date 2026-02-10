@@ -52,7 +52,7 @@ def minimum_jerk_scalar(tau: float) -> MinJerkProfile:
 
     Returns MinJerkProfile with all derivatives.
     """
-    tau = float(np.clip(tau, 0.0, 1.0))
+    tau = max(0.0, min(1.0, float(tau)))
     tau2 = tau * tau
     tau3 = tau2 * tau
     tau4 = tau3 * tau
@@ -102,7 +102,7 @@ def minimum_jerk_waypoint(
     if T <= 0:
         return qf.copy(), vf.copy(), np.zeros_like(qf)
 
-    t = float(np.clip(t, 0.0, T))
+    t = max(0.0, min(float(t), T))
 
     if np.allclose(v0, 0.0) and np.allclose(vf, 0.0):
         # Pure minimum-jerk (most common case)
@@ -189,7 +189,7 @@ def fitts_law_duration(
     id_bits = max(id_bits, 0.0)  # can't have negative difficulty
 
     mt = a + b * id_bits
-    return float(np.clip(mt, _FITTS_MIN_DURATION, _FITTS_MAX_DURATION))
+    return max(_FITTS_MIN_DURATION, min(_FITTS_MAX_DURATION, mt))
 
 
 def compute_movement_duration(
@@ -222,7 +222,7 @@ def compute_movement_duration(
     if speed_factor > 0:
         duration /= speed_factor
 
-    return float(np.clip(duration, _FITTS_MIN_DURATION, _FITTS_MAX_DURATION))
+    return max(_FITTS_MIN_DURATION, min(_FITTS_MAX_DURATION, duration))
 
 
 # ---------------------------------------------------------------------------
