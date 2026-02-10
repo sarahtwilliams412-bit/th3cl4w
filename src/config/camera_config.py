@@ -17,6 +17,6 @@ def cameras_url() -> str:
 
 
 # Camera IDs
-CAM_OVERHEAD = 0
+CAM_SIDE = 0
 CAM_ARM = 1
-CAM_SIDE = 2
+CAM_OVERHEAD = 2

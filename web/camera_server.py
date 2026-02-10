@@ -53,12 +53,12 @@ CAMERA_REGISTRY = {
     0: {
         "id": 0,
         "device": "/dev/video0",
-        "name": "Overhead",
-        "role": "overhead",
+        "name": "Side",
+        "role": "side_profile",
         "mount": "fixed",
         "resolution": [1920, 1080],
         "fov_deg": 78,
-        "description": "Logitech BRIO mounted above workspace, looking straight down. Primary camera for object detection X/Y positioning.",
+        "description": "Fixed side-view camera. Used for height (Z) estimation of objects on workspace.",
     },
     1: {
         "id": 1,
@@ -73,12 +73,12 @@ CAMERA_REGISTRY = {
     2: {
         "id": 2,
         "device": "/dev/video6",
-        "name": "Side",
-        "role": "side_profile",
+        "name": "Overhead",
+        "role": "overhead",
         "mount": "fixed",
         "resolution": [1920, 1080],
         "fov_deg": 78,
-        "description": "Fixed side-view camera. Used for height (Z) estimation of objects on workspace.",
+        "description": "Logitech BRIO mounted above workspace, looking straight down. Primary camera for object detection X/Y positioning.",
     },
 }
 

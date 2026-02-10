@@ -767,9 +767,9 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="panel-body">
     <div class="panel-header">📷 Camera Feeds</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:12px;">
-      <div class="panel-card" id="camFullCard0"><h3>Camera 0 (Overhead)</h3><img id="camFull0" src="" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 0"><div style="margin-top:6px;display:flex;gap:6px;"><button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/0`,'_blank')">📷 Snap</button></div></div>
+      <div class="panel-card" id="camFullCard0"><h3>Camera 0 (Side)</h3><img id="camFull0" src="" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 0"><div style="margin-top:6px;display:flex;gap:6px;"><button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/0`,'_blank')">📷 Snap</button></div></div>
       <div class="panel-card" id="camFullCard1"><h3>Camera 1 (Arm-mounted)</h3><img id="camFull1" src="" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 1"><div style="margin-top:6px;display:flex;gap:6px;"><button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/1`,'_blank')">📷 Snap</button></div></div>
-      <div class="panel-card" id="camFullCard2"><h3>Camera 2 (Side)</h3><img id="camFull2" src="" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 2"><div style="margin-top:6px;display:flex;gap:6px;"><button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/2`,'_blank')">📷 Snap</button></div></div>
+      <div class="panel-card" id="camFullCard2"><h3>Camera 2 (Overhead)</h3><img id="camFull2" src="" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 2"><div style="margin-top:6px;display:flex;gap:6px;"><button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/2`,'_blank')">📷 Snap</button></div></div>
     </div>
   </div>
 </div>
@@ -1035,7 +1035,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <div class="panel-header">🔍 Workspace Calibration</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;">
       <div class="panel-card" id="wsCalibCam0">
-        <h3>Camera 0 — Overhead</h3>
+        <h3>Camera 0 — Side</h3>
         <img id="wsCalibImg0" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 0">
         <div style="margin-top:6px;display:flex;gap:6px;">
           <button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/0`,'_blank')">Snap</button>
@@ -1049,7 +1049,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         </div>
       </div>
       <div class="panel-card" id="wsCalibCam2">
-        <h3>Camera 2 — Side</h3>
+        <h3>Camera 2 — Overhead</h3>
         <img id="wsCalibImg2" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 2">
         <div style="margin-top:6px;display:flex;gap:6px;">
           <button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/2`,'_blank')">Snap</button>
@@ -3253,9 +3253,9 @@ async function calibCheckHealth() {
   container.innerHTML = '';
   // Render each subsystem status
   const items = [
-    { label: 'Overhead Camera', ok: data.intrinsics?.cam0?.ok, detail: data.intrinsics?.cam0?.ok ? `RMS ${data.intrinsics.cam0.rms}px` : 'Not calibrated', step: 1 },
+    { label: 'Side Camera', ok: data.intrinsics?.cam0?.ok, detail: data.intrinsics?.cam0?.ok ? `RMS ${data.intrinsics.cam0.rms}px` : 'Not calibrated', step: 1 },
     { label: 'Arm Camera', ok: data.intrinsics?.cam1?.ok, detail: data.intrinsics?.cam1?.ok ? `RMS ${data.intrinsics.cam1.rms}px` : 'Not calibrated', step: 1 },
-    { label: 'Side Camera', ok: data.intrinsics?.cam2?.ok, detail: data.intrinsics?.cam2?.ok ? `RMS ${data.intrinsics.cam2.rms}px` : 'Not calibrated', step: 1 },
+    { label: 'Overhead Camera', ok: data.intrinsics?.cam2?.ok, detail: data.intrinsics?.cam2?.ok ? `RMS ${data.intrinsics.cam2.rms}px` : 'Not calibrated', step: 1 },
     { label: 'Joint Mapping', ok: data.joint_mapping?.ok, detail: data.joint_mapping?.ok ? 'Calibrated' : 'Not calibrated', step: 2 },
     { label: 'Camera Extrinsics', ok: data.extrinsics?.ok, detail: data.extrinsics?.ok ? 'Calibrated' : 'Not calibrated', step: 3 },
   ];
@@ -4129,7 +4129,7 @@ async function camOrientLoadCalib() {
       const ext = data.extrinsics;
       if (ext.camera_position_world_m) {
         const p = ext.camera_position_world_m;
-        if (!_camOrientConfig['0']) _camOrientConfig['0'] = { label: 'Overhead', perspective: 'overhead' };
+        if (!_camOrientConfig['0']) _camOrientConfig['0'] = { label: 'Side', perspective: 'side_profile' };
         _camOrientConfig['0'].position = { x: p[0], y: p[1], z: p[2] };
         camOrientRender();
         // Update 3D sim
