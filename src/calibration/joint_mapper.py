@@ -56,7 +56,9 @@ class JointMapper:
                 self._dds_to_ui = {v: k for k, v in self._ui_to_dds.items()}
                 self._labels = {int(k): v for k, v in data.get("labels", {}).items()}
                 self._calibrated = data.get("calibrated", False)
-                logger.info("Joint mapping loaded from %s (calibrated=%s)", self._path, self._calibrated)
+                logger.info(
+                    "Joint mapping loaded from %s (calibrated=%s)", self._path, self._calibrated
+                )
             except Exception as e:
                 logger.warning("Failed to load joint mapping: %s — using identity", e)
                 self._reset_to_identity()
@@ -99,6 +101,7 @@ class JointMapper:
     def save(self, ui_to_dds: dict[int, int], labels: dict[int, str]):
         """Save a new mapping to disk."""
         import time
+
         self._ui_to_dds = {int(k): int(v) for k, v in ui_to_dds.items()}
         self._dds_to_ui = {v: k for k, v in self._ui_to_dds.items()}
         self._labels = labels

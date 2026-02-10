@@ -136,11 +136,13 @@ class CollisionMap:
                                 vc = (np.array(v) + 0.5) * self.voxel_size
                                 d = float(np.linalg.norm(vc - center))
                                 min_dist = min(min_dist, d)
-                collisions.append({
-                    "index": i,
-                    "point": pt,
-                    "distance_to_obstacle": round(min_dist, 4),
-                })
+                collisions.append(
+                    {
+                        "index": i,
+                        "point": pt,
+                        "distance_to_obstacle": round(min_dist, 4),
+                    }
+                )
 
         return collisions
 

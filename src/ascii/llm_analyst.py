@@ -16,6 +16,7 @@ logger = logging.getLogger("th3cl4w.ascii.llm_analyst")
 try:
     from google import genai
     from google.genai import types as genai_types
+
     _HAS_GENAI = True
 except ImportError:
     genai = None
@@ -117,10 +118,16 @@ class AsciiAnalyst:
         # Build chat history if provided
         contents = []
         if history:
-            for msg in history[-self.MAX_HISTORY:]:
+            for msg in history[-self.MAX_HISTORY :]:
                 role = "user" if msg["role"] == "user" else "model"
-                contents.append(genai_types.Content(role=role, parts=[genai_types.Part.from_text(text=msg["text"])]))
-        contents.append(genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=user_msg)]))
+                contents.append(
+                    genai_types.Content(
+                        role=role, parts=[genai_types.Part.from_text(text=msg["text"])]
+                    )
+                )
+        contents.append(
+            genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=user_msg)])
+        )
 
         try:
             response = await asyncio.to_thread(

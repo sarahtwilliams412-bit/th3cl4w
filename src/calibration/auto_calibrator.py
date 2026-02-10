@@ -93,6 +93,7 @@ class CalibrationResult:
 @dataclass
 class CalibrationProgress:
     """Tracks calibration progress for status reporting."""
+
     camera_id: int = -1
     state: str = "idle"  # idle, capturing, detecting, calibrating, saving, done, error
     frames_captured: int = 0
@@ -133,7 +134,9 @@ class AutoCalibrator:
         self.auto_detect_board = auto_detect_board
         self.progress = CalibrationProgress()
 
-    def capture_frames(self, cam_id: int, num_frames: int = 0, interval_s: float = 0.5) -> list[np.ndarray]:
+    def capture_frames(
+        self, cam_id: int, num_frames: int = 0, interval_s: float = 0.5
+    ) -> list[np.ndarray]:
         """Capture frames from camera server via HTTP snapshots."""
         n = num_frames or self.num_frames
         self.progress.camera_id = cam_id
@@ -173,9 +176,7 @@ class AutoCalibrator:
         """
         sizes_to_try = [board_size or self.board_size]
         if board_size is None and self.auto_detect_board:
-            sizes_to_try.extend(
-                s for s in FALLBACK_BOARD_SIZES if s != self.board_size
-            )
+            sizes_to_try.extend(s for s in FALLBACK_BOARD_SIZES if s != self.board_size)
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
 
@@ -193,7 +194,9 @@ class AutoCalibrator:
         self._last_detected_size = None
         return None
 
-    def _assess_quality(self, result: CalibrationResult, all_corners: list, image_size: tuple[int, int]) -> list[str]:
+    def _assess_quality(
+        self, result: CalibrationResult, all_corners: list, image_size: tuple[int, int]
+    ) -> list[str]:
         """Run quality checks and return warnings."""
         warnings = []
 
@@ -229,7 +232,9 @@ class AutoCalibrator:
 
         # RMS check
         if result.rms > 1.0:
-            warnings.append(f"RMS reprojection error is {result.rms:.3f}px — consider recalibrating")
+            warnings.append(
+                f"RMS reprojection error is {result.rms:.3f}px — consider recalibrating"
+            )
 
         return warnings
 
@@ -245,10 +250,12 @@ class AutoCalibrator:
         for frame in frames:
             corners = self.detect_checkerboard(frame)
             if corners is not None:
-                detected_size = getattr(self, "_last_detected_size", self.board_size) or self.board_size
+                detected_size = (
+                    getattr(self, "_last_detected_size", self.board_size) or self.board_size
+                )
                 # Build object points for detected board size
                 objp = np.zeros((detected_size[0] * detected_size[1], 3), np.float32)
-                objp[:, :2] = np.mgrid[0:detected_size[0], 0:detected_size[1]].T.reshape(-1, 2)
+                objp[:, :2] = np.mgrid[0 : detected_size[0], 0 : detected_size[1]].T.reshape(-1, 2)
                 objp *= self.square_size_mm
 
                 obj_points_list.append(objp)
@@ -257,7 +264,9 @@ class AutoCalibrator:
 
         if len(obj_points_list) < 3:
             self.progress.state = "error"
-            self.progress.error_message = f"Only {len(obj_points_list)} frames had detectable checkerboards (need ≥3)"
+            self.progress.error_message = (
+                f"Only {len(obj_points_list)} frames had detectable checkerboards (need ≥3)"
+            )
             raise ValueError(self.progress.error_message)
 
         h, w = frames[0].shape[:2]
@@ -286,10 +295,19 @@ class AutoCalibrator:
         result = CalibrationResult(
             camera_id=self.progress.camera_id,
             rms=rms,
-            fx=fx, fy=fy, cx=cx, cy=cy,
-            k1=k1, k2=k2, p1=p1, p2=p2, k3=k3,
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
+            k1=k1,
+            k2=k2,
+            p1=p1,
+            p2=p2,
+            k3=k3,
             image_size=image_size,
-            fov_h=fov_h, fov_v=fov_v, fov_d=fov_d,
+            fov_h=fov_h,
+            fov_v=fov_v,
+            fov_d=fov_d,
             board_size=detected_size,
             square_size_mm=self.square_size_mm,
             num_frames=len(frames),
@@ -340,7 +358,9 @@ class AutoCalibrator:
             cam_entry["fov_diagonal_deg"] = result_dict["fov_deg"]["diagonal"]
             cam_entry["fov_horizontal_deg"] = result_dict["fov_deg"]["horizontal"]
             cam_entry["fov_vertical_deg"] = result_dict["fov_deg"]["vertical"]
-            cam_entry["calibration_method"] = f"checkerboard_{result.square_size_mm:.0f}mm_{result.num_detected}frames"
+            cam_entry["calibration_method"] = (
+                f"checkerboard_{result.square_size_mm:.0f}mm_{result.num_detected}frames"
+            )
             cam_entry["rms_reprojection_px"] = result_dict["rms_reprojection_px"]
             if result.warnings:
                 cam_entry["calibration_warnings"] = result.warnings
@@ -393,11 +413,14 @@ class AutoCalibrator:
 
         cal_data = json.loads(cam_file.read_text())
         cm = cal_data["camera_matrix"]
-        camera_matrix = np.array([
-            [cm["fx"], 0, cm["cx"]],
-            [0, cm["fy"], cm["cy"]],
-            [0, 0, 1],
-        ], dtype=np.float64)
+        camera_matrix = np.array(
+            [
+                [cm["fx"], 0, cm["cx"]],
+                [0, cm["fy"], cm["cy"]],
+                [0, 0, 1],
+            ],
+            dtype=np.float64,
+        )
 
         d = cal_data["distortion"]
         dist_coeffs = np.array([d["k1"], d["k2"], d["p1"], d["p2"], d["k3"]], dtype=np.float64)
@@ -423,12 +446,14 @@ class AutoCalibrator:
         # Compute reprojection: use solvePnP on undistorted corners
         detected_size = getattr(self, "_last_detected_size", self.board_size) or self.board_size
         objp = np.zeros((detected_size[0] * detected_size[1], 3), np.float32)
-        objp[:, :2] = np.mgrid[0:detected_size[0], 0:detected_size[1]].T.reshape(-1, 2)
+        objp[:, :2] = np.mgrid[0 : detected_size[0], 0 : detected_size[1]].T.reshape(-1, 2)
         objp *= self.square_size_mm
 
         _, rvec, tvec = cv2.solvePnP(objp, corners, camera_matrix, dist_coeffs)
         projected, _ = cv2.projectPoints(objp, rvec, tvec, camera_matrix, dist_coeffs)
-        error = np.sqrt(((corners.reshape(-1, 2) - projected.reshape(-1, 2)) ** 2).sum(axis=1)).mean()
+        error = np.sqrt(
+            ((corners.reshape(-1, 2) - projected.reshape(-1, 2)) ** 2).sum(axis=1)
+        ).mean()
 
         return {
             "valid": True,

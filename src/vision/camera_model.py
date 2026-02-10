@@ -64,17 +64,25 @@ def load_intrinsics(camera_id: int) -> tuple[Optional[np.ndarray], Optional[np.n
         if cam_data is None:
             return None, None
         cm = cam_data["camera_matrix"]
-        K = np.array([
-            [cm["fx"], 0.0, cm["cx"]],
-            [0.0, cm["fy"], cm["cy"]],
-            [0.0, 0.0, 1.0],
-        ], dtype=np.float64)
+        K = np.array(
+            [
+                [cm["fx"], 0.0, cm["cx"]],
+                [0.0, cm["fy"], cm["cy"]],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float64,
+        )
         dc = cam_data.get("distortion_coefficients", {})
-        dist = np.array([
-            dc.get("k1", 0.0), dc.get("k2", 0.0),
-            dc.get("p1", 0.0), dc.get("p2", 0.0),
-            dc.get("k3", 0.0),
-        ], dtype=np.float64)
+        dist = np.array(
+            [
+                dc.get("k1", 0.0),
+                dc.get("k2", 0.0),
+                dc.get("p1", 0.0),
+                dc.get("p2", 0.0),
+                dc.get("k3", 0.0),
+            ],
+            dtype=np.float64,
+        )
         return K, dist
     except Exception as e:
         logger.warning("Failed to load intrinsics for cam%d: %s", camera_id, e)
@@ -132,11 +140,13 @@ class CameraModel:
             )
             self._loaded = True
             logger.info(
-                "Camera %d (%s) calibration loaded: "
-                "reproj=%spx, pos=(%.2f, %.2f, %.2f)m",
-                self.camera_id, self.role,
+                "Camera %d (%s) calibration loaded: " "reproj=%spx, pos=(%.2f, %.2f, %.2f)m",
+                self.camera_id,
+                self.role,
                 data.get("reprojection_error_mean_px", "?"),
-                self.camera_position[0], self.camera_position[1], self.camera_position[2],
+                self.camera_position[0],
+                self.camera_position[1],
+                self.camera_position[2],
             )
             return True
         except FileNotFoundError:
@@ -148,7 +158,8 @@ class CameraModel:
                     self.dist = dist_intr
                     logger.info(
                         "Camera %d (%s): hand-eye loaded, intrinsics from shared file",
-                        self.camera_id, self.role,
+                        self.camera_id,
+                        self.role,
                     )
                     return True
             # For other cameras, just load intrinsics
@@ -157,7 +168,8 @@ class CameraModel:
                 self.dist = dist_intr
                 logger.info(
                     "Camera %d (%s): intrinsics loaded (no extrinsics yet)",
-                    self.camera_id, self.role,
+                    self.camera_id,
+                    self.role,
                 )
             return False
         except Exception as e:
@@ -224,7 +236,7 @@ class CameraModel:
             "role": self.role,
             "T_ee_cam": self._T_ee_cam.tolist(),
             "description": "Transform from end-effector frame to camera frame. "
-                           "World pose = T_world_ee @ inv(T_ee_cam)",
+            "World pose = T_world_ee @ inv(T_ee_cam)",
         }
         path.write_text(json.dumps(data, indent=2))
         logger.info("Saved hand-eye transform for cam%d", self.camera_id)

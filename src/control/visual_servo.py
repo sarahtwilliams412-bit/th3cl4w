@@ -135,6 +135,7 @@ class VisualServo:
 
         try:
             from google.genai import types as _gtypes
+
             response = self._client.models.generate_content(
                 model=self._model_name,
                 contents=[

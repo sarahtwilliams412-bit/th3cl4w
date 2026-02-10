@@ -31,8 +31,10 @@ CAMERA_SERVER = "http://localhost:8081"
 # Camera IDs
 CAMERA_IDS = [0, 1, 2]  # overhead, side, arm
 
+
 def _tracker_cfg(key):
     return _get_pick_config().get("tracker", key)
+
 
 # Legacy module-level aliases
 FAST_SCAN_INTERVAL = 1.0

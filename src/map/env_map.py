@@ -69,6 +69,7 @@ class EnvMap:
             return self._depth_available
         try:
             from src.vision import depth_estimator
+
             self._depth_estimator = depth_estimator
             self._depth_available = depth_estimator.is_available()
             if not self._depth_available:
@@ -197,6 +198,7 @@ class MapScanManager:
         camera_url: str = "http://localhost:8081",
     ):
         from src.vision.scan_manager import ScanManager, ScanStatus
+
         self._env_map = env_map
         self._scanner = ScanManager(
             arm_command_fn=arm_command_fn,
@@ -217,9 +219,11 @@ class MapScanManager:
     @staticmethod
     def list_scans() -> List[Dict[str, Any]]:
         from src.vision.scan_manager import ScanManager
+
         return ScanManager.list_scans()
 
     @staticmethod
     def get_scan_ply(scan_id: Optional[str] = None) -> Optional[str]:
         from src.vision.scan_manager import ScanManager
+
         return ScanManager.get_scan_ply(scan_id)

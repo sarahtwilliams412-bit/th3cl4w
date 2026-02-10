@@ -123,9 +123,7 @@ class WSHub:
                 for client in to_send:
                     try:
                         full = client.needs_full_scene
-                        snapshot = self._scene.snapshot(
-                            full=full, layers=client.layers
-                        )
+                        snapshot = self._scene.snapshot(full=full, layers=client.layers)
                         msg = json.dumps({"type": "scene_update", "data": snapshot})
                         await client.ws.send_text(msg)
                         client.last_send = now

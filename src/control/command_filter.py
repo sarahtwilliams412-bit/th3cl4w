@@ -271,28 +271,20 @@ class JerkLimiter:
             input_vel = (inp[i] - s.position) / dt if dt > 0 else 0.0
 
             # Clamp velocity
-            clamped_vel = np.clip(
-                input_vel, -self.max_velocity[i], self.max_velocity[i]
-            )
+            clamped_vel = np.clip(input_vel, -self.max_velocity[i], self.max_velocity[i])
 
             # Clamp acceleration (rate of velocity change)
             desired_acc = (clamped_vel - s.velocity) / dt if dt > 0 else 0.0
-            clamped_acc = np.clip(
-                desired_acc, -self.max_acceleration[i], self.max_acceleration[i]
-            )
+            clamped_acc = np.clip(desired_acc, -self.max_acceleration[i], self.max_acceleration[i])
 
             # Clamp jerk (rate of acceleration change)
             desired_jerk = (clamped_acc - s.acceleration) / dt if dt > 0 else 0.0
-            clamped_jerk = np.clip(
-                desired_jerk, -self.max_jerk[i], self.max_jerk[i]
-            )
+            clamped_jerk = np.clip(desired_jerk, -self.max_jerk[i], self.max_jerk[i])
 
             # Apply cascaded limits: jerk → acc → vel → pos
             new_acc = s.acceleration + clamped_jerk * dt
             new_vel = s.velocity + new_acc * dt
-            new_vel = np.clip(
-                new_vel, -self.max_velocity[i], self.max_velocity[i]
-            )
+            new_vel = np.clip(new_vel, -self.max_velocity[i], self.max_velocity[i])
             new_pos = s.position + new_vel * dt
 
             s.position = new_pos

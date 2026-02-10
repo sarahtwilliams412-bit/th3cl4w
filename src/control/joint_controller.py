@@ -291,9 +291,7 @@ class JointController:
 
         # Compute duration via Fitts' Law if not provided
         if duration is None:
-            duration = compute_movement_duration(
-                q0, target_positions, speed_factor=speed_factor
-            )
+            duration = compute_movement_duration(q0, target_positions, speed_factor=speed_factor)
         if duration <= 0:
             duration = 0.3  # minimum duration
 
@@ -311,9 +309,7 @@ class JointController:
                 break
 
             # Minimum-jerk interpolation
-            pos, vel, acc = minimum_jerk_waypoint(
-                q0, target_positions, v0, vf, duration, elapsed
-            )
+            pos, vel, acc = minimum_jerk_waypoint(q0, target_positions, v0, vf, duration, elapsed)
 
             # Apply gravity compensation
             pos_compensated = pos + gravity_offset

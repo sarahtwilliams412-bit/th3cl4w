@@ -265,9 +265,7 @@ def generate_minimum_jerk_trajectory(
     accelerations = np.zeros((n_points, n_joints))
 
     for i, t in enumerate(times):
-        pos, vel, acc = minimum_jerk_waypoint(
-            q_start, q_end, v_start, v_end, duration, t
-        )
+        pos, vel, acc = minimum_jerk_waypoint(q_start, q_end, v_start, v_end, duration, t)
         positions[i] = pos
         velocities[i] = vel
         accelerations[i] = acc

@@ -101,9 +101,7 @@ class CalibrationValidator:
             (3,) position of board center in robot base frame (meters),
             or None if detection fails.
         """
-        ok, rvec, tvec = self.charuco.estimate_pose(
-            frame, camera_matrix, dist_coeffs
-        )
+        ok, rvec, tvec = self.charuco.estimate_pose(frame, camera_matrix, dist_coeffs)
         if not ok:
             return None
 
@@ -111,9 +109,7 @@ class CalibrationValidator:
         board_in_cam = tvec.flatten()
 
         # Transform to base frame
-        board_in_cam_h = np.array(
-            [board_in_cam[0], board_in_cam[1], board_in_cam[2], 1.0]
-        )
+        board_in_cam_h = np.array([board_in_cam[0], board_in_cam[1], board_in_cam[2], 1.0])
         T_base_cam = np.linalg.inv(T_cam_base)
         board_in_base = (T_base_cam @ board_in_cam_h)[:3]
 
@@ -192,9 +188,7 @@ class CalibrationValidator:
         cam_ids = list(positions.keys())
         for i in range(len(cam_ids)):
             for j in range(i + 1, len(cam_ids)):
-                dist = np.linalg.norm(
-                    positions[cam_ids[i]] - positions[cam_ids[j]]
-                )
+                dist = np.linalg.norm(positions[cam_ids[i]] - positions[cam_ids[j]])
                 max_disagree = max(max_disagree, dist * 1000)
 
         passed = max_disagree <= self.agreement_threshold_mm
@@ -301,8 +295,7 @@ class CalibrationValidator:
         passed = error_mm <= self.touch_threshold_mm
 
         logger.info(
-            "Touch test result: FK position (%.1f, %.1f, %.1f) mm, "
-            "error = %.1f mm (%s)",
+            "Touch test result: FK position (%.1f, %.1f, %.1f) mm, " "error = %.1f mm (%s)",
             ee_pos[0] * 1000,
             ee_pos[1] * 1000,
             ee_pos[2] * 1000,

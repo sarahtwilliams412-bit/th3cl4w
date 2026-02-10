@@ -147,21 +147,15 @@ class TestAdmittanceController:
 
     def test_compliant_mode_yields_more(self):
         """More compliant mode should yield more for same torque."""
-        ctrl_stiff = AdmittanceController(
-            n_joints=7, mode=ComplianceMode.STIFF, dt=0.01
-        )
-        ctrl_soft = AdmittanceController(
-            n_joints=7, mode=ComplianceMode.COMPLIANT, dt=0.01
-        )
+        ctrl_stiff = AdmittanceController(n_joints=7, mode=ComplianceMode.STIFF, dt=0.01)
+        ctrl_soft = AdmittanceController(n_joints=7, mode=ComplianceMode.COMPLIANT, dt=0.01)
 
         tau_ext = np.array([3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         for _ in range(200):
             ctrl_stiff.compute_compliance(np.zeros(7), tau_ext)
             ctrl_soft.compute_compliance(np.zeros(7), tau_ext)
 
-        assert abs(ctrl_soft.compliance_offset[0]) > abs(
-            ctrl_stiff.compliance_offset[0]
-        )
+        assert abs(ctrl_soft.compliance_offset[0]) > abs(ctrl_stiff.compliance_offset[0])
 
 
 class TestStiffnessScheduler:

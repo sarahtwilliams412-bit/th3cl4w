@@ -37,6 +37,7 @@ class ServoState(str, Enum):
 @dataclass
 class ServoConfig:
     """Configuration for the visual servo loop."""
+
     convergence_threshold_px: float = 20.0  # pixels
     max_iterations: int = 30
     kp: float = 0.3  # proportional gain (workspace mm per pixel error)
@@ -216,8 +217,12 @@ class VisualServoController:
                     dy_mm = error_y * 0.3
 
                 # Apply proportional gain and clamp
-                dx_mm = np.clip(self.config.kp * dx_mm, -self.config.max_step_mm, self.config.max_step_mm)
-                dy_mm = np.clip(self.config.kp * dy_mm, -self.config.max_step_mm, self.config.max_step_mm)
+                dx_mm = np.clip(
+                    self.config.kp * dx_mm, -self.config.max_step_mm, self.config.max_step_mm
+                )
+                dy_mm = np.clip(
+                    self.config.kp * dy_mm, -self.config.max_step_mm, self.config.max_step_mm
+                )
 
                 step_log.move_mm = (round(dx_mm, 2), round(dy_mm, 2))
                 step_log.note = f"moving dx={dx_mm:.1f}mm dy={dy_mm:.1f}mm"
@@ -246,7 +251,10 @@ class VisualServoController:
 
                 logger.info(
                     "Servo iter %d: error=%.1fpx, move=(%.1f, %.1f)mm",
-                    i, error_mag, dx_mm, dy_mm,
+                    i,
+                    error_mag,
+                    dx_mm,
+                    dy_mm,
                 )
 
             # Max iterations reached
@@ -278,6 +286,7 @@ class VisualServoController:
     async def _grab_frame(self) -> Optional[np.ndarray]:
         """Grab a frame from the overhead camera via camera server."""
         import cv2 as _cv2
+
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(

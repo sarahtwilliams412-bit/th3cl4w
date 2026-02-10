@@ -15,10 +15,10 @@ from src.map.arm_model import ArmModel
 from src.map.collision_map import CollisionMap
 from src.map.env_map import EnvMap, EnvMapConfig
 
-
 # ---------------------------------------------------------------------------
 # Scene tests
 # ---------------------------------------------------------------------------
+
 
 class TestScene:
     def test_empty_snapshot(self):
@@ -100,6 +100,7 @@ class TestScene:
 # ArmModel tests
 # ---------------------------------------------------------------------------
 
+
 class TestArmModel:
     def test_zero_angles(self):
         model = ArmModel()
@@ -148,6 +149,7 @@ class TestArmModel:
 # ---------------------------------------------------------------------------
 # CollisionMap tests
 # ---------------------------------------------------------------------------
+
 
 class TestCollisionMap:
     def test_empty_map(self):
@@ -215,6 +217,7 @@ class TestCollisionMap:
 # EnvMap tests
 # ---------------------------------------------------------------------------
 
+
 class TestEnvMap:
     def test_initial_state(self):
         em = EnvMap()
@@ -243,6 +246,7 @@ class TestEnvMap:
 # ---------------------------------------------------------------------------
 # Integration: ArmModel → Scene
 # ---------------------------------------------------------------------------
+
 
 class TestIntegration:
     def test_arm_to_scene(self):
@@ -286,16 +290,19 @@ class TestIntegration:
 # FastAPI endpoint tests (offline, no server needed)
 # ---------------------------------------------------------------------------
 
+
 class TestMapServerApp:
     """Test the FastAPI app can be imported and routes exist."""
 
     def test_import(self):
         from web.map_server import app
+
         assert app is not None
         assert app.title == "th3cl4w Map Server"
 
     def test_routes_exist(self):
         from web.map_server import app
+
         routes = {r.path for r in app.routes}
         assert "/api/map/status" in routes
         assert "/api/map/scene" in routes

@@ -71,9 +71,7 @@ class LLMJointDetector:
         camera_height: int = 1080,
     ):
         if genai is None:
-            raise RuntimeError(
-                "google-genai package required: pip install google-genai"
-            )
+            raise RuntimeError("google-genai package required: pip install google-genai")
 
         self.model_name = model
         self.ascii_width = ascii_width

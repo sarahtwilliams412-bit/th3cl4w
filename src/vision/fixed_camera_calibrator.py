@@ -106,9 +106,7 @@ class FixedCameraCalibrator:
 
         self.K, self.dist = load_intrinsics(self.camera_id)
         if self.K is not None:
-            logger.info(
-                "FixedCam: loaded intrinsics for cam%d", self.camera_id
-            )
+            logger.info("FixedCam: loaded intrinsics for cam%d", self.camera_id)
 
     def set_intrinsics(self, K: np.ndarray, dist: np.ndarray):
         """Manually set camera intrinsics."""
@@ -142,9 +140,7 @@ class FixedCameraCalibrator:
 
         ok, rvec, tvec = self.charuco.estimate_pose(frame, self.K, self.dist)
         if not ok:
-            logger.warning(
-                "FixedCam%d: no ChArUco board detected", self.camera_id
-            )
+            logger.warning("FixedCam%d: no ChArUco board detected", self.camera_id)
             return False
 
         R_board_cam, _ = cv2.Rodrigues(rvec)
@@ -196,13 +192,11 @@ class FixedCameraCalibrator:
             R_base2gripper.append(T_base_board[:3, :3])
             t_base2gripper.append(T_base_board[:3, 3].reshape(3, 1))
 
-        R_base2world, t_base2world, R_gripper2cam, t_gripper2cam = (
-            cv2.calibrateRobotWorldHandEye(
-                R_world2cam,
-                t_world2cam,
-                R_base2gripper,
-                t_base2gripper,
-            )
+        R_base2world, t_base2world, R_gripper2cam, t_gripper2cam = cv2.calibrateRobotWorldHandEye(
+            R_world2cam,
+            t_world2cam,
+            R_base2gripper,
+            t_base2gripper,
         )
 
         # Build T_base_world
@@ -303,12 +297,9 @@ class FixedCameraCalibrator:
         )
 
         # Report consistency across observations
-        t_spread = np.ptp(
-            [T[:3, 3] for T in cam_base_candidates], axis=0
-        )
+        t_spread = np.ptp([T[:3, 3] for T in cam_base_candidates], axis=0)
         logger.info(
-            "  Translation spread across observations: "
-            "dx=%.1fmm, dy=%.1fmm, dz=%.1fmm",
+            "  Translation spread across observations: " "dx=%.1fmm, dy=%.1fmm, dz=%.1fmm",
             t_spread[0] * 1000,
             t_spread[1] * 1000,
             t_spread[2] * 1000,
@@ -333,9 +324,7 @@ class FixedCameraCalibrator:
             result = self.solve_robot_world()
             if result is not None:
                 return result
-            logger.warning(
-                "calibrateRobotWorldHandEye failed, trying global anchor"
-            )
+            logger.warning("calibrateRobotWorldHandEye failed, trying global anchor")
 
         return self.solve_global_anchor()
 
@@ -345,9 +334,7 @@ class FixedCameraCalibrator:
         if result is None:
             return None
 
-        path = (
-            CALIBRATION_DIR / f"camera{self.camera_id}_fixed_extrinsics.json"
-        )
+        path = CALIBRATION_DIR / f"camera{self.camera_id}_fixed_extrinsics.json"
         path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {

@@ -169,9 +169,7 @@ class CollisionAnalyzer:
         parts = [prompt]
         for img_bytes in [cam0_bytes, cam1_bytes]:
             if img_bytes:
-                parts.append(
-                    _gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-                )
+                parts.append(_gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
 
         response = self._client.models.generate_content(
             model=self._model_name,
