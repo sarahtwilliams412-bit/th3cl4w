@@ -702,12 +702,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <div class="panel-grid">
       <div class="panel-card">
         <h3>Overhead Servo</h3>
+        <p style="font-size:0.85em;color:#aaa;margin:4px 0 0;">Color-based detection via overhead camera. Moves gripper to target object using proportional control.</p>
         <div class="status-indicator stopped" id="vsOverheadStatus">STOPPED</div>
         <div class="form-row" style="margin-top:8px;">
-          <label>Target X</label><input type="number" id="vsOhX" value="0" step="0.01">
-        </div>
-        <div class="form-row">
-          <label>Target Y</label><input type="number" id="vsOhY" value="0" step="0.01">
+          <label>Target</label><input type="text" id="vsOhTarget" value="redbull" placeholder="e.g. redbull">
         </div>
         <div class="form-row">
           <label>Camera</label>
@@ -722,16 +720,13 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       </div>
       <div class="panel-card">
         <h3>Approach Servo</h3>
+        <p style="font-size:0.85em;color:#aaa;margin:4px 0 0;">LLM-guided approach using Gemini. Moves arm step-by-step toward a described target.</p>
         <div class="status-indicator stopped" id="vsApproachStatus">STOPPED</div>
         <div class="form-row" style="margin-top:8px;">
-          <label>Target X</label><input type="number" id="vsApX" value="0" step="0.01">
+          <label>Target</label><input type="text" id="vsApTarget" value="red bull can" placeholder="e.g. red bull can">
         </div>
         <div class="form-row">
-          <label>Target Y</label><input type="number" id="vsApY" value="0" step="0.01">
-        </div>
-        <div class="form-row">
-          <label>Camera</label>
-          <select id="vsApCam"><option value="2">Camera 2 (Arm)</option><option value="0">Camera 0</option><option value="1">Camera 1</option></select>
+          <label>Max Steps</label><input type="number" id="vsApMaxSteps" value="25" min="1" max="100">
         </div>
         <div class="btn-row" style="margin-top:8px;">
           <button class="btn primary" onclick="vsStart('approach')">▶ START</button>
@@ -2440,19 +2435,35 @@ function renderDebugEvents(events) {
 // =====================================================
 // --- Visual Servo ---
 async function vsStart(mode) {
-  const prefix = mode === 'overhead' ? 'Oh' : 'Ap';
-  const x = parseFloat(document.getElementById(`vs${prefix}X`).value) || 0;
-  const y = parseFloat(document.getElementById(`vs${prefix}Y`).value) || 0;
-  const cam = document.getElementById(`vs${prefix}Cam`).value;
-  const data = await apiPost(`/api/servo/${mode}/start`, { target_x: x, target_y: y, camera_id: parseInt(cam) });
-  showResult(`vs${mode === 'overhead' ? 'Overhead' : 'Approach'}Result`, data);
+  const resultId = mode === 'overhead' ? 'vsOverheadResult' : 'vsApproachResult';
+  let url, body;
+  if (mode === 'overhead') {
+    const target = document.getElementById('vsOhTarget').value.trim() || 'redbull';
+    const cam = parseInt(document.getElementById('vsOhCam').value);
+    url = '/api/servo/visual-servo';
+    body = { target: target, camera_id: cam };
+  } else {
+    const target = document.getElementById('vsApTarget').value.trim() || 'red bull can';
+    const maxSteps = parseInt(document.getElementById('vsApMaxSteps').value) || 25;
+    url = '/api/servo/approach';
+    body = { target: target, max_steps: maxSteps };
+  }
+  const data = await apiPost(url, body);
+  showResult(resultId, data);
   vsStatus(mode);
 }
-async function vsStop(mode) { const data = await apiPost(`/api/servo/${mode}/stop`); showResult(`vs${mode === 'overhead' ? 'Overhead' : 'Approach'}Result`, data); vsStatus(mode); }
+async function vsStop(mode) {
+  const url = mode === 'overhead' ? '/api/servo/visual-servo/stop' : '/api/servo/stop';
+  const resultId = mode === 'overhead' ? 'vsOverheadResult' : 'vsApproachResult';
+  const data = await apiPost(url);
+  showResult(resultId, data);
+  vsStatus(mode);
+}
 async function vsStatus(mode) {
-  const data = await apiCall(`/api/servo/${mode}/status`);
-  const el = document.getElementById(`vs${mode === 'overhead' ? 'Overhead' : 'Approach'}Status`);
-  const running = data.running || data.active;
+  const url = mode === 'overhead' ? '/api/servo/visual-servo/status' : '/api/servo/status';
+  const data = await apiCall(url);
+  const el = document.getElementById(mode === 'overhead' ? 'vsOverheadStatus' : 'vsApproachStatus');
+  const running = data.running || data.state === 'RUNNING';
   el.textContent = running ? 'RUNNING' : 'STOPPED';
   el.className = 'status-indicator ' + (running ? 'running' : 'stopped');
 }
