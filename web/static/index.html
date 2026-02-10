@@ -787,6 +787,21 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <button class="btn primary" id="btnCalibrateViz" title="Move arm through ~20 poses to calibrate visualization">📐 CALIBRATE VIZ</button>
         <div class="result-box" id="vizCalibResult" style="margin-top:8px;display:none;"></div>
       </div>
+      <div class="panel-card" style="border-left:3px solid #4CAF50;">
+        <h3>ChArUco Calibration (New)</h3>
+        <p style="font-size:11px;color:#888;margin:4px 0;">ChArUco board + Daniilidis solver + 5-solver cross-check. 25 poses, all 3 cameras.</p>
+        <div class="btn-row">
+          <button class="btn primary" onclick="charucoStart()">▶ START</button>
+          <button class="btn danger" onclick="charucoStop()">⏹ STOP</button>
+        </div>
+        <div class="status-indicator stopped" id="charucoStatus" style="margin-top:8px;">IDLE</div>
+        <div class="result-box" id="charucoResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card" style="border-left:3px solid #FF9800;">
+        <h3>Compare Calibrations</h3>
+        <p style="font-size:11px;color:#888;margin:4px 0;">Old (PnP/checkerboard) vs New (ChArUco/hand-eye) side-by-side.</p>
+        <button class="btn" onclick="calibCompare()">📊 COMPARE</button>
+        <div class="result-box" id="calibCompareResult" style="margin-top:8px;display:none;"></div>
       <div class="panel-card" style="grid-column: 1 / -1;">
         <h3>📷 Intrinsic Calibration (Checkerboard)</h3>
         <div class="form-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
@@ -1948,6 +1963,42 @@ async function calibViewReport() { showResult('calibResultsBox', await apiCall('
 async function calibViewFrames() { const sid = document.getElementById('calibFrameSession').value; showResult('calibResultsBox', await apiCall(`/api/calibration/frames/${sid}`)); }
 async function calibViewExtrinsics() { showResult('calibExtrinsicsResult', await apiCall('/api/calibration/extrinsics')); }
 
+// --- ChArUco Calibration (new pipeline) ---
+let _charucoPoller = null;
+async function charucoStart() {
+  const el = document.getElementById('charucoStatus');
+  el.textContent = 'STARTING...'; el.className = 'status-indicator running';
+  const data = await apiPost('/api/calibration/charuco/start');
+  if (data.ok) {
+    _charucoPoller = setInterval(charucoPoll, 2000);
+  } else {
+    el.textContent = 'ERROR'; el.className = 'status-indicator stopped';
+    showResult('charucoResult', data);
+  }
+}
+async function charucoStop() {
+  await apiPost('/api/calibration/charuco/stop');
+  if (_charucoPoller) { clearInterval(_charucoPoller); _charucoPoller = null; }
+  document.getElementById('charucoStatus').textContent = 'STOPPED';
+  document.getElementById('charucoStatus').className = 'status-indicator stopped';
+}
+async function charucoPoll() {
+  const data = await apiCall('/api/calibration/charuco/status');
+  const el = document.getElementById('charucoStatus');
+  el.textContent = (data.status || 'unknown').toUpperCase() + (data.progress ? ` (${data.progress}/${data.total})` : '');
+  el.className = 'status-indicator ' + (data.status === 'complete' ? 'running' : data.status === 'error' ? 'stopped' : 'running');
+  if (data.status === 'complete' || data.status === 'error') {
+    if (_charucoPoller) { clearInterval(_charucoPoller); _charucoPoller = null; }
+    if (data.status === 'complete') {
+      const result = await apiCall('/api/calibration/charuco/result');
+      showResult('charucoResult', result);
+    } else {
+      showResult('charucoResult', { error: data.error });
+    }
+  }
+}
+async function calibCompare() {
+  showResult('calibCompareResult', await apiCall('/api/calibration/compare'));
 // --- Intrinsic Calibration ---
 let _icalPollTimer = null;
 function _icalParams() {
