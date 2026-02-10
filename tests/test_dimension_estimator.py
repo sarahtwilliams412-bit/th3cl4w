@@ -482,6 +482,52 @@ class TestStartupScanner:
         report = scanner.get_report()
         assert report.scans_completed >= 1
 
+    def test_scan_with_overhead_camera(self):
+        """Scanner should use cam2 (overhead) for scene analysis when available."""
+        img0 = make_image_with_red_object(obj_x=200, obj_y=200, obj_w=60, obj_h=80)
+        img1 = make_image_with_red_object(obj_x=300, obj_y=250, obj_w=50, obj_h=50)
+        img2 = make_image_with_blue_object(obj_x=100, obj_y=100, obj_w=70, obj_h=70)
+
+        cam0 = MockFrameProvider(frame=img0, connected=True)
+        cam1 = MockFrameProvider(frame=img1, connected=True)
+        cam2 = MockFrameProvider(frame=img2, connected=True)
+
+        scanner = StartupScanner(cam0=cam0, cam1=cam1, cam2=cam2)
+        scanner.INITIAL_BURST_COUNT = 2
+        scanner.BURST_FRAME_DELAY_S = 0.05
+        scanner.REFINEMENT_INTERVAL_S = 0.1
+        scanner.MAX_REFINEMENT_SCANS = 1
+        scanner.CAMERA_TIMEOUT_S = 2.0
+
+        scanner.start()
+        deadline = time.monotonic() + 10.0
+        while scanner.is_running and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+        report = scanner.get_report()
+        assert report.scans_completed >= 2
+        assert report.phase in (ScanPhase.COMPLETE, ScanPhase.CONTINUOUS_REFINEMENT)
+
+    def test_scan_overhead_camera_only(self):
+        """Scanner should work with only the overhead camera connected."""
+        img2 = make_image_with_red_object()
+        cam2 = MockFrameProvider(frame=img2, connected=True)
+
+        scanner = StartupScanner(cam0=None, cam1=None, cam2=cam2)
+        scanner.INITIAL_BURST_COUNT = 1
+        scanner.BURST_FRAME_DELAY_S = 0.01
+        scanner.REFINEMENT_INTERVAL_S = 0.1
+        scanner.MAX_REFINEMENT_SCANS = 1
+        scanner.CAMERA_TIMEOUT_S = 2.0
+
+        scanner.start()
+        deadline = time.monotonic() + 10.0
+        while scanner.is_running and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+        report = scanner.get_report()
+        assert report.scans_completed >= 1
+
     def test_report_to_dict(self):
         scanner = StartupScanner()
         report = scanner.get_report()

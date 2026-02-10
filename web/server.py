@@ -4024,7 +4024,7 @@ class VisionPlanRequest(BaseModel):
     instruction: str = Field(
         ..., min_length=1, max_length=500, description="What to do, e.g. 'pick up the red object'"
     )
-    camera: int = Field(default=1, ge=0, le=1, description="Primary camera (0=front, 1=overhead)")
+    camera: int = Field(default=CAM_OVERHEAD, ge=0, le=2, description="Primary camera (0=side, 1=arm, 2=overhead)")
     use_both_cameras: bool = Field(default=True, description="Use both cameras for richer scene")
     execute: bool = Field(default=False, description="Execute the plan immediately if True")
 
@@ -4056,21 +4056,25 @@ async def vision_plan(req: VisionPlanRequest):
             {"ok": False, "error": "Vision planning module not available"}, status_code=501
         )
 
-    frame = await _grab_camera_frame(req.camera)
-    if frame is None:
+    # Prefer the overhead camera as the primary (best top-down perspective).
+    # Fall back to the requested camera if overhead isn't available.
+    overhead_frame = await _grab_camera_frame(CAM_OVERHEAD)
+    primary = overhead_frame
+    if primary is None:
+        primary = await _grab_camera_frame(req.camera)
+    if primary is None:
         return JSONResponse(
             {"ok": False, "error": f"Camera {req.camera} snapshot failed"}, status_code=502
         )
 
-    # Grab second camera for cross-referencing
+    # Grab the side camera for height cross-referencing
     cam0_frame = None
     if req.use_both_cameras:
-        other_cam = 0 if req.camera == 1 else 1
-        cam0_frame = await _grab_camera_frame(other_cam)
+        cam0_frame = await _grab_camera_frame(CAM_SIDE)
 
     import time as _time
 
-    scene = scene_analyzer.analyze(frame, cam0_frame=cam0_frame, timestamp=_time.time())
+    scene = scene_analyzer.analyze(primary, cam0_frame=cam0_frame, timestamp=_time.time())
     cameras_str = ", ".join(scene.cameras_used)
     action_log.add(
         "VISION",
@@ -4116,17 +4120,21 @@ async def vision_plan(req: VisionPlanRequest):
 
 
 @app.post("/api/vision/analyze")
-async def vision_analyze(camera: int = 1, use_both: bool = True):
+async def vision_analyze(camera: int = CAM_OVERHEAD, use_both: bool = True):
     """Analyze the current camera view and return a scene description.
 
     Camera layout: cam0=side, cam1=arm, cam2=overhead (default).
+    Prefers overhead camera for X/Y positioning with side camera for
+    height cross-referencing.
     """
     if not _HAS_VISION_PLANNING or scene_analyzer is None:
         return JSONResponse(
             {"ok": False, "error": "Vision planning module not available"}, status_code=501
         )
 
-    frame = await _grab_camera_frame(camera)
+    # Prefer overhead camera as primary, fall back to requested camera
+    overhead_frame = await _grab_camera_frame(CAM_OVERHEAD)
+    frame = overhead_frame if overhead_frame is not None else await _grab_camera_frame(camera)
     if frame is None:
         return JSONResponse(
             {"ok": False, "error": f"Camera {camera} snapshot failed"}, status_code=502
@@ -4134,8 +4142,7 @@ async def vision_analyze(camera: int = 1, use_both: bool = True):
 
     cam0_frame = None
     if use_both:
-        other_cam = 0 if camera == 1 else 1
-        cam0_frame = await _grab_camera_frame(other_cam)
+        cam0_frame = await _grab_camera_frame(CAM_SIDE)
 
     import time as _time
 
