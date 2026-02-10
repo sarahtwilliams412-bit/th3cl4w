@@ -92,22 +92,22 @@
         1080
       ],
       "camera_matrix": {
-        "fx": 1101.5,
-        "fy": 1101.5,
-        "cx": 960.0,
-        "cy": 540.0
+        "fx": 1046.82,
+        "fy": 1053.92,
+        "cx": 953.89,
+        "cy": 479.56
       },
       "distortion_coefficients": {
-        "k1": -0.15,
-        "k2": 0.06,
-        "p1": 0.0,
-        "p2": 0.0,
-        "k3": 0.0
+        "k1": 0.161641,
+        "k2": -1.002811,
+        "p1": -0.012806,
+        "p2": 0.001346,
+        "k3": -0.362128
       },
-      "fov_diagonal_deg": 90,
-      "fov_horizontal_deg": 82.1,
-      "fov_vertical_deg": 52.2,
-      "confidence": "medium",
+      "fov_diagonal_deg": 92.7,
+      "fov_horizontal_deg": 85.0,
+      "fov_vertical_deg": 54.3,
+      "confidence": "high",
       "v4l2": {
         "focus_absolute": 0,
         "focus_auto": 1,
@@ -119,7 +119,9 @@
         "pan_absolute": 0,
         "tilt_absolute": 0
       },
-      "notes": "Same model as cam0 (Logitech BRIO 4K). Longer exposure (625 vs 312) suggests dimmer viewing angle or darker scene. Focus at 0 with autofocus \u2014 likely focused at infinity/far. Same distortion profile as cam0."
+      "notes": "Checkerboard calibrated. FOV is 93\u00b0 (widest setting) \u2014 different from cam0 overhead (78\u00b0). Same BRIO model, different zoom.",
+      "calibration_method": "checkerboard_19mm_10frames",
+      "rms_reprojection_px": 0.0901
     }
   },
   "frame_analysis": {
