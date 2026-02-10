@@ -2597,10 +2597,10 @@ async function wsCalibPreview() {
 }
 
 // --- 3D Scan ---
-async function scan3dStart() { showResult('scan3dResult', await apiPost('/api/scan3d/start')); scan3dRefresh(); }
-async function scan3dStop() { showResult('scan3dResult', await apiPost('/api/scan3d/stop')); scan3dRefresh(); }
-async function scan3dRefresh() { const data = await apiCall('/api/scan3d/status'); const el = document.getElementById('scan3dStatus'); el.textContent = data.status || 'IDLE'; el.className = 'status-indicator ' + (data.scanning ? 'running' : 'stopped'); }
-async function scan3dList() { showResult('scan3dListResult', await apiCall('/api/scan3d/list')); }
+async function scan3dStart() { showResult('scan3dResult', await apiPost('/api/scan/start')); scan3dRefresh(); }
+async function scan3dStop() { showResult('scan3dResult', await apiPost('/api/scan/stop')); scan3dRefresh(); }
+async function scan3dRefresh() { const data = await apiCall('/api/scan/status'); const el = document.getElementById('scan3dStatus'); el.textContent = data.phase || 'idle'; el.className = 'status-indicator ' + (data.running ? 'running' : 'stopped'); }
+async function scan3dList() { showResult('scan3dListResult', await apiCall('/api/scan/list')); }
 
 // --- Calibration Dashboard ---
 async function calibStartRun(type) { showResult('calibRunResult', await apiPost(`/api/calibration/${type}/start`)); }
