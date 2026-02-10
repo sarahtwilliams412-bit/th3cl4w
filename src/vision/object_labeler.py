@@ -251,11 +251,11 @@ class ObjectLabeler:
             return
 
         try:
-            import google.generativeai as genai
+            from google import genai
 
-            genai.configure(api_key=self._api_key)
-            self._model = genai.GenerativeModel("gemini-2.0-flash")
-            logger.info("Gemini Flash vision labeler initialized")
+            self._client = genai.Client(api_key=self._api_key)
+            self._model = True  # flag that we have a working client
+            logger.info("Gemini Flash vision labeler initialized (new SDK)")
         except Exception as e:
             logger.warning("Failed to init Gemini client: %s — using fallback", e)
             self._model = None
@@ -408,9 +408,24 @@ class ObjectLabeler:
                 content_parts.append(pil_img)
 
             self._last_call_time = time.monotonic()
-            response = self._model.generate_content(
-                content_parts,
-                generation_config={"temperature": 0.1, "max_output_tokens": 256},
+            from google.genai import types as _gtypes
+
+            # Convert PIL image to bytes
+            import io as _io
+
+            _buf = _io.BytesIO()
+            pil_img.save(_buf, format="JPEG", quality=85)
+            _img_bytes = _buf.getvalue()
+
+            response = self._client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=[
+                    _gtypes.Part.from_bytes(data=_img_bytes, mime_type="image/jpeg"),
+                    self._prompt,
+                ],
+                config=_gtypes.GenerateContentConfig(
+                    temperature=0.1, max_output_tokens=1024
+                ),
             )
 
             text = response.text.strip()

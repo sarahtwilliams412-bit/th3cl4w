@@ -902,6 +902,163 @@ class D1ArmSimulator {
     }
   }
 
+  // ----------------------------------------------------------
+  //  Camera Positioning — interactive real-time editing
+  // ----------------------------------------------------------
+
+  /**
+   * Get a Camera3D config by id (for populating UI).
+   */
+  getCameraConfig(id) {
+    const cam = this.cameras3d[String(id)];
+    if (!cam) return null;
+    return {
+      id: cam.id,
+      label: cam.label,
+      perspective: cam.perspective,
+      position: { ...cam.configPos },
+      rotation: { ...cam.configRot },
+      fov: cam.fov,
+    };
+  }
+
+  /**
+   * Get all camera configs.
+   */
+  getAllCameraConfigs() {
+    const configs = {};
+    for (const [id, cam] of Object.entries(this.cameras3d)) {
+      configs[id] = this.getCameraConfig(id);
+    }
+    return configs;
+  }
+
+  /**
+   * Auto-orient a camera to look at a target point (default: arm base).
+   * Only works for non-arm-mounted cameras.
+   */
+  lookCameraAt(id, targetYUp) {
+    const cam = this.cameras3d[String(id)];
+    if (!cam || cam.isArmMounted) return null;
+
+    const target = targetYUp || new THREE.Vector3(0, 0.15, 0);  // slightly above base
+
+    // Camera position in Y-up
+    const pos = cam.group.position.clone();
+    const dir = target.clone().sub(pos).normalize();
+
+    // Compute pitch (rotation around X in Z-up: looking down)
+    // and yaw (rotation around Z in Z-up)
+    // Convert dir back to Z-up: (x, z, -y)
+    const dirZ = { x: dir.x, y: -dir.z, z: dir.y };
+
+    const yaw = Math.atan2(dirZ.y, dirZ.x) * 180 / Math.PI;
+    const pitch = Math.atan2(-dirZ.z, Math.sqrt(dirZ.x * dirZ.x + dirZ.y * dirZ.y)) * 180 / Math.PI;
+
+    // Update the config rotation (Z-up convention: rx=pitch, ry=yaw, rz=roll)
+    const newRot = { rx: pitch, ry: yaw, rz: 0 };
+    cam.configRot = newRot;
+    cam._applyTransform();
+    return newRot;
+  }
+
+  /**
+   * Compute distance from camera to arm base (in meters).
+   */
+  getCameraDistanceToBase(id) {
+    const cam = this.cameras3d[String(id)];
+    if (!cam) return null;
+    const baseYUp = new THREE.Vector3(0, 0, 0);
+    return cam.group.position.distanceTo(baseYUp);
+  }
+
+  /**
+   * Compute distance from camera to current end-effector position.
+   */
+  getCameraDistanceToEE(id) {
+    const cam = this.cameras3d[String(id)];
+    if (!cam) return null;
+    const eePos = this.arm.getEEPosition();
+    return cam.group.position.distanceTo(eePos);
+  }
+
+  // ----------------------------------------------------------
+  //  Render scene from a camera's point of view (for Gemini)
+  // ----------------------------------------------------------
+
+  /**
+   * Render the current scene from a specific Camera3D's viewpoint.
+   * Returns a data URL (JPEG) of the rendered image.
+   *
+   * @param {number|string} camId - Camera ID (0, 1, 2)
+   * @param {number} [width=640] - Render width
+   * @param {number} [height=480] - Render height
+   * @returns {string|null} JPEG data URL, or null on error
+   */
+  renderFromCamera(camId, width, height) {
+    const cam3d = this.cameras3d[String(camId)];
+    if (!cam3d) return null;
+
+    width = width || 640;
+    height = height || 480;
+
+    // Create an offscreen renderer
+    const offRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    offRenderer.setSize(width, height);
+    offRenderer.setPixelRatio(1);
+    offRenderer.outputEncoding = THREE.sRGBEncoding;
+
+    // Create a perspective camera matching Camera3D's config
+    const fov = cam3d.fov || 60;
+    const offCamera = new THREE.PerspectiveCamera(fov, width / height, 0.01, 10);
+
+    // Position it at the Camera3D's world position
+    offCamera.position.copy(cam3d.group.position);
+    offCamera.quaternion.copy(cam3d.group.quaternion);
+
+    // Camera3D frustums point +Y in local space; Three.js cameras look -Z.
+    // Rotate camera to align: +Y forward → -Z forward requires a -90° X rotation.
+    const correctionQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(-Math.PI / 2, 0, 0)
+    );
+    offCamera.quaternion.multiply(correctionQuat);
+
+    // Temporarily hide camera frustums and labels to not clutter the render
+    const prevVisibility = {};
+    for (const [id, c] of Object.entries(this.cameras3d)) {
+      prevVisibility[id] = c.group.visible;
+      c.group.visible = false;
+    }
+
+    // Also hide fog for clearer renders
+    const prevFog = this.scene.fog;
+    this.scene.fog = null;
+
+    offRenderer.render(this.scene, offCamera);
+    const dataUrl = offRenderer.domElement.toDataURL('image/jpeg', 0.85);
+
+    // Restore visibility
+    for (const [id, c] of Object.entries(this.cameras3d)) {
+      c.group.visible = prevVisibility[id];
+    }
+    this.scene.fog = prevFog;
+
+    offRenderer.dispose();
+    return dataUrl;
+  }
+
+  /**
+   * Capture renders from all three cameras.
+   * Returns { "0": dataUrl, "1": dataUrl, "2": dataUrl }.
+   */
+  captureAllCameraViews(width, height) {
+    const views = {};
+    for (const id of Object.keys(this.cameras3d)) {
+      views[id] = this.renderFromCamera(id, width, height);
+    }
+    return views;
+  }
+
   dispose() {
     this._disposed = true;
     this.deactivate();

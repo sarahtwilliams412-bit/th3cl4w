@@ -809,8 +809,10 @@ class ObjectDetector:
             "min_contour_area": self._min_contour_area,
             "max_contour_area": _MAX_CONTOUR_AREA,
             "workspace_bounds": {
-                "x_min": _WS_MIN[0], "y_min": _WS_MIN[1],
-                "x_max": _WS_MAX[0], "y_max": _WS_MAX[1],
+                "x_min": _WS_MIN[0],
+                "y_min": _WS_MIN[1],
+                "x_max": _WS_MAX[0],
+                "y_max": _WS_MAX[1],
             },
             "table_dimensions": {
                 "width_mm": _TABLE_WIDTH_MM,
