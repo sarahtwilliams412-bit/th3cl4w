@@ -956,129 +956,206 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 <!-- ============================================================ -->
 <div class="panel" id="panel-calibration">
   <div class="panel-body">
-    <div class="panel-header">🔧 Calibration Dashboard</div>
-    <div class="panel-grid">
-      <div class="panel-card">
-        <h3>Calibration Runs</h3>
-        <div class="btn-row">
-          <button class="btn primary" onclick="calibStartRun('overhead')">▶ OVERHEAD</button>
-          <button class="btn primary" onclick="calibStartRun('side')">▶ SIDE</button>
-          <button class="btn danger" onclick="calibStopRun()">⏹ STOP</button>
+    <div class="panel-header">Calibration</div>
+
+    <!-- ===== STATUS OVERVIEW ===== -->
+    <div id="calibHealthCard" class="panel-card" style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h3 style="margin:0;">System Status</h3>
+          <div id="calibHealthSummary" style="font-size:13px;color:#888;margin-top:4px;">Checking...</div>
         </div>
-        <div class="status-indicator stopped" id="calibRunStatus" style="margin-top:8px;">IDLE</div>
-        <div class="result-box" id="calibRunResult" style="margin-top:8px;display:none;"></div>
+        <div id="calibHealthScore" style="font-size:28px;font-weight:bold;color:#888;">--</div>
       </div>
-      <div class="panel-card">
-        <h3>Calibration Results</h3>
-        <div class="btn-row">
-          <button class="btn" onclick="calibListResults()">📋 LIST</button>
-          <button class="btn" onclick="calibViewReport()">📊 REPORT</button>
-        </div>
-        <div class="result-box" id="calibResultsBox" style="margin-top:8px;display:none;"></div>
-      </div>
-      <div class="panel-card">
-        <h3>Frame Viewer</h3>
-        <div class="form-row">
-          <label>Session</label><input type="text" id="calibFrameSession" placeholder="Session ID">
-        </div>
-        <button class="btn" onclick="calibViewFrames()" style="margin-top:6px;">🖼 VIEW FRAMES</button>
-        <div id="calibFrameContainer" style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;"></div>
-      </div>
-      <div class="panel-card">
-        <h3>Extrinsics</h3>
-        <button class="btn" onclick="calibViewExtrinsics()">📐 VIEW</button>
-        <div class="result-box" id="calibExtrinsicsResult" style="margin-top:8px;display:none;"></div>
-      </div>
-      <div class="panel-card">
-        <h3>Viz Calibration</h3>
-        <button class="btn primary" id="btnCalibrateViz" title="Move arm through ~20 poses to calibrate visualization">📐 CALIBRATE VIZ</button>
-        <div class="result-box" id="vizCalibResult" style="margin-top:8px;display:none;"></div>
-      </div>
-      <div class="panel-card" style="border-left:3px solid #4CAF50;">
-        <h3>ChArUco Calibration (New)</h3>
-        <p style="font-size:11px;color:#888;margin:4px 0;">ChArUco board + Daniilidis solver + 5-solver cross-check. 25 poses, all 3 cameras.</p>
-        <div class="btn-row">
-          <button class="btn primary" onclick="charucoStart()">▶ START</button>
-          <button class="btn danger" onclick="charucoStop()">⏹ STOP</button>
-        </div>
-        <div class="status-indicator stopped" id="charucoStatus" style="margin-top:8px;">IDLE</div>
-        <div class="result-box" id="charucoResult" style="margin-top:8px;display:none;"></div>
-      </div>
-      <div class="panel-card" style="border-left:3px solid #FF9800;">
-        <h3>Compare Calibrations</h3>
-        <p style="font-size:11px;color:#888;margin:4px 0;">Old (PnP/checkerboard) vs New (ChArUco/hand-eye) side-by-side.</p>
-        <button class="btn" onclick="calibCompare()">📊 COMPARE</button>
-        <div class="result-box" id="calibCompareResult" style="margin-top:8px;display:none;"></div>
-      </div>
-      <div class="panel-card" style="grid-column: 1 / -1;">
-        <h3>📷 Intrinsic Calibration (Checkerboard)</h3>
-        <div class="form-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
-          <div>
-            <label>Camera</label>
-            <select id="icalCamId" style="width:100px;">
-              <option value="0">cam0 — overhead</option>
-              <option value="1">cam1 — arm</option>
-              <option value="2">cam2 — side</option>
-            </select>
+      <div id="calibHealthItems" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:12px;"></div>
+      <button class="btn" onclick="calibCheckHealth()" style="margin-top:10px;">Refresh Status</button>
+    </div>
+
+    <!-- ===== STEP-BY-STEP CALIBRATION ===== -->
+    <div class="panel-card" style="margin-bottom:12px;">
+      <h3>Calibrate</h3>
+      <p style="font-size:12px;color:#888;margin:4px 0 10px;">Run each step in order. Green steps are already done and can be skipped.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+
+        <div id="calibStep1" style="display:flex;align-items:center;gap:10px;padding:8px;background:#1a1a2e;border-radius:6px;">
+          <span id="calibStep1Icon" style="font-size:18px;width:24px;text-align:center;">1</span>
+          <div style="flex:1;">
+            <div style="font-weight:bold;font-size:13px;">Camera Intrinsics</div>
+            <div style="font-size:11px;color:#888;">Calibrate lens parameters for all 3 cameras</div>
           </div>
-          <div>
-            <label>Board W×H</label>
-            <div style="display:flex;gap:4px;">
-              <input type="number" id="icalBoardW" value="8" min="3" max="20" style="width:50px;">
-              <span style="line-height:28px;">×</span>
-              <input type="number" id="icalBoardH" value="5" min="3" max="20" style="width:50px;">
+          <button class="btn primary" onclick="calibRunIntrinsics()" id="btnCalibStep1">Run</button>
+        </div>
+
+        <div id="calibStep2" style="display:flex;align-items:center;gap:10px;padding:8px;background:#1a1a2e;border-radius:6px;">
+          <span id="calibStep2Icon" style="font-size:18px;width:24px;text-align:center;">2</span>
+          <div style="flex:1;">
+            <div style="font-weight:bold;font-size:13px;">Joint Mapping</div>
+            <div style="font-size:11px;color:#888;">Detect which software joint controls which physical joint</div>
+          </div>
+          <button class="btn primary" onclick="jmStart()" id="btnCalibStep2">Run</button>
+        </div>
+
+        <div id="calibStep3" style="display:flex;align-items:center;gap:10px;padding:8px;background:#1a1a2e;border-radius:6px;">
+          <span id="calibStep3Icon" style="font-size:18px;width:24px;text-align:center;">3</span>
+          <div style="flex:1;">
+            <div style="font-weight:bold;font-size:13px;">Camera Extrinsics</div>
+            <div style="font-size:11px;color:#888;">Determine camera positions relative to the arm</div>
+          </div>
+          <button class="btn primary" onclick="charucoStart()" id="btnCalibStep3">Run</button>
+        </div>
+      </div>
+
+      <!-- Unified progress area -->
+      <div id="calibProgress" style="margin-top:10px;display:none;">
+        <div class="status-indicator running" id="calibProgressStatus">RUNNING...</div>
+        <div style="background:#333;border-radius:4px;overflow:hidden;height:20px;margin-top:6px;">
+          <div id="calibProgressBar" style="background:#4CAF50;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;"></div>
+        </div>
+        <button class="btn danger" onclick="calibStopCurrent()" style="margin-top:6px;">Stop</button>
+      </div>
+      <div class="result-box" id="calibStepResult" style="margin-top:8px;display:none;"></div>
+    </div>
+
+    <!-- ===== ADVANCED (COLLAPSED) ===== -->
+    <div class="panel-card" style="margin-bottom:0;">
+      <div style="display:flex;align-items:center;cursor:pointer;gap:6px;" onclick="document.getElementById('calibAdvanced').style.display=document.getElementById('calibAdvanced').style.display==='none'?'block':'none'; this.querySelector('.adv-arrow').textContent=document.getElementById('calibAdvanced').style.display==='none'?'\u25B6':'\u25BC';">
+        <span class="adv-arrow" style="font-size:11px;">&#9654;</span>
+        <h3 style="margin:0;">Advanced</h3>
+        <span style="font-size:11px;color:#666;margin-left:4px;">Individual tools, results, diagnostics</span>
+      </div>
+      <div id="calibAdvanced" style="display:none;margin-top:12px;">
+        <div class="panel-grid">
+
+          <div class="panel-card">
+            <h3>Calibration Runs</h3>
+            <div class="btn-row">
+              <button class="btn primary" onclick="calibStartRun('overhead')">Overhead</button>
+              <button class="btn primary" onclick="calibStartRun('side')">Side</button>
+              <button class="btn danger" onclick="calibStopRun()">Stop</button>
             </div>
+            <div class="status-indicator stopped" id="calibRunStatus" style="margin-top:8px;">IDLE</div>
+            <div class="result-box" id="calibRunResult" style="margin-top:8px;display:none;"></div>
           </div>
-          <div>
-            <label>Square (mm)</label>
-            <input type="number" id="icalSquareMm" value="19" min="1" max="100" step="0.1" style="width:60px;">
+
+          <div class="panel-card">
+            <h3>Results</h3>
+            <div class="btn-row">
+              <button class="btn" onclick="calibListResults()">List</button>
+              <button class="btn" onclick="calibViewReport()">Report</button>
+            </div>
+            <div class="result-box" id="calibResultsBox" style="margin-top:8px;display:none;"></div>
           </div>
-          <div>
-            <label>Frames</label>
-            <input type="number" id="icalNumFrames" value="10" min="3" max="50" style="width:60px;">
+
+          <div class="panel-card">
+            <h3>Frame Viewer</h3>
+            <div class="form-row">
+              <label>Session</label><input type="text" id="calibFrameSession" placeholder="Session ID">
+            </div>
+            <button class="btn" onclick="calibViewFrames()" style="margin-top:6px;">View Frames</button>
+            <div id="calibFrameContainer" style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;"></div>
           </div>
-          <button class="btn primary" onclick="icalStart()">▶ CALIBRATE</button>
-          <button class="btn primary" onclick="icalStartAll()">▶ ALL CAMS</button>
-          <button class="btn" onclick="icalValidate()">✓ VALIDATE</button>
-        </div>
-        <div style="margin-top:8px;">
-          <div class="status-indicator stopped" id="icalStatus">IDLE</div>
-        </div>
-        <div class="result-box" id="icalResult" style="margin-top:8px;display:none;"></div>
-      </div>
-      <div class="panel-card" style="grid-column: 1 / -1; border-left:3px solid #2196F3;">
-        <h3>🗺️ Joint Mapping Calibration</h3>
-        <p style="font-size:11px;color:#888;margin:4px 0;">Tests each DDS joint index one at a time. Uses camera frame differencing to detect which physical joint actually moved. Identifies the real DDS→physical mapping.</p>
-        <div class="btn-row">
-          <button class="btn primary" id="btnJmStart" onclick="jmStart()">▶ START CALIBRATION</button>
-          <button class="btn danger" onclick="jmStop()">⏹ STOP</button>
-        </div>
-        <div class="status-indicator stopped" id="jmStatus" style="margin-top:8px;">IDLE</div>
-        <div id="jmProgress" style="margin-top:8px;display:none;">
-          <div style="background:#333;border-radius:4px;overflow:hidden;height:20px;">
-            <div id="jmProgressBar" style="background:#2196F3;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;"></div>
+
+          <div class="panel-card">
+            <h3>Extrinsics</h3>
+            <button class="btn" onclick="calibViewExtrinsics()">View</button>
+            <div class="result-box" id="calibExtrinsicsResult" style="margin-top:8px;display:none;"></div>
           </div>
+
+          <div class="panel-card">
+            <h3>Viz Calibration</h3>
+            <button class="btn primary" id="btnCalibrateViz" title="Move arm through ~20 poses to calibrate visualization">Calibrate Viz</button>
+            <div class="result-box" id="vizCalibResult" style="margin-top:8px;display:none;"></div>
+          </div>
+
+          <div class="panel-card">
+            <h3>ChArUco Calibration</h3>
+            <div class="btn-row">
+              <button class="btn primary" onclick="charucoStart()">Start</button>
+              <button class="btn danger" onclick="charucoStop()">Stop</button>
+            </div>
+            <div class="status-indicator stopped" id="charucoStatus" style="margin-top:8px;">IDLE</div>
+            <div class="result-box" id="charucoResult" style="margin-top:8px;display:none;"></div>
+          </div>
+
+          <div class="panel-card">
+            <h3>Compare Calibrations</h3>
+            <button class="btn" onclick="calibCompare()">Compare</button>
+            <div class="result-box" id="calibCompareResult" style="margin-top:8px;display:none;"></div>
+          </div>
+
+          <div class="panel-card" style="grid-column: 1 / -1;">
+            <h3>Intrinsic Calibration</h3>
+            <div class="form-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+              <div>
+                <label>Camera</label>
+                <select id="icalCamId" style="width:100px;">
+                  <option value="0">cam0 — overhead</option>
+                  <option value="1">cam1 — arm</option>
+                  <option value="2">cam2 — side</option>
+                </select>
+              </div>
+              <div>
+                <label>Board W×H</label>
+                <div style="display:flex;gap:4px;">
+                  <input type="number" id="icalBoardW" value="8" min="3" max="20" style="width:50px;">
+                  <span style="line-height:28px;">×</span>
+                  <input type="number" id="icalBoardH" value="5" min="3" max="20" style="width:50px;">
+                </div>
+              </div>
+              <div>
+                <label>Square (mm)</label>
+                <input type="number" id="icalSquareMm" value="19" min="1" max="100" step="0.1" style="width:60px;">
+              </div>
+              <div>
+                <label>Frames</label>
+                <input type="number" id="icalNumFrames" value="10" min="3" max="50" style="width:60px;">
+              </div>
+              <button class="btn primary" onclick="icalStart()">Calibrate</button>
+              <button class="btn primary" onclick="icalStartAll()">All Cams</button>
+              <button class="btn" onclick="icalValidate()">Validate</button>
+            </div>
+            <div style="margin-top:8px;">
+              <div class="status-indicator stopped" id="icalStatus">IDLE</div>
+            </div>
+            <div class="result-box" id="icalResult" style="margin-top:8px;display:none;"></div>
+          </div>
+
+          <div class="panel-card" style="grid-column: 1 / -1;">
+            <h3>Joint Mapping</h3>
+            <div class="btn-row">
+              <button class="btn primary" id="btnJmStart" onclick="jmStart()">Start</button>
+              <button class="btn danger" onclick="jmStop()">Stop</button>
+            </div>
+            <div class="status-indicator stopped" id="jmStatus" style="margin-top:8px;">IDLE</div>
+            <div id="jmProgress" style="margin-top:8px;display:none;">
+              <div style="background:#333;border-radius:4px;overflow:hidden;height:20px;">
+                <div id="jmProgressBar" style="background:#2196F3;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;"></div>
+              </div>
+            </div>
+            <table id="jmResultsTable" style="margin-top:8px;display:none;width:100%;font-size:12px;border-collapse:collapse;">
+              <thead>
+                <tr style="border-bottom:1px solid #444;">
+                  <th style="text-align:left;padding:4px;">DDS Index</th>
+                  <th style="text-align:left;padding:4px;">Moved?</th>
+                  <th style="text-align:left;padding:4px;">Diff Score</th>
+                  <th style="text-align:left;padding:4px;">Region</th>
+                  <th style="text-align:left;padding:4px;">Suggested Label</th>
+                </tr>
+              </thead>
+              <tbody id="jmResultsBody"></tbody>
+            </table>
+            <div id="jmApplySection" style="margin-top:8px;display:none;">
+              <h4 style="margin:8px 0 4px;">Edit Mapping (UI Joint → DDS Index)</h4>
+              <div id="jmMappingEditors" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;"></div>
+              <button class="btn primary" onclick="jmApply()" style="margin-top:8px;">Apply Mapping</button>
+            </div>
+            <div class="result-box" id="jmApplyResult" style="margin-top:8px;display:none;"></div>
+          </div>
+
         </div>
-        <table id="jmResultsTable" style="margin-top:8px;display:none;width:100%;font-size:12px;border-collapse:collapse;">
-          <thead>
-            <tr style="border-bottom:1px solid #444;">
-              <th style="text-align:left;padding:4px;">DDS Index</th>
-              <th style="text-align:left;padding:4px;">Moved?</th>
-              <th style="text-align:left;padding:4px;">Diff Score</th>
-              <th style="text-align:left;padding:4px;">Region</th>
-              <th style="text-align:left;padding:4px;">Suggested Label</th>
-            </tr>
-          </thead>
-          <tbody id="jmResultsBody"></tbody>
-        </table>
-        <div id="jmApplySection" style="margin-top:8px;display:none;">
-          <h4 style="margin:8px 0 4px;">Edit Mapping (UI Joint → DDS Index)</h4>
-          <div id="jmMappingEditors" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;"></div>
-          <button class="btn primary" onclick="jmApply()" style="margin-top:8px;">✅ APPLY MAPPING</button>
-        </div>
-        <div class="result-box" id="jmApplyResult" style="margin-top:8px;display:none;"></div>
       </div>
     </div>
+
   </div>
 </div>
 
@@ -2501,6 +2578,116 @@ async function scan3dStop() { showResult('scan3dResult', await apiPost('/api/sca
 async function scan3dRefresh() { const data = await apiCall('/api/scan3d/status'); const el = document.getElementById('scan3dStatus'); el.textContent = data.status || 'IDLE'; el.className = 'status-indicator ' + (data.scanning ? 'running' : 'stopped'); }
 async function scan3dList() { showResult('scan3dListResult', await apiCall('/api/scan3d/list')); }
 
+// --- Calibration Health & Simplified Workflow ---
+let _calibHealthData = null;
+async function calibCheckHealth() {
+  const data = await apiCall('/api/calibration/health');
+  _calibHealthData = data;
+  const container = document.getElementById('calibHealthItems');
+  const scoreEl = document.getElementById('calibHealthScore');
+  const summaryEl = document.getElementById('calibHealthSummary');
+  if (!container) return;
+  container.innerHTML = '';
+  // Render each subsystem status
+  const items = [
+    { label: 'Overhead Camera', ok: data.intrinsics?.cam0?.ok, detail: data.intrinsics?.cam0?.ok ? `RMS ${data.intrinsics.cam0.rms}px` : 'Not calibrated', step: 1 },
+    { label: 'Arm Camera', ok: data.intrinsics?.cam1?.ok, detail: data.intrinsics?.cam1?.ok ? `RMS ${data.intrinsics.cam1.rms}px` : 'Not calibrated', step: 1 },
+    { label: 'Side Camera', ok: data.intrinsics?.cam2?.ok, detail: data.intrinsics?.cam2?.ok ? `RMS ${data.intrinsics.cam2.rms}px` : 'Not calibrated', step: 1 },
+    { label: 'Joint Mapping', ok: data.joint_mapping?.ok, detail: data.joint_mapping?.ok ? 'Calibrated' : 'Not calibrated', step: 2 },
+    { label: 'Camera Extrinsics', ok: data.extrinsics?.ok, detail: data.extrinsics?.ok ? 'Calibrated' : 'Not calibrated', step: 3 },
+  ];
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1a1a2e;border-radius:6px;border-left:3px solid ' + (item.ok ? '#4CAF50' : '#f44336') + ';';
+    div.innerHTML = `<span style="font-size:16px;">${item.ok ? '\u2705' : '\u274C'}</span><div><div style="font-size:12px;font-weight:bold;">${item.label}</div><div style="font-size:11px;color:#888;">${item.detail}</div></div>`;
+    container.appendChild(div);
+  });
+  // Score
+  scoreEl.textContent = `${data.score}/${data.total}`;
+  scoreEl.style.color = data.score === data.total ? '#4CAF50' : data.score > 0 ? '#FF9800' : '#f44336';
+  summaryEl.textContent = data.summary;
+  // Update step icons
+  const step1ok = data.intrinsics?.cam0?.ok && data.intrinsics?.cam1?.ok && data.intrinsics?.cam2?.ok;
+  const step2ok = data.joint_mapping?.ok;
+  const step3ok = data.extrinsics?.ok;
+  _calibUpdateStep(1, step1ok);
+  _calibUpdateStep(2, step2ok);
+  _calibUpdateStep(3, step3ok);
+}
+function _calibUpdateStep(n, ok) {
+  const icon = document.getElementById(`calibStep${n}Icon`);
+  const step = document.getElementById(`calibStep${n}`);
+  const btn = document.getElementById(`btnCalibStep${n}`);
+  if (!icon || !step) return;
+  if (ok) {
+    icon.textContent = '\u2705';
+    step.style.borderLeft = '3px solid #4CAF50';
+    if (btn) { btn.textContent = 'Redo'; btn.className = 'btn'; }
+  } else {
+    icon.textContent = String(n);
+    step.style.borderLeft = '3px solid transparent';
+    if (btn) { btn.textContent = 'Run'; btn.className = 'btn primary'; }
+  }
+}
+async function calibRunIntrinsics() {
+  // Run intrinsics for all cameras with default params
+  const btn = document.getElementById('btnCalibStep1');
+  btn.disabled = true; btn.textContent = 'Running...';
+  const progress = document.getElementById('calibProgress');
+  const statusEl = document.getElementById('calibProgressStatus');
+  const bar = document.getElementById('calibProgressBar');
+  progress.style.display = 'block';
+  statusEl.textContent = 'CALIBRATING CAMERAS...';
+  bar.style.width = '0%';
+  try {
+    const r = await apiPost('/api/calibration/intrinsics/all', {
+      board_width: 8, board_height: 5, square_mm: 19.0, num_frames: 10
+    });
+    if (r.error) {
+      showResult('calibStepResult', r);
+      progress.style.display = 'none';
+      btn.disabled = false; btn.textContent = 'Run';
+      return;
+    }
+    // Poll intrinsics status
+    const poll = setInterval(async () => {
+      const st = await apiCall('/api/calibration/intrinsics/status');
+      statusEl.textContent = `INTRINSICS — cam${st.camera_id} — ${st.frames_captured}/${st.frames_total} frames`;
+      const pct = st.frames_total > 0 ? Math.round((st.frames_captured / st.frames_total) * 100) : 0;
+      bar.style.width = pct + '%'; bar.textContent = pct + '%';
+      if (st.state === 'done' || st.state === 'error') {
+        clearInterval(poll);
+        progress.style.display = 'none';
+        btn.disabled = false;
+        if (st.state === 'done') {
+          showResult('calibStepResult', { message: 'Camera intrinsics calibrated successfully' });
+        } else {
+          showResult('calibStepResult', { error: st.error_message || 'Intrinsic calibration failed' });
+        }
+        calibCheckHealth();
+      }
+    }, 500);
+  } catch (e) {
+    progress.style.display = 'none';
+    btn.disabled = false; btn.textContent = 'Run';
+    showResult('calibStepResult', { error: e.message });
+  }
+}
+function calibStopCurrent() {
+  // Stop whatever is currently running
+  apiPost('/api/calibration/charuco/stop');
+  apiPost('/api/calibration/joint-mapping/stop');
+  document.getElementById('calibProgress').style.display = 'none';
+}
+// Auto-check health when calibration panel is shown
+const _origNavClick = document.querySelectorAll ? null : null; // placeholder
+document.addEventListener('click', (e) => {
+  const navItem = e.target.closest('[data-panel="calibration"]');
+  if (navItem) setTimeout(calibCheckHealth, 100);
+});
+// Also check on page load if calibration panel is visible
+setTimeout(() => { if (document.getElementById('panel-calibration')?.style.display !== 'none') calibCheckHealth(); }, 1000);
+
 // --- Calibration Dashboard ---
 async function calibStartRun(type) { showResult('calibRunResult', await apiPost(`/api/calibration/${type}/start`)); }
 async function calibStopRun() { showResult('calibRunResult', await apiPost('/api/calibration/abort')); }
@@ -2514,11 +2701,17 @@ let _charucoPoller = null;
 async function charucoStart() {
   const el = document.getElementById('charucoStatus');
   el.textContent = 'STARTING...'; el.className = 'status-indicator running';
+  // Show unified progress
+  const progress = document.getElementById('calibProgress');
+  const statusEl = document.getElementById('calibProgressStatus');
+  const bar = document.getElementById('calibProgressBar');
+  if (progress) { progress.style.display = 'block'; statusEl.textContent = 'STARTING EXTRINSICS...'; bar.style.width = '0%'; }
   const data = await apiPost('/api/calibration/charuco/start');
   if (data.ok) {
     _charucoPoller = setInterval(charucoPoll, 2000);
   } else {
     el.textContent = 'ERROR'; el.className = 'status-indicator stopped';
+    if (progress) progress.style.display = 'none';
     showResult('charucoResult', data);
   }
 }
@@ -2533,13 +2726,26 @@ async function charucoPoll() {
   const el = document.getElementById('charucoStatus');
   el.textContent = (data.status || 'unknown').toUpperCase() + (data.progress ? ` (${data.progress}/${data.total})` : '');
   el.className = 'status-indicator ' + (data.status === 'complete' ? 'running' : data.status === 'error' ? 'stopped' : 'running');
+  // Update unified progress bar
+  const progress = document.getElementById('calibProgress');
+  const statusEl = document.getElementById('calibProgressStatus');
+  const bar = document.getElementById('calibProgressBar');
+  if (progress && progress.style.display !== 'none') {
+    const pct = data.total > 0 ? Math.round((data.progress / data.total) * 100) : 0;
+    statusEl.textContent = `EXTRINSICS — pose ${data.progress || 0}/${data.total || 25}`;
+    bar.style.width = pct + '%'; bar.textContent = pct + '%';
+  }
   if (data.status === 'complete' || data.status === 'error') {
     if (_charucoPoller) { clearInterval(_charucoPoller); _charucoPoller = null; }
+    if (progress) progress.style.display = 'none';
     if (data.status === 'complete') {
       const result = await apiCall('/api/calibration/charuco/result');
       showResult('charucoResult', result);
+      showResult('calibStepResult', { message: 'Camera extrinsics calibrated successfully' });
+      calibCheckHealth();
     } else {
       showResult('charucoResult', { error: data.error });
+      showResult('calibStepResult', { error: data.error || 'Extrinsics calibration failed' });
     }
   }
 }
@@ -2627,6 +2833,11 @@ async function jmStart() {
   document.getElementById('jmResultsTable').style.display = 'table';
   document.getElementById('jmResultsBody').innerHTML = '';
   document.getElementById('jmApplySection').style.display = 'none';
+  // Show unified progress
+  const progress = document.getElementById('calibProgress');
+  const statusEl = document.getElementById('calibProgressStatus');
+  const bar = document.getElementById('calibProgressBar');
+  if (progress) { progress.style.display = 'block'; statusEl.textContent = 'JOINT MAPPING...'; bar.style.width = '0%'; }
   if (_jmPollTimer) clearInterval(_jmPollTimer);
   _jmPollTimer = setInterval(jmPoll, 1000);
 }
@@ -2656,9 +2867,22 @@ async function jmPoll() {
       <td style="padding:4px;">${r.suggested_label}${r.skip_reason ? ' (' + r.skip_reason + ')' : ''}</td>`;
     tbody.appendChild(tr);
   }
+  // Update unified progress
+  const uProgress = document.getElementById('calibProgress');
+  const uStatus = document.getElementById('calibProgressStatus');
+  const uBar = document.getElementById('calibProgressBar');
+  if (uProgress && uProgress.style.display !== 'none') {
+    uStatus.textContent = `JOINT MAPPING — joint ${st.current_joint + 1}/${st.total_joints}`;
+    uBar.style.width = pct + '%'; uBar.textContent = pct + '%';
+  }
   if (st.state === 'complete' || st.state === 'error' || st.state === 'aborted') {
     clearInterval(_jmPollTimer); _jmPollTimer = null;
-    if (st.state === 'complete') jmShowApply(st.results);
+    if (uProgress) uProgress.style.display = 'none';
+    if (st.state === 'complete') {
+      jmShowApply(st.results);
+      showResult('calibStepResult', { message: 'Joint mapping complete — review mapping below' });
+      calibCheckHealth();
+    }
     if (st.error) el.textContent += ` — ${st.error}`;
   }
 }
