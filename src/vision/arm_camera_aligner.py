@@ -10,29 +10,28 @@ from typing import Optional
 import cv2
 import numpy as np
 
+from src.config.pick_config import get_pick_config as _get_pick_config
+
 logger = logging.getLogger(__name__)
 
 # Default image dimensions for arm camera
 ARM_CAM_WIDTH = 1920
 ARM_CAM_HEIGHT = 1080
 
-# Red Bull can HSV ranges (arm cam sees from above/close range)
+
+def _arm_cam_hsv():
+    ranges = _get_pick_config().get("arm_camera", "redbull_hsv_ranges")
+    return [(np.array(r["lower"]), np.array(r["upper"])) for r in ranges]
+
+
+# Legacy aliases
 REDBULL_HSV_RANGES = [
-    # Red hue range 1
     (np.array([0, 80, 60]), np.array([12, 255, 255])),
-    # Red hue range 2
     (np.array([158, 80, 60]), np.array([180, 255, 255])),
-    # Blue (Red Bull logo)
     (np.array([100, 80, 60]), np.array([130, 255, 255])),
 ]
-
-# Pixel-to-mm conversion factor at typical working distance (~100mm above object)
-# Rough estimate: at 100mm distance with ~120° FOV, 1920px ≈ 350mm
-# So 1px ≈ 0.18mm. This should be calibrated per-setup.
 DEFAULT_PX_TO_MM = 0.18
-
-# Centering tolerance in pixels
-DEFAULT_TOLERANCE_PX = 30  # ~5mm at typical working distance
+DEFAULT_TOLERANCE_PX = 30
 
 
 class ArmCameraAligner:
@@ -42,15 +41,16 @@ class ArmCameraAligner:
         self,
         image_width: int = ARM_CAM_WIDTH,
         image_height: int = ARM_CAM_HEIGHT,
-        px_to_mm: float = DEFAULT_PX_TO_MM,
-        tolerance_px: int = DEFAULT_TOLERANCE_PX,
+        px_to_mm: float = None,
+        tolerance_px: int = None,
     ):
+        cfg = _get_pick_config()
         self.image_width = image_width
         self.image_height = image_height
         self.cx = image_width // 2
         self.cy = image_height // 2
-        self.px_to_mm = px_to_mm
-        self.tolerance_px = tolerance_px
+        self.px_to_mm = px_to_mm if px_to_mm is not None else cfg.get("arm_camera", "px_to_mm")
+        self.tolerance_px = tolerance_px if tolerance_px is not None else cfg.get("arm_camera", "tolerance_px")
 
     def detect_object(
         self, frame: np.ndarray, target: str = "redbull"
@@ -105,7 +105,7 @@ class ArmCameraAligner:
     def _detect_redbull(self, hsv: np.ndarray) -> np.ndarray:
         """Detect Red Bull can colors in HSV."""
         mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
-        for lower, upper in REDBULL_HSV_RANGES:
+        for lower, upper in _arm_cam_hsv():
             mask |= cv2.inRange(hsv, lower, upper)
         return mask
 

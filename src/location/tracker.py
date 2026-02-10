@@ -21,25 +21,25 @@ except ImportError:
 from .detector import UnifiedDetector, DetectionResult
 from .world_model import LocationWorldModel
 from .reachability import ARM_MAX_REACH_MM
+from src.config.pick_config import get_pick_config as _get_pick_config
 
 logger = logging.getLogger("th3cl4w.location.tracker")
 
 # Camera server base URL
 CAMERA_SERVER = "http://localhost:8081"
 
-# Polling intervals (seconds)
-FAST_SCAN_INTERVAL = 1.0       # HSV detection every 1s
-DEEP_SCAN_INTERVAL = 30.0      # LLM scan every 30s
-VERIFY_INTERVAL = 5.0          # Re-verify known objects every 5s
-STALE_SWEEP_INTERVAL = 10.0    # Sweep stale objects every 10s
-
 # Camera IDs
 CAMERA_IDS = [0, 1, 2]  # overhead, side, arm
 
-# Rough pixel-to-mm scale for overhead camera (cam 0)
-# Assumes ~800mm workspace across 1920px
+def _tracker_cfg(key):
+    return _get_pick_config().get("tracker", key)
+
+# Legacy module-level aliases
+FAST_SCAN_INTERVAL = 1.0
+DEEP_SCAN_INTERVAL = 30.0
+VERIFY_INTERVAL = 5.0
+STALE_SWEEP_INTERVAL = 10.0
 OVERHEAD_MM_PER_PX = 800.0 / 1920.0
-# For side camera height estimation
 SIDE_MM_PER_PX = 600.0 / 1080.0
 
 
@@ -52,8 +52,9 @@ def _pixel_to_position_overhead(
     Real systems would use calibrated extrinsics.
     """
     # Center of image ≈ arm base
-    x_mm = (cx - frame_w / 2) * OVERHEAD_MM_PER_PX
-    y_mm = (cy - frame_h / 2) * OVERHEAD_MM_PER_PX
+    mm_per_px = _tracker_cfg("overhead_mm_per_px")
+    x_mm = (cx - frame_w / 2) * mm_per_px
+    y_mm = (cy - frame_h / 2) * mm_per_px
     return np.array([x_mm, y_mm, 0.0])
 
 
@@ -61,8 +62,9 @@ def _pixel_to_position_side(
     cx: int, cy: int, frame_w: int = 1920, frame_h: int = 1080
 ) -> np.ndarray:
     """Convert side camera pixel to approximate XZ position."""
-    x_mm = (cx - frame_w / 2) * SIDE_MM_PER_PX
-    z_mm = (frame_h - cy) * SIDE_MM_PER_PX  # y pixel → height
+    side_mm = _tracker_cfg("side_mm_per_px")
+    x_mm = (cx - frame_w / 2) * side_mm
+    z_mm = (frame_h - cy) * side_mm  # y pixel → height
     return np.array([x_mm, 0.0, z_mm])
 
 
@@ -147,7 +149,7 @@ class ObjectTracker:
             except Exception:
                 logger.exception("Fast scan error")
 
-            await asyncio.sleep(FAST_SCAN_INTERVAL)
+            await asyncio.sleep(_tracker_cfg("fast_scan_interval_s"))
 
     async def _deep_scan_loop(self):
         """Periodically run LLM detection for comprehensive object discovery."""
@@ -166,7 +168,7 @@ class ObjectTracker:
             except Exception:
                 logger.exception("Deep scan error")
 
-            await asyncio.sleep(DEEP_SCAN_INTERVAL)
+            await asyncio.sleep(_tracker_cfg("deep_scan_interval_s"))
 
     async def _stale_sweep_loop(self):
         """Periodically sweep stale objects."""
@@ -177,7 +179,7 @@ class ObjectTracker:
                 break
             except Exception:
                 logger.exception("Stale sweep error")
-            await asyncio.sleep(STALE_SWEEP_INTERVAL)
+            await asyncio.sleep(_tracker_cfg("stale_sweep_interval_s"))
 
     # ------------------------------------------------------------------
     # Frame acquisition
@@ -277,13 +279,15 @@ class ObjectTracker:
         """Estimate object dimensions from bounding box."""
         _, _, bw, bh = det.bbox
         if cam_id == 0:
-            w_mm = bw * OVERHEAD_MM_PER_PX
-            d_mm = bh * OVERHEAD_MM_PER_PX
+            oh_mm = _tracker_cfg("overhead_mm_per_px")
+            w_mm = bw * oh_mm
+            d_mm = bh * oh_mm
             h_mm = 50.0  # default height, unknown from overhead
             return np.array([w_mm, h_mm, d_mm])
         elif cam_id == 1:
-            w_mm = bw * SIDE_MM_PER_PX
-            h_mm = bh * SIDE_MM_PER_PX
+            s_mm = _tracker_cfg("side_mm_per_px")
+            w_mm = bw * s_mm
+            h_mm = bh * s_mm
             d_mm = w_mm  # assume symmetric
             return np.array([w_mm, h_mm, d_mm])
         else:

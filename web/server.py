@@ -1068,11 +1068,15 @@ async def cmd_set_joint(req: SetJointRequest):
         return JSONResponse(resp_data, status_code=400)
 
     # Safe reach check: rough torque proxy using current targets
+    from src.config.pick_config import get_pick_config as _get_pick_config
+    _safety_cfg = _get_pick_config()
     current_joints = list(armState_joints())
     proposed = list(current_joints)
     proposed[req.id] = req.angle
-    torque_proxy = abs(proposed[1]) + abs(proposed[2]) * 0.7
-    if torque_proxy > 100:
+    _j2_factor = _safety_cfg.get("safety", "torque_j2_factor")
+    _torque_limit = _safety_cfg.get("safety", "torque_proxy_limit")
+    torque_proxy = abs(proposed[1]) + abs(proposed[2]) * _j2_factor
+    if torque_proxy > _torque_limit:
         action_log.add(
             "SET_JOINT",
             f"REJECTED — torque proxy {torque_proxy:.1f} > 100 (J1={proposed[1]:.1f}° J2={proposed[2]:.1f}°)",
@@ -1105,11 +1109,13 @@ async def cmd_set_joint(req: SetJointRequest):
 
 
 async def _check_stall(joint_id: int, target_angle: float, cid: str | None):
-    """After 3s, check if joint reached within 5° of target. Log warning if stalled."""
-    await asyncio.sleep(3.0)
+    """After delay, check if joint reached within threshold of target. Log warning if stalled."""
+    from src.config.pick_config import get_pick_config as _get_pick_config
+    _scfg = _get_pick_config()
+    await asyncio.sleep(_scfg.get("safety", "stall_check_delay_s"))
     state = get_arm_state()
     actual = state["joints"][joint_id]
-    if abs(actual - target_angle) > 5.0:
+    if abs(actual - target_angle) > _scfg.get("safety", "stall_threshold_deg"):
         msg = f"J{joint_id} stalled at {actual:.1f}° (target {target_angle:.1f}°)"
         action_log.add("STALL", msg, "warning")
         logger.warning(msg)
@@ -4769,6 +4775,36 @@ async def intrinsics_validate(cam_id: int):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, cal.validate, cam_id)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Pick Config API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/config/pick")
+async def get_pick_config_api():
+    """Return full pick config."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+    return JSONResponse({"config": cfg.get_all(), "defaults": cfg.get_defaults(), "diff": cfg.diff()})
+
+
+@app.post("/api/config/pick")
+async def update_pick_config_api(req: dict):
+    """Update pick config values (deep merge)."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+    cfg.update(req)
+    return JSONResponse({"ok": True, "config": cfg.get_all()})
+
+
+@app.post("/api/config/pick/reset")
+async def reset_pick_config_api():
+    """Reset pick config to defaults."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+    cfg.reset()
+    return JSONResponse({"ok": True, "config": cfg.get_all()})
 
 
 @app.get("/")
