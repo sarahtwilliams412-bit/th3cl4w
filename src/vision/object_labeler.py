@@ -87,7 +87,7 @@ def _build_per_object_prompt(ontology_labels: list[str], color_hint: str, shape_
         f"{labels_str}\n\n"
         "Respond ONLY with a single JSON object (not an array):\n"
         '{"label": "snake_case_name", "category": "one of: beverage_can, bottle, '
-        'cup_mug, hand_tool, office_supply, small_box, ball, electronic, food_item, '
+        "cup_mug, hand_tool, office_supply, small_box, ball, electronic, food_item, "
         'toy, container, or unknown", "confidence": 0.0-1.0}\n\n'
         "Examples:\n"
         '{"label": "coca_cola_can", "category": "beverage_can", "confidence": 0.92}\n'
@@ -153,10 +153,22 @@ def _crop_and_mark(
     cv2.circle(crop, (local_cx, local_cy), radius, (0, 255, 0), 3, cv2.LINE_AA)
     # Also draw a small crosshair
     cross = 6
-    cv2.line(crop, (local_cx - cross, local_cy), (local_cx + cross, local_cy),
-             (0, 255, 0), 2, cv2.LINE_AA)
-    cv2.line(crop, (local_cx, local_cy - cross), (local_cx, local_cy + cross),
-             (0, 255, 0), 2, cv2.LINE_AA)
+    cv2.line(
+        crop,
+        (local_cx - cross, local_cy),
+        (local_cx + cross, local_cy),
+        (0, 255, 0),
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.line(
+        crop,
+        (local_cx, local_cy - cross),
+        (local_cx, local_cy + cross),
+        (0, 255, 0),
+        2,
+        cv2.LINE_AA,
+    )
 
     # Resize if too large
     ch, cw = crop.shape[:2]
@@ -303,7 +315,9 @@ class ObjectLabeler:
 
         for obj in detected_objects:
             images = []
-            color_hint = self._color_name_from_bgr(obj.color_bgr) if hasattr(obj, "color_bgr") else "unknown"
+            color_hint = (
+                self._color_name_from_bgr(obj.color_bgr) if hasattr(obj, "color_bgr") else "unknown"
+            )
             shape_hint = getattr(obj, "shape", "irregular")
 
             # Crop from overhead camera
@@ -347,8 +361,13 @@ class ObjectLabeler:
                 obj.llm_confidence = float(confidence)
                 any_labeled = True
 
-                logger.info("Object %d labeled as '%s' (category=%s, conf=%.2f)",
-                            obj.obj_id, label, category, confidence)
+                logger.info(
+                    "Object %d labeled as '%s' (category=%s, conf=%.2f)",
+                    obj.obj_id,
+                    label,
+                    category,
+                    confidence,
+                )
             else:
                 # Keep color-based fallback label
                 if not obj.category:
