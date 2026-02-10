@@ -21,49 +21,13 @@ import numpy as np
 
 logger = logging.getLogger("th3cl4w.location.detector")
 
-# --- Rate-limit backoff state for Gemini API ---
-_rate_limit_backoff_s: float = 0.0  # current backoff (0 = no backoff)
-_rate_limit_until: float = 0.0  # timestamp until which we should not call Gemini
-_consecutive_429s: int = 0  # consecutive 429 errors
-_BACKOFF_INITIAL_S = 60.0
-_BACKOFF_MAX_S = 600.0  # 10 minutes
-_BACKOFF_MULTIPLIER = 2.0
-_PAUSE_AFTER_CONSECUTIVE = 5  # pause scanning after this many consecutive 429s
-_PAUSE_DURATION_S = 600.0  # 10 minute pause
+# Use centralized rate limiter
+from src.utils.gemini_limiter import gemini_limiter
 
 
 def gemini_rate_limited() -> bool:
     """Return True if we should skip Gemini calls due to rate limiting."""
-    return time.time() < _rate_limit_until
-
-
-def _record_429():
-    """Record a 429 error and update backoff state."""
-    global _rate_limit_backoff_s, _rate_limit_until, _consecutive_429s
-    _consecutive_429s += 1
-    if _consecutive_429s >= _PAUSE_AFTER_CONSECUTIVE:
-        _rate_limit_backoff_s = _PAUSE_DURATION_S
-        logger.warning(
-            "Hit %d consecutive 429s — pausing Gemini for %ds",
-            _consecutive_429s,
-            int(_PAUSE_DURATION_S),
-        )
-    elif _rate_limit_backoff_s == 0:
-        _rate_limit_backoff_s = _BACKOFF_INITIAL_S
-    else:
-        _rate_limit_backoff_s = min(_rate_limit_backoff_s * _BACKOFF_MULTIPLIER, _BACKOFF_MAX_S)
-    _rate_limit_until = time.time() + _rate_limit_backoff_s
-    logger.info(
-        "Gemini 429 backoff: %.0fs (consecutive: %d)", _rate_limit_backoff_s, _consecutive_429s
-    )
-
-
-def _record_success():
-    """Reset backoff state on successful Gemini call."""
-    global _rate_limit_backoff_s, _rate_limit_until, _consecutive_429s
-    _rate_limit_backoff_s = 0.0
-    _rate_limit_until = 0.0
-    _consecutive_429s = 0
+    return gemini_limiter.is_limited
 
 
 @dataclass
@@ -172,11 +136,8 @@ class UnifiedDetector:
         image_height: int = 1080,
     ) -> list[DetectionResult]:
         """LLM-based detection using Gemini. Async, slower but more capable."""
-        if gemini_rate_limited():
-            logger.debug(
-                "Skipping LLM detection — rate-limited for %.0fs more",
-                _rate_limit_until - time.time(),
-            )
+        if not gemini_limiter.acquire():
+            logger.debug("Skipping LLM detection — rate-limited")
             return []
 
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -238,13 +199,13 @@ class UnifiedDetector:
                 )
 
             logger.info("LLM detected %d objects on cam %d", len(results), camera_id)
-            _record_success()
+            gemini_limiter.record_success()
             return results
 
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str or "Resource" in err_str and "exhausted" in err_str:
-                _record_429()
+            if "429" in err_str or ("Resource" in err_str and "exhausted" in err_str):
+                gemini_limiter.record_429()
             else:
                 logger.error("LLM detection failed: %s", e)
             return []

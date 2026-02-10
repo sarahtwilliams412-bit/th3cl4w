@@ -385,9 +385,10 @@ class ObjectLabeler:
         return detected_objects
 
     def _can_call(self) -> bool:
-        """Check rate limit."""
-        now = time.monotonic()
-        return (now - self._last_call_time) >= _MIN_CALL_INTERVAL_S
+        """Check rate limit via centralized limiter."""
+        from src.utils.gemini_limiter import gemini_limiter
+
+        return not gemini_limiter.is_limited
 
     def _call_gemini_per_object(
         self,
@@ -396,6 +397,12 @@ class ObjectLabeler:
         shape_hint: str,
     ) -> Optional[dict]:
         """Send cropped images of a single object to Gemini and parse response."""
+        from src.utils.gemini_limiter import gemini_limiter
+
+        if not gemini_limiter.acquire():
+            logger.debug("Skipping Gemini call — rate-limited")
+            return None
+
         try:
             import PIL.Image
 
@@ -406,8 +413,6 @@ class ObjectLabeler:
                 rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
                 pil_img = PIL.Image.fromarray(rgb)
                 content_parts.append(pil_img)
-
-            self._last_call_time = time.monotonic()
             from google.genai import types as _gtypes
 
             # Convert PIL image to bytes
@@ -437,6 +442,7 @@ class ObjectLabeler:
                 text = text.strip()
 
             result = json.loads(text)
+            gemini_limiter.record_success()
             if isinstance(result, dict) and "label" in result:
                 return result
             # If Gemini returned an array, take the first item
@@ -445,7 +451,11 @@ class ObjectLabeler:
             return None
 
         except Exception as e:
-            logger.warning("Gemini per-object call failed: %s", e)
+            err_str = str(e)
+            if "429" in err_str or ("Resource" in err_str and "exhausted" in err_str):
+                gemini_limiter.record_429()
+            else:
+                logger.warning("Gemini per-object call failed: %s", e)
             return None
 
     def _apply_fallback(self, detected_objects: list):

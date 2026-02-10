@@ -3292,6 +3292,32 @@ async def proxy_latest_frame(cam_id: int):
         return JSONResponse({"error": str(e)}, status_code=502)
 
 
+@app.get("/api/gemini/status")
+async def api_gemini_status():
+    """Get Gemini rate limiter status."""
+    from src.utils.gemini_limiter import gemini_limiter
+
+    return {"ok": True, **gemini_limiter.status}
+
+
+@app.post("/api/gemini/pause")
+async def api_gemini_pause():
+    """Pause all Gemini API calls."""
+    from src.utils.gemini_limiter import gemini_limiter
+
+    gemini_limiter.pause()
+    return {"ok": True, "paused": True}
+
+
+@app.post("/api/gemini/resume")
+async def api_gemini_resume():
+    """Resume Gemini API calls."""
+    from src.utils.gemini_limiter import gemini_limiter
+
+    gemini_limiter.resume()
+    return {"ok": True, "paused": False}
+
+
 @app.get("/api/camera/status")
 async def camera_calibration_status():
     """Get camera calibration status."""
