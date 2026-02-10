@@ -15,6 +15,12 @@ from __future__ import annotations
 import numpy as np
 
 
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class ArmVoxelizer:
     """Convert arm link segments to voxel occupancy mask.
 

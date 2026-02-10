@@ -410,14 +410,14 @@ async def main():
     
     # Print summary
     summary = comparator.summary(report)
-    print("\n" + "=" * 60)
-    print("COMPARISON SUMMARY")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("COMPARISON SUMMARY")
+    logger.info("=" * 60)
     for k, v in summary.items():
-        print(f"  {k}: {v}")
-    print(f"  total_results: {len(all_results)}")
-    print(f"  output_dir: {session_dir}")
-    print("=" * 60)
+        logger.info(f"  {k}: {v}")
+    logger.info(f"  total_results: {len(all_results)}")
+    logger.info(f"  output_dir: {session_dir}")
+    logger.info("=" * 60)
     
     return report
 

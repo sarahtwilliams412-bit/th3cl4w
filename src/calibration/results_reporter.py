@@ -14,6 +14,12 @@ from typing import Optional
 # Import actual dataclasses from detection_comparator, with stubs as fallback
 # ---------------------------------------------------------------------------
 
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 try:
     from src.vision.detection_comparator import (
         ComparisonReport,

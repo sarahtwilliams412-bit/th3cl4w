@@ -11,6 +11,12 @@ from typing import Optional
 import requests
 
 # Link lengths (meters)
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 D0 = 0.1215  # base to shoulder height
 L1 = 0.2085  # shoulder to elbow
 L2 = 0.2085  # elbow to wrist

@@ -69,12 +69,12 @@ def receive_frame_pair(socket) -> tuple[int, np.ndarray, np.ndarray]:
 def display_grid(grid: np.ndarray, label: str, display_size: int = 40) -> None:
     """Print an ASCII grid to terminal at reduced size for readability."""
     step = max(1, GRID_SIZE // display_size)
-    print(f"\n--- {label} (sampled {display_size}x{display_size}) ---")
+    logger.info(f"\n--- {label} (sampled {display_size}x{display_size}) ---")
     for y in range(0, GRID_SIZE, step):
         row = ""
         for x in range(0, GRID_SIZE, step):
             row += chr(grid[y, x]) if 32 <= grid[y, x] < 127 else "?"
-        print(row)
+        logger.info(row)
 
 
 def main() -> None:
@@ -82,7 +82,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     if zmq is None:
-        print("ERROR: pyzmq is required. Install with: pip install pyzmq")
+        logger.info("ERROR: pyzmq is required. Install with: pip install pyzmq")
         sys.exit(1)
 
     config = load_config()
@@ -94,15 +94,15 @@ def main() -> None:
     existing = list(CAPTURE_DIR.glob("frame_*.npz"))
     capture_idx = len(existing)
 
-    print(f"Calibration Frame Capture")
-    print(f"  ZMQ source: {zmq_source}")
-    print(f"  Capture dir: {CAPTURE_DIR}")
-    print(f"  Existing captures: {capture_idx}")
-    print(f"\nControls:")
-    print(f"  s — Save current frame pair")
-    print(f"  q — Quit")
-    print(f"\nPlace checkerboard at 30+ positions across the workspace.")
-    print(f"Waiting for frames...")
+    logger.info(f"Calibration Frame Capture")
+    logger.info(f"  ZMQ source: {zmq_source}")
+    logger.info(f"  Capture dir: {CAPTURE_DIR}")
+    logger.info(f"  Existing captures: {capture_idx}")
+    logger.info(f"\nControls:")
+    logger.info(f"  s — Save current frame pair")
+    logger.info(f"  q — Quit")
+    logger.info(f"\nPlace checkerboard at 30+ positions across the workspace.")
+    logger.info(f"Waiting for frames...")
 
     ctx = zmq.Context()
     sock = ctx.socket(zmq.SUB)
@@ -120,19 +120,19 @@ def main() -> None:
         raw_mode = True
     except (ImportError, termios.error):
         raw_mode = False
-        print("(Terminal raw mode unavailable — type command + Enter)")
+        logger.info("(Terminal raw mode unavailable — type command + Enter)")
 
     try:
         while True:
             try:
                 ts, top, prof = receive_frame_pair(sock)
             except zmq.error.Again:
-                print(".", end="", flush=True)
+                logger.info(".", end="", flush=True)
                 continue
 
             display_grid(top, f"Top-Down (ts={ts})")
             display_grid(prof, f"Profile (ts={ts})")
-            print(f"\n[Capture #{capture_idx}] Press 's' to save, 'q' to quit: ", end="", flush=True)
+            logger.info(f"\n[Capture #{capture_idx}] Press 's' to save, 'q' to quit: ", end="", flush=True)
 
             if raw_mode:
                 ch = sys.stdin.read(1)
@@ -142,7 +142,7 @@ def main() -> None:
             if ch == "s":
                 path = CAPTURE_DIR / f"frame_{capture_idx:04d}.npz"
                 np.savez(str(path), top_down=top, profile=prof, timestamp_ms=ts)
-                print(f"  Saved: {path}")
+                logger.info(f"  Saved: {path}")
                 capture_idx += 1
             elif ch == "q":
                 break
@@ -157,7 +157,7 @@ def main() -> None:
         sock.close()
         ctx.term()
 
-    print(f"\nDone. Total captures: {capture_idx}")
+    logger.info(f"\nDone. Total captures: {capture_idx}")
 
 
 if __name__ == "__main__":

@@ -409,10 +409,10 @@ async def main():
     servo = VisualServo()
     result = await servo.approach(target)
 
-    print(f"\n{'SUCCESS' if result.success else 'FAILED'}: {result.message}")
-    print(f"Time: {result.total_time_s:.1f}s, Steps: {len(result.steps)}")
+    logger.info(f"\n{'SUCCESS' if result.success else 'FAILED'}: {result.message}")
+    logger.info(f"Time: {result.total_time_s:.1f}s, Steps: {len(result.steps)}")
     for s in result.steps:
-        print(f"  Step {s.step}: {s.action} — dist={s.pixel_distance:.0f}px — {s.notes}")
+        logger.info(f"  Step {s.step}: {s.action} — dist={s.pixel_distance:.0f}px — {s.notes}")
 
 
 if __name__ == "__main__":

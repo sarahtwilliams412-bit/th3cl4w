@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()  # Load .env file
 # GEMINI_API_KEY must be set in environment (never hardcode API keys)
 if not os.environ.get("GEMINI_API_KEY"):
-    print("ERROR: GEMINI_API_KEY not set in environment", file=sys.stderr)
+    logger.info("ERROR: GEMINI_API_KEY not set in environment", file=sys.stderr)
     sys.exit(1)
 
 import httpx

@@ -14,6 +14,12 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class ArmSkeletonData:
     """Snapshot of the arm's 3D skeleton."""

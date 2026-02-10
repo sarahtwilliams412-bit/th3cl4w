@@ -468,6 +468,16 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def request_logging_middleware(request, call_next):
+    """Log all HTTP requests at INFO level."""
+    t0 = time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = (time.monotonic() - t0) * 1000
+    logger.info("%s %s -> %d (%.1fms)", request.method, request.url.path, response.status_code, elapsed_ms)
+    return response
+
+
+@app.middleware("http")
 async def telemetry_middleware(request, call_next):
     """Log all /api/ requests to telemetry."""
     if _HAS_TELEMETRY and request.url.path.startswith("/api/"):

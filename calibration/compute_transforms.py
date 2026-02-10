@@ -184,7 +184,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     if cv2 is None:
-        print("ERROR: opencv-python required. Install with: pip install opencv-python")
+        logger.info("ERROR: opencv-python required. Install with: pip install opencv-python")
         return
 
     config = load_config()
@@ -196,8 +196,8 @@ def main() -> None:
     # Load captures
     captures = sorted(CAPTURE_DIR.glob("frame_*.npz"))
     if len(captures) < 5:
-        print(f"ERROR: Need at least 5 captures, found {len(captures)}")
-        print(f"Run 'python -m calibration.capture_frames' first.")
+        logger.info(f"ERROR: Need at least 5 captures, found {len(captures)}")
+        logger.info(f"Run 'python -m calibration.capture_frames' first.")
         return
 
     logger.info("Processing %d captures...", len(captures))
@@ -246,10 +246,10 @@ def main() -> None:
 
     # Compute transforms
     if len(top_grid_points) < 3:
-        print(f"ERROR: Need at least 3 top-down captures with corners, got {len(top_grid_points)}")
+        logger.info(f"ERROR: Need at least 3 top-down captures with corners, got {len(top_grid_points)}")
         return
     if len(prof_grid_points) < 3:
-        print(f"ERROR: Need at least 3 profile captures with corners, got {len(prof_grid_points)}")
+        logger.info(f"ERROR: Need at least 3 profile captures with corners, got {len(prof_grid_points)}")
         return
 
     all_top_grid = np.vstack(top_grid_points)
@@ -305,18 +305,18 @@ def main() -> None:
     logger.info("Density LUT written to %s", lut_path)
 
     # Summary
-    print("\n=== Calibration Results ===")
-    print(f"  Top-down: maps to {calibration['top_down']['maps_to']}")
-    print(f"    Affine residual: {top_error:.2f} mm")
-    print(f"    Robot base cell: {top_base_cell}")
-    print(f"  Profile: maps to {calibration['profile']['maps_to']}")
-    print(f"    Affine residual: {prof_error:.2f} mm")
-    print(f"    Robot base cell: {prof_base_cell}")
-    print(f"  Cell size: {cell_size:.2f} mm")
-    print(f"  Shared axis: {calibration['shared_axis']}")
-    print(f"\nOutputs:")
-    print(f"  {cal_path}")
-    print(f"  {lut_path}")
+    logger.info("\n=== Calibration Results ===")
+    logger.info(f"  Top-down: maps to {calibration['top_down']['maps_to']}")
+    logger.info(f"    Affine residual: {top_error:.2f} mm")
+    logger.info(f"    Robot base cell: {top_base_cell}")
+    logger.info(f"  Profile: maps to {calibration['profile']['maps_to']}")
+    logger.info(f"    Affine residual: {prof_error:.2f} mm")
+    logger.info(f"    Robot base cell: {prof_base_cell}")
+    logger.info(f"  Cell size: {cell_size:.2f} mm")
+    logger.info(f"  Shared axis: {calibration['shared_axis']}")
+    logger.info(f"\nOutputs:")
+    logger.info(f"  {cal_path}")
+    logger.info(f"  {lut_path}")
 
 
 if __name__ == "__main__":
