@@ -74,6 +74,7 @@ class AutoPickState:
     error: str = ""
     started_at: float = 0.0
     log: list[str] = field(default_factory=list)
+    attempt_number: int = 0  # 0 = standalone, 1+ = rehearsal attempt
 
 
 class AutoPick:
@@ -164,8 +165,36 @@ class AutoPick:
         finally:
             self._running = False
 
-    async def execute(self, target: str = "redbull", mode: str = "auto") -> PickResult:
-        """Full autonomous pick pipeline with episode recording."""
+    async def execute(
+        self,
+        target: str = "redbull",
+        mode: str = "auto",
+        attempt_number: int = 0,
+        jitter_xy_mm: tuple[float, float] = (0.0, 0.0),
+        override_xy_mm: Optional[tuple[float, float]] = None,
+        override_joints: Optional[list[float]] = None,
+    ) -> PickResult:
+        """Full autonomous pick pipeline with episode recording.
+
+        Parameters
+        ----------
+        target : str
+            Object to pick.
+        mode : str
+            "auto" (detect from server), "simulation", or "physical".
+        attempt_number : int
+            When called from SimRehearsalRunner, identifies which attempt this is.
+            0 means standalone (not part of a rehearsal).
+        jitter_xy_mm : tuple
+            Position offset (x, y) in mm to add to detected coordinates.
+            Used by rehearsal to test plan robustness under camera noise.
+        override_xy_mm : tuple, optional
+            If provided, skip camera detection and use these coordinates directly.
+            Used by promote_to_physical to reuse the best position from simulation.
+        override_joints : list, optional
+            If provided, skip planning and use these joint angles directly.
+            Used by promote_to_physical to reuse the best plan from simulation.
+        """
         # Determine actual mode
         actual_mode = mode
         if mode == "auto":
@@ -177,7 +206,10 @@ class AutoPick:
             except Exception:
                 actual_mode = "physical"
         self._current_mode = actual_mode
-        self._log(f"Mode: {actual_mode}")
+        self.state.attempt_number = attempt_number
+
+        attempt_tag = f" (attempt {attempt_number})" if attempt_number > 0 else ""
+        self._log(f"Mode: {actual_mode}{attempt_tag}")
 
         episode = self.episode_recorder.start(mode=actual_mode, target=target)
 
@@ -188,30 +220,58 @@ class AutoPick:
             logger.warning("Failed to start video recording: %s", e)
 
         try:
-            # 1. DETECT
+            # 1. DETECT (or use override)
             self.state.phase = AutoPickPhase.DETECTING
-            self._log(f"Detecting '{target}' via overhead camera...")
             self._check_stop()
 
-            self.episode_recorder.start_phase("detect")
-            x_mm, y_mm = await self._detect(target)
-            self.state.target_xy_mm = (x_mm, y_mm)
-            self._log(f"Target at ({x_mm:.1f}, {y_mm:.1f}) mm")
-            self.episode_recorder.record_detection(
-                method="hsv",
-                position_px=(0, 0),
-                position_mm=(x_mm, y_mm, 0.0),
-                confidence=1.0,
-            )
-            self.episode_recorder.end_phase(success=True)
+            if override_xy_mm is not None:
+                x_mm, y_mm = override_xy_mm
+                self._log(f"Using override position ({x_mm:.1f}, {y_mm:.1f}) mm")
+                self.episode_recorder.start_phase("detect")
+                self.episode_recorder.record_detection(
+                    method="override",
+                    position_px=(0, 0),
+                    position_mm=(x_mm, y_mm, 0.0),
+                    confidence=1.0,
+                )
+                self.episode_recorder.end_phase(success=True)
+            else:
+                self._log(f"Detecting '{target}' via overhead camera...")
+                self.episode_recorder.start_phase("detect")
+                x_mm, y_mm = await self._detect(target)
 
-            # 2. PLAN
+                # Apply jitter if provided (rehearsal robustness testing)
+                if jitter_xy_mm != (0.0, 0.0):
+                    x_mm += jitter_xy_mm[0]
+                    y_mm += jitter_xy_mm[1]
+                    self._log(
+                        f"Jitter applied: ({jitter_xy_mm[0]:+.1f}, {jitter_xy_mm[1]:+.1f}) mm"
+                    )
+
+                self._log(f"Target at ({x_mm:.1f}, {y_mm:.1f}) mm")
+                self.episode_recorder.record_detection(
+                    method="hsv",
+                    position_px=(0, 0),
+                    position_mm=(x_mm, y_mm, 0.0),
+                    confidence=1.0,
+                )
+                self.episode_recorder.end_phase(success=True)
+
+            self.state.target_xy_mm = (x_mm, y_mm)
+
+            # 2. PLAN (or use override)
             self.state.phase = AutoPickPhase.PLANNING
             self._check_stop()
             self.episode_recorder.start_phase("plan")
-            joints = self.plan_joints(x_mm, y_mm)
+
+            if override_joints is not None:
+                joints = list(override_joints)
+                self._log(f"Using override joints: [{', '.join(f'{j:.1f}' for j in joints)}]")
+            else:
+                joints = self.plan_joints(x_mm, y_mm)
+                self._log(f"Planned joints: [{', '.join(f'{j:.1f}' for j in joints)}]")
+
             self.state.planned_joints = joints
-            self._log(f"Planned joints: [{', '.join(f'{j:.1f}' for j in joints)}]")
             self.episode_recorder.record_plan(joints=joints)
             self.episode_recorder.end_phase(success=True)
 

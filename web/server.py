@@ -6037,6 +6037,135 @@ async def autopick_history(limit: int = 20):
 
 
 # ---------------------------------------------------------------------------
+# Simulation Rehearsal — run N sim attempts before physical pick
+# ---------------------------------------------------------------------------
+
+try:
+    from src.planning.sim_rehearsal import SimRehearsalRunner
+
+    _HAS_REHEARSAL = True
+except ImportError:
+    _HAS_REHEARSAL = False
+
+_rehearsal_runner: Optional[Any] = None
+
+
+def _get_rehearsal_runner() -> Any:
+    global _rehearsal_runner
+    if _rehearsal_runner is None and _HAS_REHEARSAL:
+        _rehearsal_runner = SimRehearsalRunner()
+    return _rehearsal_runner
+
+
+class RehearsalRequest(BaseModel):
+    target: str = Field(default="redbull", description="Object to pick: redbull, blue, green, any")
+    max_attempts: int = Field(default=5, ge=1, description="Maximum number of simulation attempts")
+    required_successes: int = Field(default=3, ge=1, description="Successful sim picks needed before physical")
+    jitter_mm: float = Field(default=3.0, ge=0.0, description="Position jitter ±mm per attempt for robustness testing")
+    auto_promote: bool = Field(default=False, description="Auto-execute physical pick when threshold met")
+
+
+@app.post("/api/autopick/rehearse")
+async def autopick_rehearse(req: RehearsalRequest):
+    """Start simulation rehearsal: run N sim pick attempts before physical.
+
+    The claw will attempt to detect and pick the target object in simulation
+    mode multiple times, applying optional position jitter to test robustness.
+    Once the required number of successes is reached, the system either waits
+    for manual approval or auto-promotes to physical pick.
+    """
+    runner = _get_rehearsal_runner()
+    if runner is None:
+        return JSONResponse({"ok": False, "error": "Rehearsal module not available"}, status_code=501)
+    if runner.running:
+        return JSONResponse({"ok": False, "error": "Rehearsal already in progress"}, status_code=409)
+    try:
+        await runner.start(
+            target=req.target,
+            max_attempts=req.max_attempts,
+            required_successes=req.required_successes,
+            jitter_mm=req.jitter_mm,
+            auto_promote=req.auto_promote,
+        )
+        action_log.add(
+            "REHEARSAL",
+            f"Started rehearsal for '{req.target}' "
+            f"(max={req.max_attempts}, need={req.required_successes}, jitter={req.jitter_mm}mm)",
+            "info",
+        )
+        return {
+            "ok": True,
+            "target": req.target,
+            "max_attempts": req.max_attempts,
+            "required_successes": req.required_successes,
+            "jitter_mm": req.jitter_mm,
+            "auto_promote": req.auto_promote,
+        }
+    except Exception as e:
+        action_log.add("REHEARSAL", f"Failed to start: {e}", "error")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/autopick/rehearse/status")
+async def autopick_rehearse_status():
+    """Get live rehearsal progress (current attempt, successes, report)."""
+    runner = _get_rehearsal_runner()
+    if runner is None:
+        return {"available": False, "error": "Rehearsal module not available"}
+    status = runner.get_status()
+    status["available"] = True
+    return status
+
+
+@app.post("/api/autopick/rehearse/promote")
+async def autopick_rehearse_promote():
+    """Manually approve and execute the physical pick after successful rehearsal.
+
+    Only works when rehearsal is in 'awaiting_approval' phase.
+    """
+    runner = _get_rehearsal_runner()
+    if runner is None:
+        return JSONResponse({"ok": False, "error": "Rehearsal module not available"}, status_code=501)
+
+    if runner.state.phase.value != "awaiting_approval":
+        return JSONResponse(
+            {"ok": False, "error": f"Cannot promote — current phase is '{runner.state.phase.value}', expected 'awaiting_approval'"},
+            status_code=409,
+        )
+
+    try:
+        result = await runner.promote_to_physical()
+        action_log.add(
+            "REHEARSAL",
+            f"Physical pick {'SUCCEEDED' if result.success else 'FAILED'} "
+            f"after sim rehearsal",
+            "info" if result.success else "warning",
+        )
+        return {
+            "ok": True,
+            "success": result.success,
+            "phase": result.phase.value,
+            "joints": result.joints,
+            "error": result.error,
+            "duration_s": round(result.duration_s, 1),
+        }
+    except Exception as e:
+        action_log.add("REHEARSAL", f"Promote failed: {e}", "error")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/autopick/rehearse/stop")
+async def autopick_rehearse_stop():
+    """Stop the rehearsal loop."""
+    runner = _get_rehearsal_runner()
+    if runner is None:
+        return JSONResponse({"ok": False, "error": "Rehearsal module not available"}, status_code=501)
+    runner.stop()
+    action_log.add("REHEARSAL", "Stop requested", "warning")
+    return {"ok": True, "phase": runner.state.phase.value}
+
+
+# ---------------------------------------------------------------------------
 # Auto Place — autonomous place pipeline
 # ---------------------------------------------------------------------------
 
