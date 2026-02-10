@@ -291,16 +291,9 @@ class JointController:
 
         # Compute duration via Fitts' Law if not provided
         if duration is None:
-            duration = compute_movement_duration(
-                q0, target_positions, speed_factor=speed_factor
-            )
+            duration = compute_movement_duration(q0, target_positions, speed_factor=speed_factor)
         if duration <= 0:
             duration = 0.3  # minimum duration
-
-        # Apply gravity compensation offset if enabled
-        gravity_offset = np.zeros(NUM_JOINTS)
-        if self._gravity_comp is not None:
-            gravity_offset = self._gravity_comp.compute_position_offset(q0)
 
         dt = 1.0 / self.CONTROL_RATE_HZ
         t_start = time.monotonic()
@@ -311,15 +304,15 @@ class JointController:
                 break
 
             # Minimum-jerk interpolation
-            pos, vel, acc = minimum_jerk_waypoint(
-                q0, target_positions, v0, vf, duration, elapsed
-            )
+            pos, vel, acc = minimum_jerk_waypoint(q0, target_positions, v0, vf, duration, elapsed)
 
-            # Apply gravity compensation
-            pos_compensated = pos + gravity_offset
+            # Apply gravity compensation at current configuration (not just start)
+            if self._gravity_comp is not None:
+                gravity_offset = self._gravity_comp.compute_position_offset(pos)
+                pos = pos + gravity_offset
 
             # Send through smoothing pipeline
-            self._send_smooth_position(pos_compensated, vel)
+            self._send_smooth_position(pos, vel)
 
             # Update thermal monitor
             if self._thermal_monitor is not None and self._gravity_comp is not None:
@@ -332,6 +325,10 @@ class JointController:
                 time.sleep(sleep_time)
 
         # Send final position with gravity compensation
+        if self._gravity_comp is not None:
+            gravity_offset = self._gravity_comp.compute_position_offset(target_positions)
+        else:
+            gravity_offset = np.zeros(NUM_JOINTS)
         final_pos = target_positions + gravity_offset
         self._send_smooth_position(final_pos, np.zeros(NUM_JOINTS))
 

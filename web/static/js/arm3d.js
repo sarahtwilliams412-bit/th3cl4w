@@ -5,21 +5,14 @@
 'use strict';
 
 /**
- * D1 DH Parameters (from src/kinematics/kinematics.py)
- * Standard DH convention (Craig):
- *   a     — link length (along x_i)
- *   d     — link offset (along z_{i-1})
- *   alpha — link twist  (about x_i) [radians]
+ * D1 link lengths (meters) — matches the proven geometric FK in index.html
  */
-const D1_DH = [
-  { a: 0, d: 0.1215, alpha: -Math.PI/2, offset: 0 },  // J0 base yaw
-  { a: 0, d: 0,      alpha:  Math.PI/2, offset: 0 },  // J1 shoulder pitch
-  { a: 0, d: 0.2085, alpha: -Math.PI/2, offset: 0 },  // J2 elbow pitch
-  { a: 0, d: 0,      alpha:  Math.PI/2, offset: 0 },  // J3 forearm roll
-  { a: 0, d: 0.2085, alpha: -Math.PI/2, offset: 0 },  // J4 wrist pitch
-  { a: 0, d: 0,      alpha:  Math.PI/2, offset: 0 },  // J5 wrist roll
-  { a: 0, d: 0.1130, alpha:  0,         offset: 0 },  // J6 (gripper)
-];
+const D1_LINKS = {
+  d0: 0.1215,   // base to shoulder
+  L1: 0.2085,   // shoulder to elbow
+  L2: 0.2085,   // elbow to wrist
+  L3: 0.1130,   // wrist to end-effector
+};
 
 const JOINT_COLORS = [
   0x00aaff,  // J0 base yaw - blue
@@ -34,44 +27,88 @@ const JOINT_COLORS = [
 const JOINT_NAMES = ['Base Yaw', 'Shoulder', 'Elbow', 'Forearm Roll', 'Wrist Pitch', 'Wrist Roll', 'Gripper'];
 
 /**
- * Compute 4x4 DH transform for a single joint
+ * 3x3 rotation matrix helpers (row-major arrays of 9)
  */
-function dhTransform(dh, theta) {
-  const t = theta + dh.offset;
-  const ct = Math.cos(t), st = Math.sin(t);
-  const ca = Math.cos(dh.alpha), sa = Math.sin(dh.alpha);
-  // Return column-major for Three.js Matrix4
-  return new THREE.Matrix4().set(
-    ct,  -st*ca,  st*sa,  dh.a*ct,
-    st,   ct*ca, -ct*sa,  dh.a*st,
-    0,    sa,     ca,     dh.d,
-    0,    0,      0,      1
-  );
+function _rz(a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [c,-s,0, s,c,0, 0,0,1];
 }
+function _ry(a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [c,0,s, 0,1,0, -s,0,c];
+}
+function _mul(A, B) {
+  const C = new Array(9);
+  for (let r = 0; r < 3; r++)
+    for (let c = 0; c < 3; c++)
+      C[r*3+c] = A[r*3]*B[c] + A[r*3+1]*B[3+c] + A[r*3+2]*B[6+c];
+  return C;
+}
+function _apply(R, v) {
+  return [
+    R[0]*v[0]+R[1]*v[1]+R[2]*v[2],
+    R[3]*v[0]+R[4]*v[1]+R[5]*v[2],
+    R[6]*v[0]+R[7]*v[1]+R[8]*v[2]
+  ];
+}
+function _vadd(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
 
 /**
- * Forward kinematics — returns array of 4x4 transforms (base to each joint frame)
- * @param {number[]} jointAnglesRad - 7 joint angles in radians
- * @returns {THREE.Matrix4[]} - 8 transforms (base + 7 joints)
+ * Geometric forward kinematics — proven correct, matches index.html 2D viz.
+ * Computes in Z-up frame, returns positions converted to Three.js Y-up.
+ *
+ * @param {number[]} jointAnglesRad - 6 or 7 joint angles in radians
+ * @returns {{ positions: THREE.Vector3[], rotations: number[][] }}
+ *   positions: [base, shoulder, elbow, wrist, ee] in Y-up
+ *   rotations: rotation matrices at each joint (for gripper orientation)
  */
 function forwardKinematics(jointAnglesRad) {
-  // Rotate DH frame (Z-up) to Three.js frame (Y-up): rotate -90° about X
-  const base = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-  const transforms = [base.clone()];
-  let T = base.clone();
-  for (let i = 0; i < D1_DH.length; i++) {
-    const q = jointAnglesRad[i] || 0;
-    T = T.clone().multiply(dhTransform(D1_DH[i], q));
-    transforms.push(T.clone());
-  }
-  return transforms;
+  const j = jointAnglesRad.map(v => v || 0);
+  const { d0, L1, L2, L3 } = D1_LINKS;
+
+  // All computation in Z-up frame
+  const base = [0, 0, 0];
+  const shoulder = [0, 0, d0];
+
+  let R = _mul(_rz(j[0]), _ry(j[1]));
+  const elbow = _vadd(shoulder, _apply(R, [0, 0, L1]));
+
+  R = _mul(R, _ry(Math.PI/2 + j[2]));
+  const wrist = _vadd(elbow, _apply(R, [0, 0, L2]));
+
+  R = _mul(R, _rz(j[3]));
+  R = _mul(R, _ry(j[4]));
+  const ee = _vadd(wrist, _apply(R, [0, 0, L3]));
+
+  // Convert Z-up to Three.js Y-up: (x, y, z) -> (x, z, -y)
+  const toYUp = p => new THREE.Vector3(p[0], p[2], -p[1]);
+
+  const positions = [base, shoulder, elbow, wrist, ee].map(toYUp);
+
+  // Build Matrix4 transforms for orientation (used by gripper)
+  // Last rotation R is for the EE frame
+  const eeRotYUp = [
+    R[0], R[2], -R[1],
+    R[6], R[8], -R[7],
+    -R[3], -R[5], R[4]
+  ];
+
+  const eeTransform = new THREE.Matrix4().set(
+    eeRotYUp[0], eeRotYUp[1], eeRotYUp[2], positions[4].x,
+    eeRotYUp[3], eeRotYUp[4], eeRotYUp[5], positions[4].y,
+    eeRotYUp[6], eeRotYUp[7], eeRotYUp[8], positions[4].z,
+    0, 0, 0, 1
+  );
+
+  return { positions, eeTransform };
 }
 
 /**
- * Get joint positions from FK transforms
+ * Get joint positions from FK result (backward compat)
  */
-function getJointPositions(transforms) {
-  return transforms.map(T => new THREE.Vector3().setFromMatrixPosition(T));
+function getJointPositions(fkResult) {
+  if (Array.isArray(fkResult)) return fkResult;  // legacy
+  return fkResult.positions || [];
 }
 
 /**
@@ -84,6 +121,7 @@ class D1Arm3D {
 
     this.jointAngles = new Float64Array(7);     // current rendered angles (rad)
     this.targetAngles = new Float64Array(7);     // target from WS
+    this.fkResult = null;                        // last FK computation result
     this.gripperWidth = 0;                       // mm
     this.targetGripperWidth = 0;
 
@@ -257,18 +295,29 @@ class D1Arm3D {
    * Update mesh positions from current joint angles
    */
   updatePose() {
-    this.transforms = forwardKinematics(this.jointAngles);
-    const positions = getJointPositions(this.transforms);
+    this.fkResult = forwardKinematics(this.jointAngles);
+    const positions = this.fkResult.positions;
 
-    // Update joint spheres
-    for (let i = 0; i < this.jointMeshes.length && i < positions.length; i++) {
-      this.jointMeshes[i].position.copy(positions[i].multiplyScalar(this.scale));
+    // Update joint spheres (we have 8 meshes but only 5 FK positions now)
+    // Map: 0=base, 1=shoulder, 2=elbow, 3=wrist, 4=ee
+    for (let i = 0; i < this.jointMeshes.length; i++) {
+      const pi = Math.min(i, positions.length - 1);
+      if (pi < positions.length) {
+        this.jointMeshes[i].position.copy(positions[pi].clone().multiplyScalar(this.scale));
+      }
+      // Hide extra joint meshes beyond our 5 points
+      this.jointMeshes[i].visible = (i < positions.length);
     }
 
-    // Update link cylinders
-    for (let i = 0; i < this.linkMeshes.length && i + 1 < positions.length; i++) {
-      const p0 = getJointPositions(this.transforms)[i].multiplyScalar(this.scale);
-      const p1 = getJointPositions(this.transforms)[i + 1].multiplyScalar(this.scale);
+    // Update link cylinders (4 links between 5 positions)
+    for (let i = 0; i < this.linkMeshes.length; i++) {
+      if (i + 1 >= positions.length) {
+        this.linkMeshes[i].visible = false;
+        continue;
+      }
+      this.linkMeshes[i].visible = true;
+      const p0 = positions[i].clone().multiplyScalar(this.scale);
+      const p1 = positions[i + 1].clone().multiplyScalar(this.scale);
       const mid = p0.clone().add(p1).multiplyScalar(0.5);
       const dir = p1.clone().sub(p0);
       const len = dir.length();
@@ -284,13 +333,12 @@ class D1Arm3D {
     }
 
     // Update gripper
-    if (this.gripperGroup && positions.length >= 8) {
-      const eePos = getJointPositions(this.transforms)[7].multiplyScalar(this.scale);
+    if (this.gripperGroup && positions.length >= 5) {
+      const eePos = positions[4].clone().multiplyScalar(this.scale);
       this.gripperGroup.position.copy(eePos);
 
-      // Set gripper orientation from last transform
-      const eeT = this.transforms[7];
-      const quat = new THREE.Quaternion().setFromRotationMatrix(eeT);
+      // Set gripper orientation from FK
+      const quat = new THREE.Quaternion().setFromRotationMatrix(this.fkResult.eeTransform);
       this.gripperGroup.quaternion.copy(quat);
 
       // Gripper opening
@@ -304,8 +352,8 @@ class D1Arm3D {
    * Get end-effector position (meters)
    */
   getEEPosition() {
-    if (this.transforms.length >= 8) {
-      return new THREE.Vector3().setFromMatrixPosition(this.transforms[7]);
+    if (this.fkResult && this.fkResult.positions.length >= 5) {
+      return this.fkResult.positions[4].clone();
     }
     return new THREE.Vector3();
   }
@@ -314,11 +362,10 @@ class D1Arm3D {
    * Get end-effector pose as { position, quaternion }
    */
   getEEPose() {
-    if (this.transforms.length >= 8) {
-      const T = this.transforms[7];
+    if (this.fkResult && this.fkResult.eeTransform) {
       return {
-        position: new THREE.Vector3().setFromMatrixPosition(T),
-        quaternion: new THREE.Quaternion().setFromRotationMatrix(T),
+        position: this.fkResult.positions[4].clone(),
+        quaternion: new THREE.Quaternion().setFromRotationMatrix(this.fkResult.eeTransform),
       };
     }
     return { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
@@ -397,6 +444,169 @@ function createAxes(size = 0.1) {
   return new THREE.AxesHelper(size);
 }
 
+/**
+ * Camera3D — Visual camera frustum for 3D scene
+ */
+const CAMERA_COLORS = { 0: 0x00ffff, 1: 0xff4444, 2: 0x44ff44 };
+
+class Camera3D {
+  /**
+   * @param {object} config - { id, label, position, rotation, fov, perspective }
+   *   position/rotation in Z-up arm frame
+   */
+  constructor(config) {
+    this.id = config.id;
+    this.label = config.label || `Cam ${config.id}`;
+    this.perspective = config.perspective || 'custom';
+    this.isArmMounted = this.perspective === 'arm-mounted';
+    this.color = CAMERA_COLORS[config.id] || 0xffffff;
+
+    this.group = new THREE.Group();
+    this.group.name = `Camera3D_${this.id}`;
+
+    // Store config coords (Z-up)
+    this.configPos = config.position || { x: 0, y: 0, z: 0 };
+    this.configRot = config.rotation || { rx: 0, ry: 0, rz: 0 };
+    this.fov = config.fov || 60;
+
+    this._buildFrustum();
+    this._buildLabel();
+    this._applyTransform();
+  }
+
+  _buildFrustum() {
+    const size = 0.03;
+    const depth = 0.05;
+    const halfFov = (this.fov / 2) * Math.PI / 180;
+    const farW = depth * Math.tan(halfFov);
+    const farH = farW * 0.75; // 4:3 aspect
+
+    // Frustum wireframe: apex at origin, opening along +Y (Three.js forward for camera)
+    const verts = [
+      new THREE.Vector3(0, 0, 0),           // apex
+      new THREE.Vector3(-farW, depth, -farH), // bottom-left
+      new THREE.Vector3( farW, depth, -farH), // bottom-right
+      new THREE.Vector3( farW, depth,  farH), // top-right
+      new THREE.Vector3(-farW, depth,  farH), // top-left
+    ];
+
+    const edges = [
+      0,1, 0,2, 0,3, 0,4,  // apex to corners
+      1,2, 2,3, 3,4, 4,1,  // far rectangle
+    ];
+
+    const geo = new THREE.BufferGeometry();
+    const positions = [];
+    for (const idx of edges) {
+      positions.push(verts[idx].x, verts[idx].y, verts[idx].z);
+    }
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const mat = new THREE.LineBasicMaterial({ color: this.color, linewidth: 2 });
+    this.frustum = new THREE.LineSegments(geo, mat);
+    this.group.add(this.frustum);
+
+    // Small body box
+    const boxGeo = new THREE.BoxGeometry(size * 0.8, size * 0.4, size * 0.6);
+    const boxMat = new THREE.MeshPhongMaterial({
+      color: this.color,
+      emissive: this.color,
+      emissiveIntensity: 0.4,
+      transparent: true,
+      opacity: 0.6,
+    });
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.position.y = -size * 0.2;
+    this.group.add(box);
+  }
+
+  _buildLabel() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = `#${this.color.toString(16).padStart(6, '0')}`;
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(this.label, 64, 22);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.08, 0.02, 1);
+    sprite.position.y = -0.03;
+    this.group.add(sprite);
+  }
+
+  /**
+   * Convert Z-up config coords to Three.js Y-up and apply rotation.
+   */
+  _applyTransform() {
+    const { x, y, z } = this.configPos;
+    // Z-up to Y-up: (x, y, z) -> (x, z, -y)
+    this.group.position.set(x, z, -y);
+
+    // Apply rotations (config is degrees, convert to radians)
+    const rx = this.configRot.rx * Math.PI / 180;
+    const ry = this.configRot.ry * Math.PI / 180;
+    const rz = this.configRot.rz * Math.PI / 180;
+    this.group.rotation.set(rx, rz, -ry, 'XYZ');
+  }
+
+  /**
+   * Update from config object
+   */
+  updateConfig(config) {
+    this.configPos = config.position || this.configPos;
+    this.configRot = config.rotation || this.configRot;
+    this.fov = config.fov || this.fov;
+    this._applyTransform();
+  }
+
+  /**
+   * For arm-mounted cameras: attach to EE transform.
+   * @param {THREE.Matrix4} eeTransform - end-effector transform from FK
+   */
+  attachToEE(eeTransform) {
+    if (!this.isArmMounted) return;
+    // Offset position in EE local frame
+    const offset = new THREE.Vector3(
+      this.configPos.x,
+      this.configPos.z,   // Z-up z -> Y-up y
+      -this.configPos.y   // Z-up y -> Y-up -z
+    );
+    const eePos = new THREE.Vector3().setFromMatrixPosition(eeTransform);
+    const eeQuat = new THREE.Quaternion().setFromRotationMatrix(eeTransform);
+
+    offset.applyQuaternion(eeQuat);
+    this.group.position.copy(eePos).add(offset);
+
+    // Apply EE rotation + local rotation offset
+    const localQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(
+        this.configRot.rx * Math.PI / 180,
+        this.configRot.rz * Math.PI / 180,
+        -this.configRot.ry * Math.PI / 180,
+        'XYZ'
+      )
+    );
+    this.group.quaternion.copy(eeQuat).multiply(localQuat);
+  }
+
+  dispose() {
+    this.group.traverse(child => {
+      if (child.isMesh || child.isLineSegments) {
+        child.geometry.dispose();
+        child.material.dispose();
+      }
+      if (child.isSprite) {
+        child.material.map.dispose();
+        child.material.dispose();
+      }
+    });
+  }
+}
+
 // Export for module or global use
 if (typeof window !== 'undefined') {
   window.D1Arm3D = D1Arm3D;
@@ -407,4 +617,6 @@ if (typeof window !== 'undefined') {
   window.getJointPositions = getJointPositions;
   window.createWorkTable = createWorkTable;
   window.createAxes = createAxes;
+  window.Camera3D = Camera3D;
+  window.CAMERA_COLORS = CAMERA_COLORS;
 }

@@ -85,9 +85,7 @@ class TestCameraModel:
         cm.update_from_fk(T_world_ee)
 
         assert cm.is_calibrated
-        np.testing.assert_array_almost_equal(
-            cm.camera_position, [0.3, 0.0, 0.5]
-        )
+        np.testing.assert_array_almost_equal(cm.camera_position, [0.3, 0.0, 0.5])
 
     def test_world_to_pixel_roundtrip(self):
         """Project a point and back-project it — should be consistent."""
@@ -108,11 +106,13 @@ class TestCameraModel:
 class TestHandEyeCalibrator:
     def test_import(self):
         from src.vision.hand_eye_calibrator import HandEyeCalibrator
+
         hec = HandEyeCalibrator(camera_id=1)
         assert hec.num_observations == 0
 
     def test_needs_min_observations(self):
         from src.vision.hand_eye_calibrator import HandEyeCalibrator
+
         hec = HandEyeCalibrator(camera_id=1)
         result = hec.solve()
         assert result is None  # Need at least 3

@@ -111,13 +111,25 @@ class TestQuality:
     def test_quality_warnings_fx_fy(self):
         cal = AutoCalibrator()
         result = CalibrationResult(
-            camera_id=0, rms=0.1,
-            fx=1400, fy=1000, cx=320, cy=240,
-            k1=0, k2=0, p1=0, p2=0, k3=0,
+            camera_id=0,
+            rms=0.1,
+            fx=1400,
+            fy=1000,
+            cx=320,
+            cy=240,
+            k1=0,
+            k2=0,
+            p1=0,
+            p2=0,
+            k3=0,
             image_size=(640, 480),
-            fov_h=60, fov_v=40, fov_d=70,
-            board_size=(8, 5), square_size_mm=19,
-            num_frames=10, num_detected=10,
+            fov_h=60,
+            fov_v=40,
+            fov_d=70,
+            board_size=(8, 5),
+            square_size_mm=19,
+            num_frames=10,
+            num_detected=10,
         )
         corners = [np.random.rand(40, 1, 2).astype(np.float32) * 300 + 100]
         warnings = cal._assess_quality(result, corners, (640, 480))
@@ -126,13 +138,25 @@ class TestQuality:
     def test_quality_warnings_distortion(self):
         cal = AutoCalibrator()
         result = CalibrationResult(
-            camera_id=0, rms=0.1,
-            fx=500, fy=500, cx=320, cy=240,
-            k1=0, k2=15, p1=0, p2=0, k3=-20,
+            camera_id=0,
+            rms=0.1,
+            fx=500,
+            fy=500,
+            cx=320,
+            cy=240,
+            k1=0,
+            k2=15,
+            p1=0,
+            p2=0,
+            k3=-20,
             image_size=(640, 480),
-            fov_h=60, fov_v=40, fov_d=70,
-            board_size=(8, 5), square_size_mm=19,
-            num_frames=10, num_detected=10,
+            fov_h=60,
+            fov_v=40,
+            fov_d=70,
+            board_size=(8, 5),
+            square_size_mm=19,
+            num_frames=10,
+            num_detected=10,
         )
         corners = [np.random.rand(40, 1, 2).astype(np.float32) * 300 + 100]
         warnings = cal._assess_quality(result, corners, (640, 480))
@@ -148,8 +172,10 @@ class TestSaveLoad:
         result = cal.calibrate(frames)
 
         # Patch paths to use tmp_path
-        with patch("src.calibration.auto_calibrator.CALIBRATION_RESULTS_DIR", tmp_path / "cal"), \
-             patch("src.calibration.auto_calibrator.DATA_DIR", tmp_path / "data"):
+        with (
+            patch("src.calibration.auto_calibrator.CALIBRATION_RESULTS_DIR", tmp_path / "cal"),
+            patch("src.calibration.auto_calibrator.DATA_DIR", tmp_path / "data"),
+        ):
             saved = cal.save_results(result)
 
         # Check per-camera file
@@ -167,13 +193,25 @@ class TestSaveLoad:
 
     def test_to_dict(self):
         r = CalibrationResult(
-            camera_id=1, rms=0.22,
-            fx=1400, fy=1500, cx=950, cy=540,
-            k1=-0.5, k2=12, p1=-0.1, p2=-0.02, k3=-60,
+            camera_id=1,
+            rms=0.22,
+            fx=1400,
+            fy=1500,
+            cx=950,
+            cy=540,
+            k1=-0.5,
+            k2=12,
+            p1=-0.1,
+            p2=-0.02,
+            k3=-60,
             image_size=(1920, 1080),
-            fov_h=69, fov_v=39, fov_d=74,
-            board_size=(8, 5), square_size_mm=19,
-            num_frames=10, num_detected=10,
+            fov_h=69,
+            fov_v=39,
+            fov_d=74,
+            board_size=(8, 5),
+            square_size_mm=19,
+            num_frames=10,
+            num_detected=10,
         )
         d = r.to_dict()
         assert d["camera"] == "cam1"
@@ -185,6 +223,7 @@ class TestSaveLoad:
 class TestProgress:
     def test_progress_to_dict(self):
         from src.calibration.auto_calibrator import CalibrationProgress
+
         p = CalibrationProgress(camera_id=0, state="capturing", frames_captured=3, frames_total=10)
         d = p.to_dict()
         assert d["state"] == "capturing"

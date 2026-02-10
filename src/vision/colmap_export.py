@@ -193,9 +193,9 @@ def export_images_txt(
         camera_poses: List of 4x4 T_world_cam transforms.
         camera_id: COLMAP camera ID these images belong to.
     """
-    assert len(image_names) == len(camera_poses), (
-        f"Mismatch: {len(image_names)} images vs {len(camera_poses)} poses"
-    )
+    assert len(image_names) == len(
+        camera_poses
+    ), f"Mismatch: {len(image_names)} images vs {len(camera_poses)} poses"
 
     lines = [
         "# Image list with two lines of data per image:",
@@ -204,9 +204,7 @@ def export_images_txt(
         f"# Number of images: {len(image_names)}",
     ]
 
-    for i, (name, T_world_cam) in enumerate(
-        zip(image_names, camera_poses)
-    ):
+    for i, (name, T_world_cam) in enumerate(zip(image_names, camera_poses)):
         image_id = i + 1  # COLMAP uses 1-indexed IDs
 
         # Convert our camera-to-world to COLMAP's world-to-camera
@@ -290,9 +288,7 @@ def export_colmap_workspace(
     if image_names is None:
         img_dir = Path(image_dir)
         image_names = sorted(
-            f.name
-            for f in img_dir.iterdir()
-            if f.suffix.lower() in (".jpg", ".jpeg", ".png")
+            f.name for f in img_dir.iterdir() if f.suffix.lower() in (".jpg", ".jpeg", ".png")
         )
 
     if len(image_names) != len(camera_poses):
@@ -323,21 +319,16 @@ def export_colmap_workspace(
         try:
             os.symlink(os.path.abspath(image_dir), images_link)
         except OSError:
-            logger.warning(
-                "Could not create symlink for images — copy manually"
-            )
+            logger.warning("Could not create symlink for images — copy manually")
 
     logger.info(
         "COLMAP workspace exported to %s (%d images)",
         output_dir,
         len(image_names),
     )
+    logger.info("Run: colmap patch_match_stereo --workspace_path %s", output_dir)
     logger.info(
-        "Run: colmap patch_match_stereo --workspace_path %s", output_dir
-    )
-    logger.info(
-        "Then: colmap stereo_fusion --workspace_path %s "
-        "--output_path %s/fused.ply",
+        "Then: colmap stereo_fusion --workspace_path %s " "--output_path %s/fused.ply",
         output_dir,
         output_dir,
     )

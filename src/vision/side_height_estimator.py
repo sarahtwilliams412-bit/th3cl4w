@@ -60,9 +60,7 @@ class SideHeightEstimator:
         if self.cal_path.exists():
             try:
                 data = json.loads(self.cal_path.read_text())
-                self.reference_points = [
-                    (p["pixel_y"], p["z_mm"]) for p in data.get("points", [])
-                ]
+                self.reference_points = [(p["pixel_y"], p["z_mm"]) for p in data.get("points", [])]
                 self.image_height = data.get("image_height", 1080)
                 if len(self.reference_points) >= 2:
                     self._fit_model()
@@ -114,9 +112,7 @@ class SideHeightEstimator:
             "slope": self.slope,
             "intercept": self.intercept,
             "calibrated": self.calibrated,
-            "points": [
-                {"pixel_y": py, "z_mm": zm} for py, zm in self.reference_points
-            ],
+            "points": [{"pixel_y": py, "z_mm": zm} for py, zm in self.reference_points],
         }
         self.cal_path.write_text(json.dumps(data, indent=2))
         logger.info("Saved side calibration to %s", self.cal_path)
@@ -127,9 +123,7 @@ class SideHeightEstimator:
             raise RuntimeError("Side camera not calibrated")
         return self.slope * pixel_y + self.intercept
 
-    def detect_target(
-        self, frame: np.ndarray, target: str = "redbull"
-    ) -> Optional[dict]:
+    def detect_target(self, frame: np.ndarray, target: str = "redbull") -> Optional[dict]:
         """Detect a target in the side-view frame.
 
         Args:
@@ -202,9 +196,7 @@ class SideHeightEstimator:
         neon = _side_hsv("neon_tape_hsv")
         return cv2.inRange(hsv, neon[0], neon[1])
 
-    def estimate_height(
-        self, frame: np.ndarray, target: str = "gripper"
-    ) -> Optional[float]:
+    def estimate_height(self, frame: np.ndarray, target: str = "gripper") -> Optional[float]:
         """Estimate the Z height (mm above table) of a target.
 
         Args:
@@ -241,7 +233,5 @@ class SideHeightEstimator:
             "slope": self.slope,
             "intercept": self.intercept,
             "image_height": self.image_height,
-            "points": [
-                {"pixel_y": py, "z_mm": zm} for py, zm in self.reference_points
-            ],
+            "points": [{"pixel_y": py, "z_mm": zm} for py, zm in self.reference_points],
         }

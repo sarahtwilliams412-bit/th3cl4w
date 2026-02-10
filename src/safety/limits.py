@@ -47,6 +47,7 @@ def get_joint_limits_deg():
     """Return runtime joint limits from pick_config if available, else defaults."""
     try:
         from src.config.pick_config import get_pick_config
+
         cfg = get_pick_config()
         limits = cfg.get("safety", "joint_limits_deg")
         if limits and len(limits) == 6:
@@ -54,6 +55,7 @@ def get_joint_limits_deg():
     except Exception:
         pass
     return JOINT_LIMITS_DEG
+
 
 # Same limits in radians for the SafetyMonitor / DDS layer (7 joints, last = gripper)
 JOINT_LIMITS_RAD_MIN = np.array(

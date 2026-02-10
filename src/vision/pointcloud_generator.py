@@ -23,12 +23,15 @@ DEFAULT_INTRINSICS = {
 
 # Hand-eye calibration: camera frame relative to end-effector
 # Camera is ~5cm behind gripper, same orientation (looking forward along EE z-axis)
-HAND_EYE_OFFSET = np.array([
-    [1.0, 0.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0, -0.05],  # 5cm behind (negative z in EE frame)
-    [0.0, 0.0, 0.0, 1.0],
-], dtype=np.float64)
+HAND_EYE_OFFSET = np.array(
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, -0.05],  # 5cm behind (negative z in EE frame)
+        [0.0, 0.0, 0.0, 1.0],
+    ],
+    dtype=np.float64,
+)
 
 
 def backproject_depth(
@@ -242,8 +245,9 @@ def save_ply(points: np.ndarray, filepath: str) -> bool:
         with open(filepath, "w") as f:
             f.write(header)
             for p in points:
-                f.write(f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f} "
-                        f"{int(p[3])} {int(p[4])} {int(p[5])}\n")
+                f.write(
+                    f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f} " f"{int(p[3])} {int(p[4])} {int(p[5])}\n"
+                )
         logger.info("Saved PLY (manual): %s (%d points)", filepath, n)
         return True
 

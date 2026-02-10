@@ -1,4 +1,5 @@
 """Test that python-dotenv loading works correctly."""
+
 import os
 import tempfile
 from pathlib import Path
@@ -34,6 +35,7 @@ def test_dotenv_does_not_override_existing():
 
 def test_secrets_status_logic():
     """Test the secrets-status check logic."""
+
     # Simulate the check from the endpoint
     def check(val):
         return bool(val and val != "your-gemini-api-key-here")

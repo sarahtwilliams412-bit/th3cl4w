@@ -50,11 +50,11 @@ class ArmCameraAligner:
         self.cx = image_width // 2
         self.cy = image_height // 2
         self.px_to_mm = px_to_mm if px_to_mm is not None else cfg.get("arm_camera", "px_to_mm")
-        self.tolerance_px = tolerance_px if tolerance_px is not None else cfg.get("arm_camera", "tolerance_px")
+        self.tolerance_px = (
+            tolerance_px if tolerance_px is not None else cfg.get("arm_camera", "tolerance_px")
+        )
 
-    def detect_object(
-        self, frame: np.ndarray, target: str = "redbull"
-    ) -> Optional[dict]:
+    def detect_object(self, frame: np.ndarray, target: str = "redbull") -> Optional[dict]:
         """Detect the target object in the arm camera frame.
 
         Args:
@@ -77,9 +77,7 @@ class ArmCameraAligner:
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-        contours, _ = cv2.findContours(
-            mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None
 
@@ -109,9 +107,7 @@ class ArmCameraAligner:
             mask |= cv2.inRange(hsv, lower, upper)
         return mask
 
-    def compute_alignment(
-        self, frame: np.ndarray, target: str = "redbull"
-    ) -> dict:
+    def compute_alignment(self, frame: np.ndarray, target: str = "redbull") -> dict:
         """Compute alignment correction to center object under gripper.
 
         Args:

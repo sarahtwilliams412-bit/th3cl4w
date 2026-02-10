@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
-
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,7 +40,9 @@ class AnalysisSession:
     cam_id: Optional[int] = None
     messages: list[ChatMessage] = field(default_factory=list)
 
-    def add_user_message(self, text: str, cam_id: Optional[int] = None, ascii_frame: Optional[str] = None):
+    def add_user_message(
+        self, text: str, cam_id: Optional[int] = None, ascii_frame: Optional[str] = None
+    ):
         msg = ChatMessage(role="user", text=text, cam_id=cam_id, ascii_frame=ascii_frame)
         self.messages.append(msg)
         self.last_active = time.time()
@@ -95,7 +96,9 @@ class SessionManager:
     def get(self, session_id: str) -> Optional[AnalysisSession]:
         return self._sessions.get(session_id)
 
-    def get_or_create(self, session_id: Optional[str] = None, cam_id: Optional[int] = None) -> AnalysisSession:
+    def get_or_create(
+        self, session_id: Optional[str] = None, cam_id: Optional[int] = None
+    ) -> AnalysisSession:
         if session_id and session_id in self._sessions:
             return self._sessions[session_id]
         return self.create(cam_id=cam_id)
@@ -105,14 +108,16 @@ class SessionManager:
 
     def list_sessions(self) -> list[dict]:
         self._cleanup()
-        return [s.to_summary() for s in sorted(
-            self._sessions.values(), key=lambda s: s.last_active, reverse=True
-        )]
+        return [
+            s.to_summary()
+            for s in sorted(self._sessions.values(), key=lambda s: s.last_active, reverse=True)
+        ]
 
     def _cleanup(self):
         now = time.time()
-        expired = [sid for sid, s in self._sessions.items()
-                   if now - s.last_active > self.SESSION_TTL]
+        expired = [
+            sid for sid, s in self._sessions.items() if now - s.last_active > self.SESSION_TTL
+        ]
         for sid in expired:
             del self._sessions[sid]
         # Evict oldest if over limit

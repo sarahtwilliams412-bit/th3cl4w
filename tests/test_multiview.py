@@ -18,8 +18,8 @@ from src.vision.side_height_estimator import SideHeightEstimator
 from src.vision.arm_camera_aligner import ArmCameraAligner
 from src.control.multiview_controller import MultiviewController, PickPhase
 
-
 # ── Helpers ──
+
 
 def make_side_frame(obj_color_bgr=(0, 0, 200), obj_y=400, obj_h=80):
     """Create a synthetic side-view frame with a colored object at given Y."""
@@ -38,6 +38,7 @@ def make_arm_frame(obj_cx=960, obj_cy=540, obj_r=60, color_bgr=(0, 0, 200)):
 
 
 # ── Side Height Estimator ──
+
 
 class TestSideHeightEstimator:
     def test_calibrate_and_convert(self, tmp_path):
@@ -63,13 +64,17 @@ class TestSideHeightEstimator:
 
     def test_load_calibration(self, tmp_path):
         cal_file = tmp_path / "cal.json"
-        cal_file.write_text(json.dumps({
-            "image_height": 1080,
-            "slope": -0.25,
-            "intercept": 225.0,
-            "calibrated": True,
-            "points": [{"pixel_y": 100, "z_mm": 200}, {"pixel_y": 900, "z_mm": 0}],
-        }))
+        cal_file.write_text(
+            json.dumps(
+                {
+                    "image_height": 1080,
+                    "slope": -0.25,
+                    "intercept": 225.0,
+                    "calibrated": True,
+                    "points": [{"pixel_y": 100, "z_mm": 200}, {"pixel_y": 900, "z_mm": 0}],
+                }
+            )
+        )
         est = SideHeightEstimator(calibration_path=str(cal_file))
         assert est.calibrated
         assert len(est.reference_points) == 2
@@ -105,6 +110,7 @@ class TestSideHeightEstimator:
 
 
 # ── Arm Camera Aligner ──
+
 
 class TestArmCameraAligner:
     def test_centered_object(self):
@@ -149,6 +155,7 @@ class TestArmCameraAligner:
 
 # ── MultiviewController State Machine ──
 
+
 class TestMultiviewController:
     def test_initial_state(self):
         ctrl = MultiviewController()
@@ -163,6 +170,7 @@ class TestMultiviewController:
 
     def test_phase_transitions_success(self):
         """Test that a successful pick goes through all phases."""
+
         async def _run():
             ctrl = MultiviewController()
             phases_visited = []

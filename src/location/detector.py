@@ -22,14 +22,14 @@ import numpy as np
 logger = logging.getLogger("th3cl4w.location.detector")
 
 # --- Rate-limit backoff state for Gemini API ---
-_rate_limit_backoff_s: float = 0.0       # current backoff (0 = no backoff)
-_rate_limit_until: float = 0.0           # timestamp until which we should not call Gemini
-_consecutive_429s: int = 0               # consecutive 429 errors
+_rate_limit_backoff_s: float = 0.0  # current backoff (0 = no backoff)
+_rate_limit_until: float = 0.0  # timestamp until which we should not call Gemini
+_consecutive_429s: int = 0  # consecutive 429 errors
 _BACKOFF_INITIAL_S = 60.0
-_BACKOFF_MAX_S = 600.0                   # 10 minutes
+_BACKOFF_MAX_S = 600.0  # 10 minutes
 _BACKOFF_MULTIPLIER = 2.0
-_PAUSE_AFTER_CONSECUTIVE = 5             # pause scanning after this many consecutive 429s
-_PAUSE_DURATION_S = 600.0                # 10 minute pause
+_PAUSE_AFTER_CONSECUTIVE = 5  # pause scanning after this many consecutive 429s
+_PAUSE_DURATION_S = 600.0  # 10 minute pause
 
 
 def gemini_rate_limited() -> bool:
@@ -43,14 +43,19 @@ def _record_429():
     _consecutive_429s += 1
     if _consecutive_429s >= _PAUSE_AFTER_CONSECUTIVE:
         _rate_limit_backoff_s = _PAUSE_DURATION_S
-        logger.warning("Hit %d consecutive 429s — pausing Gemini for %ds",
-                        _consecutive_429s, int(_PAUSE_DURATION_S))
+        logger.warning(
+            "Hit %d consecutive 429s — pausing Gemini for %ds",
+            _consecutive_429s,
+            int(_PAUSE_DURATION_S),
+        )
     elif _rate_limit_backoff_s == 0:
         _rate_limit_backoff_s = _BACKOFF_INITIAL_S
     else:
         _rate_limit_backoff_s = min(_rate_limit_backoff_s * _BACKOFF_MULTIPLIER, _BACKOFF_MAX_S)
     _rate_limit_until = time.time() + _rate_limit_backoff_s
-    logger.info("Gemini 429 backoff: %.0fs (consecutive: %d)", _rate_limit_backoff_s, _consecutive_429s)
+    logger.info(
+        "Gemini 429 backoff: %.0fs (consecutive: %d)", _rate_limit_backoff_s, _consecutive_429s
+    )
 
 
 def _record_success():
@@ -90,12 +95,14 @@ class UnifiedDetector:
     def _get_hsv_detector(self):
         if self._hsv_detector is None:
             from src.vision.realtime_detector import detect_object
+
             self._hsv_detector = detect_object
         return self._hsv_detector
 
     def _get_cv_detector(self):
         if self._cv_detector is None:
             from src.vision.object_detection import ObjectDetector
+
             self._cv_detector = ObjectDetector(min_area=300)
         return self._cv_detector
 
@@ -118,21 +125,21 @@ class UnifiedDetector:
         for target in targets:
             det = detect_fn(frame, target=target)
             if det.found:
-                results.append(DetectionResult(
-                    label=det.label,
-                    centroid_px=det.centroid_px,
-                    bbox=det.bbox,
-                    confidence=det.confidence,
-                    source="hsv",
-                    camera_id=camera_id,
-                    mask_area=det.mask_area,
-                ))
+                results.append(
+                    DetectionResult(
+                        label=det.label,
+                        centroid_px=det.centroid_px,
+                        bbox=det.bbox,
+                        confidence=det.confidence,
+                        source="hsv",
+                        camera_id=camera_id,
+                        mask_area=det.mask_area,
+                    )
+                )
 
         return results
 
-    def detect_cv(
-        self, frame: np.ndarray, camera_id: int
-    ) -> list[DetectionResult]:
+    def detect_cv(self, frame: np.ndarray, camera_id: int) -> list[DetectionResult]:
         """Multi-color OpenCV detection."""
         if frame is None or frame.size == 0:
             return []
@@ -142,15 +149,17 @@ class UnifiedDetector:
         results = []
 
         for det in detections:
-            results.append(DetectionResult(
-                label=det.label,
-                centroid_px=det.centroid_2d,
-                bbox=det.bbox,
-                confidence=det.confidence,
-                source="cv",
-                camera_id=camera_id,
-                mask_area=int(det.area),
-            ))
+            results.append(
+                DetectionResult(
+                    label=det.label,
+                    centroid_px=det.centroid_2d,
+                    bbox=det.bbox,
+                    confidence=det.confidence,
+                    source="cv",
+                    camera_id=camera_id,
+                    mask_area=int(det.area),
+                )
+            )
 
         return results
 
@@ -164,8 +173,10 @@ class UnifiedDetector:
     ) -> list[DetectionResult]:
         """LLM-based detection using Gemini. Async, slower but more capable."""
         if gemini_rate_limited():
-            logger.debug("Skipping LLM detection — rate-limited for %.0fs more",
-                         _rate_limit_until - time.time())
+            logger.debug(
+                "Skipping LLM detection — rate-limited for %.0fs more",
+                _rate_limit_until - time.time(),
+            )
             return []
 
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -198,7 +209,7 @@ class UnifiedDetector:
             # Parse response
             text = response.text.strip()
             # Extract JSON array
-            match = re.search(r'\[.*\]', text, re.DOTALL)
+            match = re.search(r"\[.*\]", text, re.DOTALL)
             if not match:
                 logger.warning("LLM response not parseable: %s", text[:200])
                 return []
@@ -215,14 +226,16 @@ class UnifiedDetector:
                 h = int(item.get("h", 50))
                 conf = float(item.get("confidence", 0.5))
 
-                results.append(DetectionResult(
-                    label=label,
-                    centroid_px=(u, v),
-                    bbox=(u - w // 2, v - h // 2, w, h),
-                    confidence=conf,
-                    source="llm",
-                    camera_id=camera_id,
-                ))
+                results.append(
+                    DetectionResult(
+                        label=label,
+                        centroid_px=(u, v),
+                        bbox=(u - w // 2, v - h // 2, w, h),
+                        confidence=conf,
+                        source="llm",
+                        camera_id=camera_id,
+                    )
+                )
 
             logger.info("LLM detected %d objects on cam %d", len(results), camera_id)
             _record_success()

@@ -44,6 +44,7 @@ class CalibrationState(str, Enum):
 @dataclass
 class JointTestResult:
     """Result of testing a single DDS joint index."""
+
     dds_index: int
     moved: bool
     diff_score: float  # total frame difference magnitude
@@ -59,6 +60,7 @@ class JointTestResult:
 @dataclass
 class CalibrationResult:
     """Full calibration result."""
+
     state: CalibrationState = CalibrationState.IDLE
     current_joint: int = -1
     total_joints: int = 6
@@ -150,16 +152,18 @@ class JointMappingCalibrator:
 
                 # Check if near limits — skip if can't move ±10°
                 if current_angle + MOVE_DELTA_DEG > hi and current_angle - MOVE_DELTA_DEG < lo:
-                    self.result.results.append(JointTestResult(
-                        dds_index=dds_idx,
-                        moved=False,
-                        diff_score=0.0,
-                        diff_region="none",
-                        diff_center_y=0.5,
-                        suggested_label="unknown (skipped)",
-                        skipped=True,
-                        skip_reason=f"Joint at {current_angle:.1f}°, too close to limits [{lo}, {hi}]",
-                    ))
+                    self.result.results.append(
+                        JointTestResult(
+                            dds_index=dds_idx,
+                            moved=False,
+                            diff_score=0.0,
+                            diff_region="none",
+                            diff_center_y=0.5,
+                            suggested_label="unknown (skipped)",
+                            skipped=True,
+                            skip_reason=f"Joint at {current_angle:.1f}°, too close to limits [{lo}, {hi}]",
+                        )
+                    )
                     continue
 
                 # Decide direction: prefer positive, fall back to negative
@@ -184,11 +188,16 @@ class JointMappingCalibrator:
                 await asyncio.sleep(SETTLE_TIME_S)
 
                 # Analyze frame differences
-                result = self._analyze_diff(dds_idx, before_cam0, after_cam0, before_cam2, after_cam2)
+                result = self._analyze_diff(
+                    dds_idx, before_cam0, after_cam0, before_cam2, after_cam2
+                )
                 self.result.results.append(result)
                 logger.info(
                     "DDS joint %d: diff=%.1f, region=%s, label=%s",
-                    dds_idx, result.diff_score, result.diff_region, result.suggested_label,
+                    dds_idx,
+                    result.diff_score,
+                    result.diff_region,
+                    result.suggested_label,
                 )
 
             self.result.state = CalibrationState.COMPLETE
@@ -204,6 +213,7 @@ class JointMappingCalibrator:
     async def _grab_snapshot(self, cam_id: int) -> Optional[np.ndarray]:
         """Fetch a JPEG snapshot from the camera server and decode it."""
         import httpx
+
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.get(f"{CAMERA_SERVER}/snap/{cam_id}")

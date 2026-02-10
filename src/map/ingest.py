@@ -57,7 +57,9 @@ class IngestStats:
                 "polls": self.arm_polls,
                 "errors": self.arm_errors,
                 "last": self.arm_last,
-                "rate_hz": self.arm_polls / max(time.time() - self.arm_last, 1) if self.arm_last else 0,
+                "rate_hz": (
+                    self.arm_polls / max(time.time() - self.arm_last, 1) if self.arm_last else 0
+                ),
             },
             "depth": {
                 "polls": self.depth_polls,
@@ -105,7 +107,9 @@ class DataIngest:
             asyncio.create_task(self._depth_loop()),
             asyncio.create_task(self._location_loop()),
         ]
-        logger.info("Data ingest started (arm via %s)", "WebSocket" if self.config.use_ws else "polling")
+        logger.info(
+            "Data ingest started (arm via %s)", "WebSocket" if self.config.use_ws else "polling"
+        )
 
     async def stop(self) -> None:
         """Stop all ingest loops."""
@@ -122,13 +126,16 @@ class DataIngest:
         Falls back to polling if WebSocket connection fails.
         """
         import json
+
         try:
             import websockets
         except ImportError:
             logger.warning("websockets package not installed, falling back to polling")
             return await self._arm_loop()
 
-        ws_url = self.config.main_server_url.replace("http://", "ws://").replace("https://", "wss://")
+        ws_url = self.config.main_server_url.replace("http://", "ws://").replace(
+            "https://", "wss://"
+        )
         ws_url += "/ws/state"
         retry_delay = 1.0
 
@@ -239,9 +246,7 @@ class DataIngest:
         async with httpx.AsyncClient(timeout=3.0) as client:
             while self._running:
                 try:
-                    resp = await client.get(
-                        f"{self.config.location_server_url}/api/objects"
-                    )
+                    resp = await client.get(f"{self.config.location_server_url}/api/objects")
                     if resp.status_code == 200:
                         data = resp.json()
                         objects = data if isinstance(data, list) else data.get("objects", [])

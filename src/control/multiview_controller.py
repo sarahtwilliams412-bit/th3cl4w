@@ -63,6 +63,7 @@ class PickPhase(enum.Enum):
 @dataclass
 class PickState:
     """Current state of the pick sequence."""
+
     phase: PickPhase = PickPhase.IDLE
     target: str = "redbull"
     target_xy_mm: Optional[tuple[float, float]] = None
@@ -147,9 +148,7 @@ class MultiviewController:
         """Close the gripper."""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.post(
-                    f"{ARM_API}/api/gripper/adaptive-close"
-                )
+                resp = await client.post(f"{ARM_API}/api/gripper/adaptive-close")
                 return resp.status_code == 200
         except Exception as e:
             logger.error("Gripper close failed: %s", e)
@@ -264,9 +263,7 @@ class MultiviewController:
             self.state.alignment_history.append(alignment["distance_px"])
 
             if alignment["centered"]:
-                logger.info(
-                    "Phase C: aligned (error=%.1f px)", alignment["distance_px"]
-                )
+                logger.info("Phase C: aligned (error=%.1f px)", alignment["distance_px"])
                 return True
 
             # Apply correction with gain damping
@@ -376,7 +373,9 @@ class MultiviewController:
 
     # ── Main execution ──
 
-    async def execute_pick(self, target: str = "redbull", target_xy_mm: Optional[tuple[float, float]] = None):
+    async def execute_pick(
+        self, target: str = "redbull", target_xy_mm: Optional[tuple[float, float]] = None
+    ):
         """Execute the full multi-view pick sequence.
 
         Args:
@@ -427,7 +426,9 @@ class MultiviewController:
         finally:
             self._running = False
 
-    def start_pick(self, target: str = "redbull", target_xy_mm: Optional[tuple[float, float]] = None):
+    def start_pick(
+        self, target: str = "redbull", target_xy_mm: Optional[tuple[float, float]] = None
+    ):
         """Start pick sequence as background task."""
         if self._running:
             raise RuntimeError("Pick already in progress")

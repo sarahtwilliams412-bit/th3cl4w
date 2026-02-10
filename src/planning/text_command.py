@@ -253,7 +253,9 @@ def _parse_gripper(text: str) -> Optional[ParsedCommand]:
     m = re.search(r"(?:gripper|claw|grip)\s*(?:to|=|at)?\s*(\d+(?:\.\d+)?)\s*(?:mm)?", text)
     if m:
         cfg = _get_pick_config()
-        pos = max(cfg.get("gripper", "min_mm"), min(cfg.get("gripper", "max_mm"), float(m.group(1))))
+        pos = max(
+            cfg.get("gripper", "min_mm"), min(cfg.get("gripper", "max_mm"), float(m.group(1)))
+        )
         return ParsedCommand(
             command_type=CommandType.SET_GRIPPER,
             gripper_mm=pos,
@@ -286,7 +288,9 @@ def _parse_gripper(text: str) -> Optional[ParsedCommand]:
         m = re.search(r"(?:to|at)\s+(\d+(?:\.\d+)?)\s*(?:mm|millimeter)?", text)
         if m:
             cfg = _get_pick_config()
-            pos = max(cfg.get("gripper", "min_mm"), min(cfg.get("gripper", "max_mm"), float(m.group(1))))
+            pos = max(
+                cfg.get("gripper", "min_mm"), min(cfg.get("gripper", "max_mm"), float(m.group(1)))
+            )
             return ParsedCommand(
                 command_type=CommandType.SET_GRIPPER,
                 gripper_mm=pos,

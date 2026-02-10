@@ -64,12 +64,8 @@ class ChArUcoDetector:
             self.dictionary,
         )
         self.detector_params = cv2.aruco.DetectorParameters()
-        self.detector_params.cornerRefinementMethod = (
-            cv2.aruco.CORNER_REFINE_SUBPIX
-        )
-        self.aruco_detector = cv2.aruco.ArucoDetector(
-            self.dictionary, self.detector_params
-        )
+        self.detector_params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        self.aruco_detector = cv2.aruco.ArucoDetector(self.dictionary, self.detector_params)
 
         # Object points for all possible ChArUco corners
         self._all_obj_points = self.board.getChessboardCorners()
@@ -101,31 +97,23 @@ class ChArUcoDetector:
             (aruco_corners, aruco_ids, charuco_corners, charuco_ids)
             Any may be None if detection fails.
         """
-        gray = (
-            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            if len(frame.shape) == 3
-            else frame
-        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
 
         # Step 1: Detect ArUco markers
-        aruco_corners, aruco_ids, rejected = self.aruco_detector.detectMarkers(
-            gray
-        )
+        aruco_corners, aruco_ids, rejected = self.aruco_detector.detectMarkers(gray)
 
         if aruco_ids is None or len(aruco_ids) < 2:
             logger.debug("ChArUco: fewer than 2 ArUco markers detected")
             return aruco_corners, aruco_ids, None, None
 
         # Step 2: Interpolate ChArUco corners from detected markers
-        num_corners, charuco_corners, charuco_ids = (
-            cv2.aruco.interpolateCornersCharuco(
-                aruco_corners,
-                aruco_ids,
-                gray,
-                self.board,
-                cameraMatrix=camera_matrix,
-                distCoeffs=dist_coeffs,
-            )
+        num_corners, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
+            aruco_corners,
+            aruco_ids,
+            gray,
+            self.board,
+            cameraMatrix=camera_matrix,
+            distCoeffs=dist_coeffs,
         )
 
         if num_corners < 4:
@@ -154,9 +142,7 @@ class ChArUcoDetector:
             (object_points, image_points) — Nx3 and Nx2 arrays,
             or (None, None) if detection fails.
         """
-        _, _, charuco_corners, charuco_ids = self.detect(
-            frame, camera_matrix, dist_coeffs
-        )
+        _, _, charuco_corners, charuco_ids = self.detect(frame, camera_matrix, dist_coeffs)
         if charuco_corners is None or charuco_ids is None:
             return None, None
 
@@ -177,15 +163,11 @@ class ChArUcoDetector:
             (success, rvec, tvec) where rvec/tvec define the board-to-camera
             transform.
         """
-        obj_pts, img_pts = self.get_correspondences(
-            frame, camera_matrix, dist_coeffs
-        )
+        obj_pts, img_pts = self.get_correspondences(frame, camera_matrix, dist_coeffs)
         if obj_pts is None or len(obj_pts) < 4:
             return False, None, None
 
-        ok, rvec, tvec = cv2.solvePnP(
-            obj_pts, img_pts, camera_matrix, dist_coeffs
-        )
+        ok, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, camera_matrix, dist_coeffs)
         if not ok:
             return False, None, None
 
@@ -213,9 +195,7 @@ class ChArUcoDetector:
 
         Returns mean pixel error, or None if detection fails.
         """
-        obj_pts, img_pts = self.get_correspondences(
-            frame, camera_matrix, dist_coeffs
-        )
+        obj_pts, img_pts = self.get_correspondences(frame, camera_matrix, dist_coeffs)
         if obj_pts is None:
             return None
 
@@ -266,15 +246,13 @@ class ChArUcoDetector:
             )
             return None, None, -1.0, 0
 
-        rms, camera_matrix, dist_coeffs, rvecs, tvecs = (
-            cv2.aruco.calibrateCameraCharuco(
-                all_charuco_corners,
-                all_charuco_ids,
-                self.board,
-                image_size,
-                None,
-                None,
-            )
+        rms, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.aruco.calibrateCameraCharuco(
+            all_charuco_corners,
+            all_charuco_ids,
+            self.board,
+            image_size,
+            None,
+            None,
         )
 
         logger.info(
@@ -306,8 +284,6 @@ class ChArUcoDetector:
             cv2.aruco.drawDetectedMarkers(vis, aruco_corners, aruco_ids)
 
         if charuco_corners is not None and charuco_ids is not None:
-            cv2.aruco.drawDetectedCornersCharuco(
-                vis, charuco_corners, charuco_ids
-            )
+            cv2.aruco.drawDetectedCornersCharuco(vis, charuco_corners, charuco_ids)
 
         return vis

@@ -9,6 +9,7 @@ These tests verify:
 2. Safe-home sequences joints in correct order (low-torque first)
 3. Enable-here syncs smoother to current position
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -179,6 +180,7 @@ class TestSafeHome:
         # Make _get_current_joints return decreasing values toward 0
         import numpy as np
         import web.server as srv
+
         call_count = [0]
 
         def mock_get_joints():
@@ -190,8 +192,8 @@ class TestSafeHome:
         async def instant_sleep(t):
             pass
 
-        with patch.object(srv, '_get_current_joints', mock_get_joints):
-            with patch('web.server.asyncio.sleep', instant_sleep):
+        with patch.object(srv, "_get_current_joints", mock_get_joints):
+            with patch("web.server.asyncio.sleep", instant_sleep):
                 resp = client.post("/api/command/safe-home")
 
         assert resp.status_code == 200
@@ -207,8 +209,9 @@ class TestSafeHome:
                     first_high = i
             if first_high is not None:
                 first_low = min(i for i, j in enumerate(commanded_joints) if j in low_torque)
-                assert first_low < first_high, \
-                    f"Low-torque joints should move before high-torque. Order: {commanded_joints}"
+                assert (
+                    first_low < first_high
+                ), f"Low-torque joints should move before high-torque. Order: {commanded_joints}"
 
 
 class TestAutoRecoveryNoReset:
@@ -228,7 +231,7 @@ class TestAutoRecoveryNoReset:
 
         try:
             loop = asyncio.new_event_loop()
-            with patch.object(srv.asyncio, 'sleep', instant_sleep):
+            with patch.object(srv.asyncio, "sleep", instant_sleep):
                 loop.run_until_complete(srv._auto_recover_power())
             loop.close()
 

@@ -24,6 +24,9 @@ STATE_PACKET_SIZE = struct.calcsize(STATE_PACKET_FORMAT)
 COMMAND_PACKET_FORMAT = f"<i{NUM_JOINTS}f{NUM_JOINTS}f{NUM_JOINTS}f1f"
 COMMAND_PACKET_SIZE = struct.calcsize(COMMAND_PACKET_FORMAT)
 
+# Pre-allocated zero array for default command fields (avoids per-call allocation)
+_ZEROS_7 = np.zeros(NUM_JOINTS, dtype=np.float64)
+
 
 @dataclass
 class D1State:
@@ -199,21 +202,23 @@ class D1Connection:
           7 floats  — joint torques
           1 float   — gripper position
         """
-        positions = cmd.joint_positions if cmd.joint_positions is not None else np.zeros(NUM_JOINTS)
-        velocities = (
-            cmd.joint_velocities if cmd.joint_velocities is not None else np.zeros(NUM_JOINTS)
-        )
-        torques = cmd.joint_torques if cmd.joint_torques is not None else np.zeros(NUM_JOINTS)
+        positions = cmd.joint_positions if cmd.joint_positions is not None else _ZEROS_7
+        velocities = cmd.joint_velocities if cmd.joint_velocities is not None else _ZEROS_7
+        torques = cmd.joint_torques if cmd.joint_torques is not None else _ZEROS_7
         gripper = cmd.gripper_position if cmd.gripper_position is not None else 0.0
 
-        values = (
+        # Pack mode int, then 3×7 floats + 1 gripper float using pre-built buffer
+        return struct.pack(
+            COMMAND_PACKET_FORMAT,
             cmd.mode,
-            *positions.tolist(),
-            *velocities.tolist(),
-            *torques.tolist(),
+            positions[0], positions[1], positions[2], positions[3],
+            positions[4], positions[5], positions[6],
+            velocities[0], velocities[1], velocities[2], velocities[3],
+            velocities[4], velocities[5], velocities[6],
+            torques[0], torques[1], torques[2], torques[3],
+            torques[4], torques[5], torques[6],
             gripper,
         )
-        return struct.pack(COMMAND_PACKET_FORMAT, *values)
 
     @property
     def is_connected(self) -> bool:

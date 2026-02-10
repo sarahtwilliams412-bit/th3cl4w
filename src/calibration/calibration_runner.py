@@ -174,13 +174,9 @@ class CalibrationRunner:
                 httpx.ConnectTimeout,
                 httpx.TimeoutException,
             ):
-                logger.warning(
-                    f"Joint {joint_id} command timeout (attempt {attempt+1}/3)"
-                )
+                logger.warning(f"Joint {joint_id} command timeout (attempt {attempt+1}/3)")
                 if attempt == 2:
-                    logger.error(
-                        f"Joint {joint_id} command timed out after 3 attempts"
-                    )
+                    logger.error(f"Joint {joint_id} command timed out after 3 attempts")
                     return False
                 await asyncio.sleep(2)
 
@@ -202,9 +198,7 @@ class CalibrationRunner:
 
         while time.monotonic() < deadline:
             angles = await self.get_joint_angles()
-            errors = [
-                abs(angles[j] - float(target_angles[j])) for j in range(6)
-            ]
+            errors = [abs(angles[j] - float(target_angles[j])) for j in range(6)]
             max_error = max(errors)
 
             if max_error <= tolerance_deg:
@@ -227,8 +221,7 @@ class CalibrationRunner:
         else:
             error_str = "no feedback received"
         raise CalibrationError(
-            f"Pose not reached within {timeout_s}s "
-            f"(tolerance +/-{tolerance_deg}): {error_str}"
+            f"Pose not reached within {timeout_s}s " f"(tolerance +/-{tolerance_deg}): {error_str}"
         )
 
     async def _flush_camera_buffer(self, cam_id: int) -> None:
@@ -288,8 +281,7 @@ class CalibrationRunner:
             lo, hi = JOINT_LIMITS_SAFE[joint_id]
             if not (lo <= target <= hi):
                 raise CalibrationError(
-                    f"J{joint_id} target {target} outside safe limits "
-                    f"[{lo}, {hi}]"
+                    f"J{joint_id} target {target} outside safe limits " f"[{lo}, {hi}]"
                 )
 
             current_angle = current[joint_id]
@@ -306,9 +298,7 @@ class CalibrationRunner:
 
                 ok = await self.set_single_joint(joint_id, step_angle)
                 if not ok:
-                    raise CalibrationError(
-                        f"set_joint failed for J{joint_id} -> {step_angle}"
-                    )
+                    raise CalibrationError(f"set_joint failed for J{joint_id} -> {step_angle}")
                 await asyncio.sleep(0.5)
 
             best_error = 999.0
@@ -326,13 +316,9 @@ class CalibrationRunner:
                     f"(commanded={target}, actual={feedback[joint_id]:.1f})"
                 )
 
-    async def run_single_pose(
-        self, pose_index: int, angles: tuple, comparator=None
-    ) -> PoseCapture:
+    async def run_single_pose(self, pose_index: int, angles: tuple, comparator=None) -> PoseCapture:
         """Run a single calibration pose: move, settle, flush, capture."""
-        logger.info(
-            f"Pose {pose_index + 1}/{self._total_poses}: commanding {angles}"
-        )
+        logger.info(f"Pose {pose_index + 1}/{self._total_poses}: commanding {angles}")
         self._current_pose = pose_index
 
         # 1. Command arm to pose
@@ -360,9 +346,7 @@ class CalibrationRunner:
         cam0, cam1, cam2 = await self.capture_frames()
         for i, data in enumerate([cam0, cam1, cam2]):
             if not data:
-                logger.warning(
-                    f"Pose {pose_index + 1}: cam{i} returned empty frame!"
-                )
+                logger.warning(f"Pose {pose_index + 1}: cam{i} returned empty frame!")
 
         capture = PoseCapture(
             pose_index=pose_index,
@@ -385,9 +369,7 @@ class CalibrationRunner:
                     pose_index=pose_index,
                 )
             except Exception as e:
-                logger.warning(
-                    f"Comparator failed for pose {pose_index}: {e}"
-                )
+                logger.warning(f"Comparator failed for pose {pose_index}: {e}")
 
         return capture
 
@@ -450,9 +432,7 @@ class CalibrationRunner:
         )
         return session
 
-    def save_frames(
-        self, session: CalibrationSession, output_dir: str
-    ) -> None:
+    def save_frames(self, session: CalibrationSession, output_dir: str) -> None:
         """Save individual frame JPEGs to output_dir/frames/."""
         frames_dir = os.path.join(output_dir, "frames")
         os.makedirs(frames_dir, exist_ok=True)
@@ -470,9 +450,7 @@ class CalibrationRunner:
                         f.write(jpeg_data)
                     logger.debug(f"Saved {fpath} ({len(jpeg_data)} bytes)")
                 else:
-                    logger.warning(
-                        f"Skipping pose{cap.pose_index:02d}_cam{cam_idx}.jpg"
-                    )
+                    logger.warning(f"Skipping pose{cap.pose_index:02d}_cam{cam_idx}.jpg")
 
         logger.info(f"Frames saved to {frames_dir}")
 
@@ -491,19 +469,13 @@ class CalibrationRunner:
                     "commanded_angles": list(cap.commanded_angles),
                     "actual_angles": cap.actual_angles,
                     "cam0_jpeg_b64": (
-                        base64.b64encode(cap.cam0_jpeg).decode()
-                        if cap.cam0_jpeg
-                        else ""
+                        base64.b64encode(cap.cam0_jpeg).decode() if cap.cam0_jpeg else ""
                     ),
                     "cam1_jpeg_b64": (
-                        base64.b64encode(cap.cam1_jpeg).decode()
-                        if cap.cam1_jpeg
-                        else ""
+                        base64.b64encode(cap.cam1_jpeg).decode() if cap.cam1_jpeg else ""
                     ),
                     "cam2_jpeg_b64": (
-                        base64.b64encode(cap.cam2_jpeg).decode()
-                        if cap.cam2_jpeg
-                        else ""
+                        base64.b64encode(cap.cam2_jpeg).decode() if cap.cam2_jpeg else ""
                     ),
                     "timestamp": cap.timestamp,
                 }
@@ -529,15 +501,9 @@ class CalibrationRunner:
                     pose_index=cap_data["pose_index"],
                     commanded_angles=tuple(cap_data["commanded_angles"]),
                     actual_angles=cap_data["actual_angles"],
-                    cam0_jpeg=base64.b64decode(
-                        cap_data.get("cam0_jpeg_b64", "")
-                    ),
-                    cam1_jpeg=base64.b64decode(
-                        cap_data.get("cam1_jpeg_b64", "")
-                    ),
-                    cam2_jpeg=base64.b64decode(
-                        cap_data.get("cam2_jpeg_b64", "")
-                    ),
+                    cam0_jpeg=base64.b64decode(cap_data.get("cam0_jpeg_b64", "")),
+                    cam1_jpeg=base64.b64decode(cap_data.get("cam1_jpeg_b64", "")),
+                    cam2_jpeg=base64.b64decode(cap_data.get("cam2_jpeg_b64", "")),
                     timestamp=cap_data["timestamp"],
                 )
             )

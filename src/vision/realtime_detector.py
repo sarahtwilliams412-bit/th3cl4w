@@ -61,6 +61,7 @@ _MORPH_KERNEL = np.ones((5, 5), np.uint8)
 @dataclass
 class Detection:
     """Single object detection result."""
+
     found: bool
     centroid_px: tuple[int, int] = (0, 0)
     bbox: tuple[int, int, int, int] = (0, 0, 0, 0)  # x, y, w, h

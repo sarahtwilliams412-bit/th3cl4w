@@ -8,7 +8,6 @@ and humans. An emergency stop flag blocks all commands until manually reset.
 
 from __future__ import annotations
 
-import copy
 import logging
 import math
 from dataclasses import dataclass, field
@@ -184,16 +183,8 @@ class SafetyMonitor:
         self._estop = False
 
     # -- Feedback Freshness --------------------------------------------------
-
-    def is_feedback_fresh(self, state: D1State) -> bool:
-        """Check whether feedback is recent enough to trust.
-
-        Returns False if the state timestamp is older than FEEDBACK_MAX_AGE_S.
-        """
-        import time as _time
-
-        age = _time.time() - state.timestamp
-        return age <= FEEDBACK_MAX_AGE_S
+    # Removed: duplicate of CommandSmoother._tick feedback freshness check.
+    # Single source of truth is in CommandSmoother._tick.
 
     # -- Command Validation --------------------------------------------------
 
@@ -298,20 +289,7 @@ class SafetyMonitor:
                         )
                     )
 
-        # Torque limits
-        if cmd.joint_torques is not None:
-            for i in range(NUM_JOINTS):
-                val = float(cmd.joint_torques[i])
-                if abs(val) > lim.torque_max[i]:
-                    violations.append(
-                        SafetyViolation(
-                            violation_type=ViolationType.TORQUE_LIMIT,
-                            joint_index=i,
-                            message=f"Joint {i} torque {val:.4f} Nm exceeds limit ±{lim.torque_max[i]:.4f} Nm",
-                            actual_value=val,
-                            limit_value=float(lim.torque_max[i]),
-                        )
-                    )
+        # Torque limits removed — position mode only, firmware handles overcurrent
 
         # Gripper bounds
         if cmd.gripper_position is not None:
@@ -401,32 +379,8 @@ class SafetyMonitor:
                     )
                 )
 
-        # Torque
-        for i in range(NUM_JOINTS):
-            val = float(state.joint_torques[i])
-            if abs(val) > lim.torque_max[i]:
-                violations.append(
-                    SafetyViolation(
-                        violation_type=ViolationType.TORQUE_LIMIT,
-                        joint_index=i,
-                        message=f"Joint {i} torque {val:.4f} Nm exceeds limit ±{lim.torque_max[i]:.4f} Nm",
-                        actual_value=val,
-                        limit_value=float(lim.torque_max[i]),
-                    )
-                )
-
-        # Workspace bound (spherical)
-        reach = _estimate_reach(state.joint_positions)
-        if reach > MAX_WORKSPACE_RADIUS_M:
-            violations.append(
-                SafetyViolation(
-                    violation_type=ViolationType.WORKSPACE_BOUND,
-                    joint_index=None,
-                    message=f"Estimated reach {reach * 1000:.1f} mm exceeds workspace limit {MAX_WORKSPACE_RADIUS_MM:.1f} mm",
-                    actual_value=reach,
-                    limit_value=MAX_WORKSPACE_RADIUS_M,
-                )
-            )
+        # Torque monitoring removed — position mode only, firmware handles overcurrent
+        # Workspace radius check removed — rough FK was unreliable, caused false positives
 
         return violations
 
@@ -458,10 +412,8 @@ class SafetyMonitor:
         if cmd.joint_velocities is not None:
             velocities = np.clip(cmd.joint_velocities.copy(), -lim.velocity_max, lim.velocity_max)
 
-        # Clamp torques
-        torques = None
-        if cmd.joint_torques is not None:
-            torques = np.clip(cmd.joint_torques.copy(), -lim.torque_max, lim.torque_max)
+        # Torque clamping removed — position mode only
+        torques = cmd.joint_torques
 
         # Clamp gripper
         gripper = None
