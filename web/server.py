@@ -2582,6 +2582,90 @@ async def objects_detect():
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
+@app.post("/api/objects/detect/snapshot")
+async def objects_detect_snapshot():
+    """Run detection and return the annotated overhead camera frame as JPEG.
+
+    Returns the camera image with bounding boxes, labels, and circles
+    drawn over detected objects so the user can see what was detected.
+    """
+    from starlette.responses import Response
+
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+    if not object_detector.enabled:
+        return JSONResponse({"ok": False, "error": "Detector not enabled"}, status_code=409)
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp1 = await client.get("http://localhost:8081/snap/1")  # overhead
+            resp0 = None
+            try:
+                resp0 = await client.get("http://localhost:8081/snap/0")  # front
+            except Exception:
+                pass
+
+        if resp1.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
+
+        cam1_frame = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if cam1_frame is None:
+            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
+
+        cam0_frame = None
+        if resp0 is not None and resp0.status_code == 200:
+            cam0_frame = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+
+        # Run detection
+        object_detector.detect_from_overhead(cam1_frame, cam0_frame)
+
+        # Annotate the frame with detection overlays
+        annotated = object_detector.annotate_frame(cam1_frame)
+
+        # Encode as JPEG
+        _, jpeg_buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        return Response(content=jpeg_buf.tobytes(), media_type="image/jpeg")
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/objects/snapshot")
+async def objects_snapshot():
+    """Return the annotated overhead camera frame (without re-running detection).
+
+    Uses existing detected objects to annotate the current camera frame.
+    """
+    from starlette.responses import Response
+
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp1 = await client.get("http://localhost:8081/snap/1")  # overhead
+
+        if resp1.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
+
+        cam1_frame = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if cam1_frame is None:
+            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
+
+        # Annotate with existing detections (no new detection run)
+        annotated = object_detector.annotate_frame(cam1_frame)
+
+        _, jpeg_buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        return Response(content=jpeg_buf.tobytes(), media_type="image/jpeg")
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @app.get("/api/objects/list")
 async def objects_list():
     """Get all currently detected objects."""
