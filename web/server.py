@@ -907,10 +907,10 @@ async def api_cameras_gemini_assess(req: GeminiAssessRequest):
     t0 = _time.monotonic()
 
     try:
-        import google.generativeai as _genai
+        from google import genai as _genai
+        from google.genai import types as _gtypes
 
-        _genai.configure(api_key=api_key)
-        _model = _genai.GenerativeModel("gemini-2.0-flash")
+        client = _genai.Client(api_key=api_key)
 
         # Build content parts: images + analysis prompt
         contents = []
@@ -924,7 +924,7 @@ async def api_cameras_gemini_assess(req: GeminiAssessRequest):
         for cam_id in sorted(req.images.keys()):
             img_b64 = req.images[cam_id]
             img_bytes = base64.b64decode(img_b64)
-            contents.append({"mime_type": "image/jpeg", "data": img_bytes})
+            contents.append(_gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
             label = cam_labels.get(cam_id, f"Camera {cam_id}")
             contents.append(f"The image above is rendered from {label}.")
 
@@ -990,15 +990,16 @@ Respond in JSON format:
 
         contents.append(prompt)
 
-        _gen_config = _genai.GenerationConfig(
+        config = _gtypes.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=1500,
             response_mime_type="application/json",
         )
 
-        response = _model.generate_content(
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
             contents=contents,
-            generation_config=_gen_config,
+            config=config,
         )
 
         elapsed_ms = (_time.monotonic() - t0) * 1000
