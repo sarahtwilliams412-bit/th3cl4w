@@ -8,7 +8,7 @@ Coordinate frame: Z=up, X=forward, Y=left.
 import math
 import numpy as np
 from typing import Optional
-import requests
+import requests  # type: ignore[import-untyped]
 
 # Link lengths (meters)
 
