@@ -66,3 +66,6 @@ data/telemetry.db*
 data/collisions/
 calibration_results/
 .env
+
+# QA Sidecar output (generated per-cycle)
+qa_sidecar/issues/
