@@ -559,7 +559,17 @@ class Camera3D {
   updateConfig(config) {
     this.configPos = config.position || this.configPos;
     this.configRot = config.rotation || this.configRot;
-    this.fov = config.fov || this.fov;
+    const newFov = config.fov || this.fov;
+    if (newFov !== this.fov) {
+      this.fov = newFov;
+      // Rebuild frustum with new FOV
+      if (this.frustum) {
+        this.group.remove(this.frustum);
+        this.frustum.geometry.dispose();
+        this.frustum.material.dispose();
+      }
+      this._buildFrustum();
+    }
     this._applyTransform();
   }
 

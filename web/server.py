@@ -850,6 +850,177 @@ async def api_cameras_extrinsics(camera_id: int):
     return {"ok": True, "extrinsics": data}
 
 
+# ── Gemini Camera Position Assessment (BETA) ──────────────────
+
+
+class GeminiAssessRequest(BaseModel):
+    images: Dict[str, str]  # camera_id -> base64 JPEG
+    joint_angles: Optional[List[float]] = None
+    ee_position: Optional[Dict[str, str]] = None
+    camera_configs: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/cameras/gemini-assess")
+async def api_cameras_gemini_assess(req: GeminiAssessRequest):
+    """Send simulation camera renders to Gemini to assess camera positions relative to the arm.
+
+    BETA: Captures three rendered views from the 3D simulator's camera positions
+    and uses Gemini multimodal to analyze where each camera is positioned and
+    oriented relative to the robotic arm.
+    """
+    import base64
+    import time as _time
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return JSONResponse(
+            {"ok": False, "error": "GEMINI_API_KEY not set. Set it in your environment to use this feature."},
+            status_code=400,
+        )
+
+    if not req.images:
+        return JSONResponse({"ok": False, "error": "No images provided"}, status_code=400)
+
+    t0 = _time.monotonic()
+
+    try:
+        from google import genai as _genai
+        from google.genai import types as _gtypes
+
+        client = _genai.Client(api_key=api_key)
+
+        # Build content parts: images + analysis prompt
+        contents = []
+
+        # Add each camera image
+        cam_labels = {
+            "0": "Camera 0 (Overhead)",
+            "1": "Camera 1 (Arm-mounted)",
+            "2": "Camera 2 (Side View)",
+        }
+        for cam_id in sorted(req.images.keys()):
+            img_b64 = req.images[cam_id]
+            img_bytes = base64.b64decode(img_b64)
+            contents.append(
+                _gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
+            )
+            label = cam_labels.get(cam_id, f"Camera {cam_id}")
+            contents.append(f"The image above is rendered from {label}.")
+
+        # Build context about the arm state
+        arm_context = ""
+        if req.joint_angles:
+            angles_str = ", ".join(f"J{i}={a:.1f}" for i, a in enumerate(req.joint_angles))
+            arm_context += f"\nCurrent joint angles: {angles_str}"
+        if req.ee_position:
+            arm_context += f"\nEnd-effector position (Y-up): x={req.ee_position.get('x','?')}m, y={req.ee_position.get('y','?')}m, z={req.ee_position.get('z','?')}m, reach={req.ee_position.get('reach','?')}m"
+
+        cam_context = ""
+        if req.camera_configs:
+            for cid, cfg in sorted(req.camera_configs.items()):
+                if cfg:
+                    pos = cfg.get("position", {})
+                    rot = cfg.get("rotation", {})
+                    cam_context += (
+                        f"\n  Camera {cid} ({cfg.get('label','?')}): "
+                        f"pos=({pos.get('x',0):.2f}, {pos.get('y',0):.2f}, {pos.get('z',0):.2f})m "
+                        f"rot=({rot.get('rx',0):.0f}, {rot.get('ry',0):.0f}, {rot.get('rz',0):.0f})deg "
+                        f"fov={cfg.get('fov',60)} perspective={cfg.get('perspective','custom')}"
+                    )
+
+        prompt = f"""You are analyzing 3 rendered images from a robotic arm simulation.
+Each image shows the same scene (a Unitree D1 7-DOF robotic arm on a work table)
+from a different camera viewpoint.
+
+The arm has these specifications:
+- 7 degrees of freedom (6 arm joints + 1 gripper)
+- Max reach: 0.55m from base
+- Base is at the origin of the workspace
+- The arm is matte black with green accent rings at joints
+- Joint spheres are colored: blue (base), orange (shoulder), green (elbow), purple (forearm), yellow (wrist), pink (wrist roll), cyan (EE)
+{arm_context}
+
+Current camera configurations (Z-up frame, meters):{cam_context}
+
+For each camera, analyze the rendered image and assess:
+1. Where is the camera positioned relative to the arm base? (above, to the side, in front, behind, etc.)
+2. What is the approximate viewing angle? (looking down, looking across, looking up, etc.)
+3. How much of the arm is visible? Which joints are clearly visible?
+4. How useful is this viewpoint for monitoring the arm's workspace and movements?
+5. Based on what you see in the image, does the camera position make sense for its configured role?
+
+Respond in JSON format:
+{{
+  "summary": "Brief overall assessment of the 3-camera setup",
+  "cameras": {{
+    "0": {{
+      "label": "camera label/role",
+      "estimated_position": "e.g. ~0.5m above and behind the arm base",
+      "relative_to_arm": "Detailed description of position/angle relative to arm",
+      "visible_joints": ["list of visible joint names"],
+      "view_quality": "excellent/good/fair/poor — for monitoring arm workspace",
+      "observations": "What you actually see in this camera's image"
+    }},
+    "1": {{ ... }},
+    "2": {{ ... }}
+  }},
+  "recommendations": "Suggestions for improving camera placement if any"
+}}"""
+
+        contents.append(prompt)
+
+        config = _gtypes.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=1500,
+            response_mime_type="application/json",
+        )
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=contents,
+            config=config,
+        )
+
+        elapsed_ms = (_time.monotonic() - t0) * 1000
+        raw_text = response.text.strip()
+
+        # Parse JSON response
+        import re as _re
+
+        clean_text = _re.sub(r"^```(?:json)?\s*", "", raw_text)
+        clean_text = _re.sub(r"\s*```$", "", clean_text.strip())
+
+        try:
+            assessment = json.loads(clean_text)
+        except json.JSONDecodeError:
+            assessment = {"raw": clean_text, "summary": "Failed to parse structured response"}
+
+        action_log.add(
+            "GEMINI_ASSESS",
+            f"Camera position assessment completed in {elapsed_ms:.0f}ms",
+            "info",
+        )
+
+        return {
+            "ok": True,
+            "assessment": assessment,
+            "inference_time_ms": round(elapsed_ms, 1),
+        }
+
+    except ImportError:
+        return JSONResponse(
+            {"ok": False, "error": "google-generativeai package not installed. Run: pip install google-generativeai"},
+            status_code=500,
+        )
+    except Exception as e:
+        elapsed_ms = (_time.monotonic() - t0) * 1000
+        logger.error("Gemini camera assessment failed after %.0fms: %s", elapsed_ms, e)
+        return JSONResponse(
+            {"ok": False, "error": str(e), "inference_time_ms": round(elapsed_ms, 1)},
+            status_code=500,
+        )
+
+
 @app.get("/api/state")
 async def api_state():
     """Return current arm state (joints, gripper, power, enabled, error)."""
