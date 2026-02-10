@@ -177,6 +177,8 @@ parser.add_argument("--simulate", action="store_true", help="Run with simulated 
 parser.add_argument("--interface", default="eno1", help="Network interface for DDS (default: eno1)")
 parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
 parser.add_argument("--port", type=int, default=8080, help="Bind port (default: 8080)")
+parser.add_argument("--debug", action="store_true", help="Enable DEBUG-level logging to logs/web.log")
+parser.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
 
 # Only parse if running as main (not under test)
 if "pytest" not in sys.modules:
@@ -184,7 +186,8 @@ if "pytest" not in sys.modules:
 else:
     args = parser.parse_args(["--simulate"])
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+from src.utils.logging_config import setup_logging
+setup_logging(server_name="web", debug=args.debug, log_dir=args.log_dir)
 logger = logging.getLogger("th3cl4w.web")
 
 # ---------------------------------------------------------------------------
@@ -264,14 +267,13 @@ arm: Any = None
 smoother: Optional[CommandSmoother] = None
 safety_monitor: Optional[SafetyMonitor] = None
 task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
-workspace_mapper: Any = None  # WorkspaceMapper for bifocal vision
+workspace_mapper: Any = None  # WorkspaceMapper for workspace scale calibration
 arm_tracker: Any = None  # DualCameraArmTracker for visual object tracking
 grasp_planner: Any = None  # VisualGraspPlanner for grasp pose computation
 pick_executor: Any = None  # PickExecutor for autonomous pick operations
 vision_task_planner: Any = None  # VisionTaskPlanner for camera-guided planning
 scene_analyzer: Any = None  # SceneAnalyzer for scene understanding
 claw_predictor: Any = None  # ClawPositionPredictor for visual claw tracking
-collision_events: list = []  # Recent collision events for API (kept for API compat)
 vla_controller: Any = None  # VLAController for vision-language-action
 vla_data_collector: Any = None  # DataCollector for recording demonstrations
 pose_fusion: Any = None  # PoseFusion engine
@@ -375,13 +377,11 @@ async def lifespan(app: FastAPI):
         task_planner = TaskPlanner()
         action_log.add("SYSTEM", "Task planner initialized", "info")
 
-    # Initialize bifocal workspace mapper
+    # Initialize workspace mapper for scale calibration
     global workspace_mapper
     if _HAS_BIFOCAL:
         workspace_mapper = WorkspaceMapper()
-        action_log.add(
-            "SYSTEM", "Bifocal workspace mapper initialized (disabled by default)", "info"
-        )
+        action_log.add("SYSTEM", "Workspace mapper initialized", "info")
 
     # Initialize visual pick system (arm tracker + grasp planner + pick executor)
     global arm_tracker, grasp_planner, pick_executor
@@ -2036,6 +2036,52 @@ async def debug_pipeline(correlation_id: str):
     return pipeline
 
 
+@app.get("/api/debug/feedback")
+async def debug_feedback():
+    """Return DDS feedback health and recent samples (debug alias)."""
+    if arm is None or not hasattr(arm, "get_feedback_health"):
+        return {"available": False, "error": "No DDS connection or feedback monitor"}
+    health = arm.get_feedback_health()
+    recent = arm.feedback_monitor.get_recent_samples(20)
+    return {"available": True, "health": health, "recent_samples": recent}
+
+
+@app.get("/api/debug/smoother")
+async def debug_smoother():
+    """Return live command smoother state for diagnostics."""
+    if smoother is None:
+        return {"available": False, "error": "Command smoother not initialized"}
+    current = []
+    for i in range(smoother._num_joints):
+        current.append({
+            "joint": i,
+            "current": smoother._current[i],
+            "target": smoother._target[i],
+            "dirty": i in smoother._dirty_joints,
+        })
+    result = {
+        "available": True,
+        "running": smoother.running,
+        "synced": smoother.synced,
+        "arm_enabled": smoother.arm_enabled,
+        "rate_hz": smoother._rate_hz,
+        "smoothing_factor": smoother._alpha,
+        "max_step_deg": smoother._max_step,
+        "ticks": smoother._ticks,
+        "commands_sent": smoother._commands_sent,
+        "joints": current,
+        "gripper": {
+            "current": smoother._current_gripper,
+            "target": smoother._target_gripper,
+            "dirty": smoother._dirty_gripper,
+        },
+    }
+    # Include feedback freshness info if available
+    if smoother._last_feedback_time > 0:
+        result["feedback_age_s"] = round(time.time() - smoother._last_feedback_time, 3)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # WebSocket — stream telemetry events in real-time
 # ---------------------------------------------------------------------------
@@ -2381,80 +2427,6 @@ def armState_gripper() -> float:
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/bifocal/toggle")
-async def bifocal_toggle():
-    """Toggle the bifocal workspace mapper on/off."""
-    if not _HAS_BIFOCAL or workspace_mapper is None:
-        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
-    enabled = workspace_mapper.toggle()
-    action_log.add("BIFOCAL", f"Workspace mapper {'enabled' if enabled else 'disabled'}", "info")
-    return {"ok": True, "enabled": enabled}
-
-
-@app.get("/api/bifocal/status")
-async def bifocal_status():
-    """Get bifocal workspace mapper status."""
-    if not _HAS_BIFOCAL or workspace_mapper is None:
-        return {"available": False}
-    status = workspace_mapper.get_status()
-    status["available"] = True
-    return status
-
-
-@app.post("/api/bifocal/update")
-async def bifocal_update():
-    """Trigger a workspace map update from current camera frames."""
-    if not _HAS_BIFOCAL or workspace_mapper is None:
-        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
-    if not workspace_mapper.enabled:
-        return JSONResponse({"ok": False, "error": "Mapper not enabled"}, status_code=409)
-
-    # Grab snapshots from both cameras
-    import httpx
-
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp0 = await client.get("http://localhost:8081/snap/0")
-            resp1 = await client.get("http://localhost:8081/snap/1")
-        if resp0.status_code != 200 or resp1.status_code != 200:
-            return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
-
-        import cv2
-
-        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
-        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
-        if left is None or right is None:
-            return JSONResponse(
-                {"ok": False, "error": "Failed to decode camera frames"}, status_code=502
-            )
-
-        result = workspace_mapper.update_from_frames(left, right)
-        return {"ok": True, **result}
-
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-
-
-@app.get("/api/bifocal/workspace")
-async def bifocal_workspace(max_points: int = 500):
-    """Get occupied voxel positions for 3D visualization."""
-    if not _HAS_BIFOCAL or workspace_mapper is None:
-        return {"points": [], "summary": {}}
-    points = workspace_mapper.get_occupied_points(max_points)
-    summary = workspace_mapper.get_occupancy_summary()
-    return {"points": points, "summary": summary}
-
-
-@app.post("/api/bifocal/clear")
-async def bifocal_clear():
-    """Clear the workspace map."""
-    if not _HAS_BIFOCAL or workspace_mapper is None:
-        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
-    workspace_mapper.clear()
-    action_log.add("BIFOCAL", "Workspace map cleared", "info")
-    return {"ok": True}
-
-
 class CalibScaleRequest(BaseModel):
     square_size_mm: float = Field(default=25.0, gt=0)
 
@@ -2463,7 +2435,7 @@ class CalibScaleRequest(BaseModel):
 async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
     """Calibrate real-world scale using a checkerboard pattern."""
     if not _HAS_BIFOCAL or workspace_mapper is None:
-        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
+        return JSONResponse({"ok": False, "error": "Workspace mapper not available"}, status_code=501)
 
     import httpx, cv2
 
@@ -2479,10 +2451,10 @@ async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
 
         result = workspace_mapper.calibrate_scale_from_checkerboard(left, right, req.square_size_mm)
         if result["ok"]:
-            action_log.add("BIFOCAL", f"Scale calibrated: factor={result['scale_factor']}", "info")
+            action_log.add("CALIBRATION", f"Scale calibrated: factor={result['scale_factor']}", "info")
         else:
             action_log.add(
-                "BIFOCAL", f"Scale calibration failed: {result.get('error', '?')}", "warning"
+                "CALIBRATION", f"Scale calibration failed: {result.get('error', '?')}", "warning"
             )
         return result
 
@@ -2502,7 +2474,7 @@ class TapeMeasureRequest(BaseModel):
 async def bifocal_calibrate_tape(req: TapeMeasureRequest):
     """Calibrate scale using two points on a tape measure."""
     if not _HAS_BIFOCAL or workspace_mapper is None:
-        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
+        return JSONResponse({"ok": False, "error": "Workspace mapper not available"}, status_code=501)
 
     import httpx, cv2
 
@@ -2520,23 +2492,32 @@ async def bifocal_calibrate_tape(req: TapeMeasureRequest):
             left, right, req.known_length_mm, (req.x1, req.y1), (req.x2, req.y2)
         )
         if result["ok"]:
-            action_log.add("BIFOCAL", f"Tape calibration: factor={result['scale_factor']}", "info")
+            action_log.add("CALIBRATION", f"Tape calibration: factor={result['scale_factor']}", "info")
         return result
 
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
-@app.post("/api/bifocal/preview")
+@app.get("/api/bifocal/preview")
 async def bifocal_preview():
-    """Preview endpoint — collision preview removed (unreliable FK)."""
-    return JSONResponse({"ok": False, "error": "Collision preview removed — unreliable FK"}, status_code=501)
+    """Get camera status for workspace preview."""
+    import httpx
 
+    cameras = []
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            for cam_id in range(3):
+                try:
+                    resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+                    cameras.append({"id": cam_id, "ok": resp.status_code == 200})
+                except Exception:
+                    cameras.append({"id": cam_id, "ok": False})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
-@app.post("/api/bifocal/preview-target")
-async def bifocal_preview_target(req: SetAllJointsRequest):
-    """Preview endpoint — collision preview removed (unreliable FK)."""
-    return JSONResponse({"ok": False, "error": "Collision preview removed — unreliable FK"}, status_code=501)
+    all_ok = all(c["ok"] for c in cameras)
+    return {"ok": all_ok, "cameras": cameras}
 
 
 # ---------------------------------------------------------------------------
@@ -3745,31 +3726,6 @@ async def run_viz_calibration():
         _viz_calib_running = False
 
 
-# ---------------------------------------------------------------------------
-# Collision handling
-# ---------------------------------------------------------------------------
-
-
-# _handle_collision removed — collision detector disabled
-
-
-@app.get("/api/collisions")
-async def api_collisions(limit: int = 20):
-    """Return recent collision events."""
-    return {"events": collision_events[-limit:]}
-
-
-@app.get("/api/collisions/{timestamp}/{filename}")
-async def api_collision_image(timestamp: str, filename: str):
-    """Serve saved collision images."""
-    from fastapi.responses import FileResponse
-
-    data_dir = Path(__file__).resolve().parent.parent / "data" / "collisions"
-    img_path = data_dir / timestamp / filename
-    if not img_path.exists() or not img_path.is_file():
-        return JSONResponse({"error": "Not found"}, status_code=404)
-    return FileResponse(img_path, media_type="image/jpeg")
-
 
 # ---------------------------------------------------------------------------
 # Telemetry viewer page route
@@ -3799,12 +3755,23 @@ _ASCII_CHARSETS = {
 async def gpu_status_endpoint():
     """Return GPU compute (OpenCL) availability and status."""
     if _HAS_GPU_PREPROCESS:
-        return JSONResponse(_gpu_status())
+        info = _gpu_status()
+        # Add human-readable summary for diagnostics panel
+        if info.get("opencl_available"):
+            parts = [f"Device: {info.get('device', 'unknown')}"]
+            parts.append(f"OpenCL enabled: {info.get('opencl_enabled', False)}")
+            parts.append(f"HSV GPU kernel: {'OK' if info.get('hsv_gpu') else 'FALLBACK TO CPU'}")
+            info["summary"] = " | ".join(parts)
+        else:
+            info["summary"] = "OpenCL not available — all processing on CPU"
+        return JSONResponse(info)
     return JSONResponse(
         {
             "opencl_available": False,
             "opencl_enabled": False,
+            "hsv_gpu": False,
             "device": None,
+            "summary": "GPU preprocessing module not loaded — all processing on CPU",
         }
     )
 

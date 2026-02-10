@@ -16,7 +16,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# Logging configured at __main__ via setup_logging(); fall back for import-time usage
 logger = logging.getLogger("th3cl4w.v2proxy")
 
 BACKEND = "http://localhost:8080"
@@ -214,6 +214,12 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=8081)
     p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--debug", action="store_true", help="Enable DEBUG-level logging to logs/v2proxy.log")
+    p.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
     a = p.parse_args()
+
+    from src.utils.logging_config import setup_logging
+    setup_logging(server_name="v2proxy", debug=a.debug, log_dir=a.log_dir)
+
     logger.info("Starting th3cl4w V2 proxy on :%d → backend :8080", a.port)
     uvicorn.run(app, host=a.host, port=a.port, log_level="info")

@@ -37,7 +37,7 @@ from src.ascii.streamer import AsciiStreamer, StreamConfig
 from src.ascii.session import SessionManager
 from src.vision.ascii_converter import CHARSET_STANDARD
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# Logging configured at __main__ via setup_logging(); fall back for import-time usage
 logger = logging.getLogger("th3cl4w.ascii_server")
 
 # Globals
@@ -324,4 +324,15 @@ async def index():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8084, log_level="info")
+    import argparse
+
+    _parser = argparse.ArgumentParser(description="th3cl4w ASCII Video Server")
+    _parser.add_argument("--port", type=int, default=8084)
+    _parser.add_argument("--debug", action="store_true", help="Enable DEBUG-level logging to logs/ascii.log")
+    _parser.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
+    _args = _parser.parse_args()
+
+    from src.utils.logging_config import setup_logging
+    setup_logging(server_name="ascii", debug=_args.debug, log_dir=_args.log_dir)
+
+    uvicorn.run(app, host="0.0.0.0", port=_args.port, log_level="info")
