@@ -629,8 +629,24 @@ class D1ArmSimulator {
     const d = Math.max(0.01, (obj.depth_mm || 40) / 1000);
     const h = Math.max(0.01, (obj.height_mm || 50) / 1000);
 
-    // Use a box geometry for the object
-    const geo = new THREE.BoxGeometry(w, h, d);
+    // Pick geometry based on detected shape
+    const shape = obj.shape || 'box';
+    let geo;
+    let wireGeo;
+
+    if (shape === 'cylinder') {
+      const radius = Math.max(w, d) / 2;
+      geo = new THREE.CylinderGeometry(radius, radius, h, 24);
+      wireGeo = new THREE.CylinderGeometry(radius + 0.002, radius + 0.002, h + 0.004, 24);
+    } else if (shape === 'sphere') {
+      const radius = Math.max(w, d, h) / 2;
+      geo = new THREE.SphereGeometry(radius, 20, 16);
+      wireGeo = new THREE.SphereGeometry(radius + 0.002, 20, 16);
+    } else {
+      // "box" or "irregular" — use BoxGeometry with actual proportions
+      geo = new THREE.BoxGeometry(w, h, d);
+      wireGeo = new THREE.BoxGeometry(w + 0.004, h + 0.004, d + 0.004);
+    }
 
     // Parse color
     const color = new THREE.Color(obj.color_hex || '#ff8800');
@@ -648,6 +664,11 @@ class D1ArmSimulator {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
 
+    // Apply rotation from detection (around Y axis in Three.js = overhead rotation)
+    if (obj.rotation_deg && shape === 'box') {
+      mesh.rotation.y = -(obj.rotation_deg || 0) * Math.PI / 180;
+    }
+
     // Position: x_m and y_m are workspace coords; Three.js uses Y-up
     // Workspace X → Three.js X, Workspace Y → Three.js -Z (depth), height → Three.js Y
     mesh.position.set(
@@ -661,7 +682,6 @@ class D1ArmSimulator {
 
     // Wireframe outline for reachable objects
     if (obj.within_reach) {
-      const wireGeo = new THREE.BoxGeometry(w + 0.004, h + 0.004, d + 0.004);
       const wireMat = new THREE.MeshBasicMaterial({
         color: 0x44ff88,
         wireframe: true,
@@ -670,6 +690,7 @@ class D1ArmSimulator {
       });
       const wire = new THREE.Mesh(wireGeo, wireMat);
       wire.position.copy(mesh.position);
+      if (mesh.rotation.y) wire.rotation.y = mesh.rotation.y;
       this._objectsGroup.add(wire);
       mesh.userData.wireframe = wire;
 

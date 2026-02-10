@@ -93,6 +93,12 @@ class DetectedObject:
     # Timestamp of detection
     timestamp: float = 0.0
 
+    # Shape classification: "cylinder", "box", "sphere", "irregular"
+    shape: str = "box"
+
+    # Rotation angle from minAreaRect (degrees)
+    rotation_deg: float = 0.0
+
     def to_dict(self) -> dict:
         return {
             "id": self.obj_id,
@@ -115,6 +121,8 @@ class DetectedObject:
             "confidence": round(self.confidence, 3),
             "bbox": list(self.bbox_overhead),
             "timestamp": round(self.timestamp, 3),
+            "shape": self.shape,
+            "rotation_deg": round(self.rotation_deg, 1),
         }
 
 
@@ -307,10 +315,29 @@ class ObjectDetector:
                 obj_mask = mask[y:y+bh, x:x+bw]
                 color_bgr = self._get_dominant_color(obj_region, obj_mask)
 
-                # Map pixel position to workspace mm
-                cx_px = x + bw / 2.0
-                cy_px = y + bh / 2.0
+                # Use contour moments for better centroid
+                M = cv2.moments(cnt)
+                if M["m00"] > 0:
+                    cx_px = M["m10"] / M["m00"]
+                    cy_px = M["m01"] / M["m00"]
+                else:
+                    cx_px = x + bw / 2.0
+                    cy_px = y + bh / 2.0
                 ws_x, ws_y = self._pixel_to_workspace(cx_px, cy_px, rw, rh)
+
+                # Use minAreaRect for true width/depth and rotation
+                rect = cv2.minAreaRect(cnt)
+                (_, (rect_w, rect_h), angle) = rect
+                # Ensure width >= depth (swap if needed)
+                if rect_h > rect_w:
+                    rect_w, rect_h = rect_h, rect_w
+                    angle = angle + 90.0
+
+                width_mm = rect_w * self._scale if self._scale else 0
+                depth_mm = rect_h * self._scale if self._scale else 0
+
+                # Classify shape
+                shape, rotation = self._classify_shape(cnt, area, rect_w, rect_h)
 
                 obj = DetectedObject(
                     obj_id=self._next_id,
@@ -319,11 +346,13 @@ class ObjectDetector:
                     y_mm=ws_y,
                     z_mm=_DEFAULT_OBJECT_HEIGHT_MM / 2.0,
                     bbox_overhead=(x + offset_x, y + offset_y, bw, bh),
-                    width_mm=bw * self._scale if self._scale else 0,
-                    depth_mm=bh * self._scale if self._scale else 0,
+                    width_mm=width_mm,
+                    depth_mm=depth_mm,
                     height_mm=_DEFAULT_OBJECT_HEIGHT_MM,
                     color_bgr=color_bgr,
                     confidence=min(1.0, area / 5000.0),
+                    shape=shape,
+                    rotation_deg=angle,
                 )
                 self._next_id += 1
                 objects.append(obj)
@@ -359,9 +388,27 @@ class ObjectDetector:
             obj_mask = fg_mask[y:y+bh, x:x+bw]
             color_bgr = self._get_dominant_color(obj_region, obj_mask)
 
-            cx_px = x + bw / 2.0
-            cy_px = y + bh / 2.0
+            # Use contour moments for better centroid
+            M = cv2.moments(cnt)
+            if M["m00"] > 0:
+                cx_px = M["m10"] / M["m00"]
+                cy_px = M["m01"] / M["m00"]
+            else:
+                cx_px = x + bw / 2.0
+                cy_px = y + bh / 2.0
             ws_x, ws_y = self._pixel_to_workspace(cx_px, cy_px, rw, rh)
+
+            # Use minAreaRect for true dimensions
+            rect = cv2.minAreaRect(cnt)
+            (_, (rect_w, rect_h), angle) = rect
+            if rect_h > rect_w:
+                rect_w, rect_h = rect_h, rect_w
+                angle = angle + 90.0
+
+            width_mm = rect_w * self._scale if self._scale else 0
+            depth_mm = rect_h * self._scale if self._scale else 0
+
+            shape, _ = self._classify_shape(cnt, area, rect_w, rect_h)
 
             obj = DetectedObject(
                 obj_id=self._next_id,
@@ -370,16 +417,57 @@ class ObjectDetector:
                 y_mm=ws_y,
                 z_mm=_DEFAULT_OBJECT_HEIGHT_MM / 2.0,
                 bbox_overhead=(x + offset_x, y + offset_y, bw, bh),
-                width_mm=bw * self._scale if self._scale else 0,
-                depth_mm=bh * self._scale if self._scale else 0,
+                width_mm=width_mm,
+                depth_mm=depth_mm,
                 height_mm=_DEFAULT_OBJECT_HEIGHT_MM,
                 color_bgr=color_bgr,
-                confidence=min(1.0, area / 8000.0) * 0.7,  # lower confidence for bg method
+                confidence=min(1.0, area / 8000.0) * 0.7,
+                shape=shape,
+                rotation_deg=angle,
             )
             self._next_id += 1
             objects.append(obj)
 
         return objects
+
+    @staticmethod
+    def _classify_shape(
+        contour: np.ndarray, area: float, rect_w: float, rect_h: float
+    ) -> tuple[str, float]:
+        """Classify contour shape based on geometry.
+
+        Returns (shape, circularity) where shape is one of:
+        "cylinder", "box", "sphere", "irregular".
+        """
+        # Circularity: 4*pi*area / perimeter^2  (1.0 = perfect circle)
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter < 1e-6:
+            return "irregular", 0.0
+        circularity = (4.0 * math.pi * area) / (perimeter * perimeter)
+
+        # Aspect ratio from rotated rect
+        aspect = rect_w / max(rect_h, 1e-6)
+
+        # Extent: contour area / bounding rect area
+        rect_area = rect_w * rect_h
+        extent = area / max(rect_area, 1e-6)
+
+        if circularity > 0.82 and aspect < 1.25:
+            # Nearly circular top-down → could be cylinder or sphere
+            # We can't distinguish sphere vs cylinder from overhead alone,
+            # so default to cylinder (more common: cans, cups, bottles)
+            return "cylinder", circularity
+        elif circularity > 0.65 and aspect < 1.4:
+            # Somewhat circular — likely cylinder
+            return "cylinder", circularity
+        elif extent > 0.85 and aspect < 1.6:
+            # High extent + roughly square → box
+            return "box", circularity
+        elif extent > 0.75:
+            # Rectangular with higher aspect ratio → still box
+            return "box", circularity
+        else:
+            return "irregular", circularity
 
     def _merge_detections(
         self,
@@ -409,41 +497,87 @@ class ObjectDetector:
     ):
         """Estimate object heights from the front camera (cam0).
 
-        Uses vertical position in the front camera to estimate height above table.
-        Objects higher in the image are taller (assuming perspective from front).
+        Uses contour detection on the front camera to find object silhouettes,
+        then matches them to overhead-detected objects by horizontal position.
+        The contour's vertical extent gives a much better height estimate than
+        simple edge scanning.
         """
         h, w = cam0_frame.shape[:2]
-        gray = cv2.cvtColor(cam0_frame, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (15, 15), 0)
-
-        # Simple edge-based height estimation:
-        # Find vertical extent of objects in the front camera
-        edges = cv2.Canny(blurred, 30, 100)
         table_y = int(h * _FRONT_CAM_TABLE_Y_FRAC)
 
-        # For each detected object, try to estimate height from front view
+        # Find object contours in the front camera using color + edge detection
+        hsv = cv2.cvtColor(cam0_frame, cv2.COLOR_BGR2HSV)
+
+        # Build a combined mask of all detectable colors in front view
+        front_mask = np.zeros((h, w), dtype=np.uint8)
+        for key, cr in _COLOR_RANGES.items():
+            m = cv2.inRange(hsv, cr["lower"], cr["upper"])
+            front_mask = cv2.bitwise_or(front_mask, m)
+
+        # Also add edge-based detection for objects that don't match color ranges
+        gray = cv2.cvtColor(cam0_frame, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+        edges = cv2.Canny(blurred, 30, 100)
+        # Dilate edges to close gaps, then fill
+        edge_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        edges_dilated = cv2.dilate(edges, edge_kernel, iterations=2)
+        front_mask = cv2.bitwise_or(front_mask, edges_dilated)
+
+        # Only look above the table line
+        front_mask[table_y:, :] = 0
+
+        # Morphological cleanup
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        front_mask = cv2.morphologyEx(front_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        front_mask = cv2.morphologyEx(front_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+
+        front_contours, _ = cv2.findContours(
+            front_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        # Build list of front-view silhouettes with their horizontal center and height
+        front_silhouettes: list[tuple[float, float, float]] = []  # (cx_norm, top_y, bot_y)
+        for cnt in front_contours:
+            area = cv2.contourArea(cnt)
+            if area < 300:  # skip noise
+                continue
+            x, y, bw, bh = cv2.boundingRect(cnt)
+            if bh < 8:  # too short
+                continue
+            cx_norm = (x + bw / 2.0) / w  # normalized horizontal center
+            top_y = float(y)
+            bot_y = float(y + bh)
+            front_silhouettes.append((cx_norm, top_y, bot_y))
+
+        # Match each overhead object to the closest front silhouette by horizontal position
         for obj in objects:
-            # Scan a vertical column at the approximate horizontal position
-            # Map workspace X to front camera horizontal pixel
             norm_x = (obj.x_mm - _WS_MIN[0]) / (_WS_MAX[0] - _WS_MIN[0])
-            col = int(norm_x * w)
-            col = max(0, min(w - 1, col))
 
-            # Find the topmost edge above the table line in a band around the column
-            col_lo = max(0, col - 20)
-            col_hi = min(w, col + 20)
-            edge_band = edges[:table_y, col_lo:col_hi]
+            best_match = None
+            best_dist = 0.15  # max horizontal distance threshold (normalized)
 
-            if edge_band.size > 0:
-                rows_with_edges = np.where(edge_band.max(axis=1) > 0)[0]
-                if len(rows_with_edges) > 0:
-                    top_edge_row = rows_with_edges[0]
-                    pixel_height = table_y - top_edge_row
-                    # Convert pixel height to mm (linear approximation)
+            for cx_norm, top_y, bot_y in front_silhouettes:
+                dist = abs(cx_norm - norm_x)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_match = (top_y, bot_y)
+
+            if best_match is not None:
+                top_y, bot_y = best_match
+                # Use the contour's vertical extent relative to table line
+                pixel_height = table_y - top_y
+                if pixel_height > 5:
                     height_mm = (pixel_height / table_y) * _FRONT_CAM_MAX_HEIGHT_MM
                     height_mm = max(10.0, min(_FRONT_CAM_MAX_HEIGHT_MM, height_mm))
                     obj.height_mm = height_mm
                     obj.z_mm = height_mm / 2.0
+
+                    # If object is cylindrical and tall relative to width,
+                    # it might actually be a sphere if height ≈ width
+                    if obj.shape == "cylinder":
+                        diameter = max(obj.width_mm, obj.depth_mm)
+                        if diameter > 0 and 0.8 < (height_mm / diameter) < 1.2:
+                            obj.shape = "sphere"
 
     def _pixel_to_workspace(
         self, px: float, py: float, img_w: int, img_h: int
