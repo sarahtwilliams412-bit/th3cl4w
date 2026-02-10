@@ -495,8 +495,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           <button class="btn" id="btnPowerOn">Power On</button>
           <button class="btn" id="btnPowerOff">Power Off</button>
           <button class="btn" id="btnEnable">Enable</button>
+          <button class="btn" id="btnEnableHere" title="Enable motors and hold current position">Enable Here</button>
           <button class="btn" id="btnDisable">Disable</button>
-          <button class="btn warn" id="btnResetEnable">Reset + Enable</button>
+          <button class="btn warn" id="btnResetEnable" title="Safe enable (no reset to zero)">Reset + Enable</button>
+          <button class="btn warn" id="btnHardResetEnable" title="⚠ Resets all joints to 0° — only use near home!" style="font-size:10px">Hard Reset</button>
         </div>
       </div>
 
@@ -504,6 +506,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <div class="section-title">Tasks</div>
         <div class="btn-row">
           <button class="btn" id="btnTaskHome">Home</button>
+          <button class="btn" id="btnSafeHome" title="Move to home one joint at a time (safe)">Safe Home</button>
           <button class="btn" id="btnTaskReady">Ready</button>
           <button class="btn" id="btnTaskWave">Wave</button>
           <button class="btn warn" id="btnTaskStop">Stop Task</button>
@@ -1533,6 +1536,13 @@ document.getElementById('btnTaskReady').addEventListener('click', () => runTask(
 document.getElementById('btnTaskWave').addEventListener('click', () => runTask('wave'));
 document.getElementById('btnTaskStop').addEventListener('click', () => runTask('stop'));
 document.getElementById('btnResetEnable').addEventListener('click', () => cmd('reset-enable'));
+document.getElementById('btnHardResetEnable').addEventListener('click', () => {
+  if (confirm('⚠ HARD RESET will send all joints to 0° simultaneously.\nOnly use when arm is already near home position!\n\nContinue?')) {
+    cmd('hard-reset-enable');
+  }
+});
+document.getElementById('btnEnableHere').addEventListener('click', () => cmd('enable-here'));
+document.getElementById('btnSafeHome').addEventListener('click', () => cmd('safe-home'));
 document.getElementById('btnEstop').addEventListener('click', () => cmd('stop'));
 
 document.getElementById('btnRawSend').addEventListener('click', async () => {

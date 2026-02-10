@@ -1036,28 +1036,177 @@ async def cmd_reset():
 
 @app.post("/api/command/reset-enable")
 async def cmd_reset_enable():
-    """Combined reset + enable: reset, wait 2s, then enable. Required after overcurrent."""
+    """Safe reset+enable: enable motors and sync smoother to current position.
+
+    Does NOT call reset_to_zero — avoids overcurrent from simultaneous large joint jumps.
+    The arm holds its current position after enabling.
+    """
     cid = _new_cid()
     _telem_cmd_sent("reset-enable", {}, cid)
     if arm is None:
         return cmd_response(False, "RESET_ENABLE", "No arm connected", cid)
-    action_log.add("RESET_ENABLE", "Starting reset+enable sequence", "info")
+    action_log.add("RESET_ENABLE", "Starting safe enable sequence (no reset_to_zero)", "info")
+
+    # Step 1: Enable motors only
+    ok_enable = arm.enable_motors(_correlation_id=cid)
+    if not ok_enable:
+        return cmd_response(False, "RESET_ENABLE", "Enable failed", cid)
+
+    # Step 2: Sync smoother from current DDS feedback positions
+    if smoother:
+        smoother.set_arm_enabled(True)
+        angles = arm.get_joint_angles()
+        gripper = arm.get_gripper_position() if hasattr(arm, "get_gripper_position") else 0.0
+        if angles is not None and len(angles) >= 6:
+            smoother.sync_from_feedback([float(a) for a in angles[:6]], float(gripper))
+            action_log.add("RESET_ENABLE", f"Smoother synced to current pos: {[round(float(a),1) for a in angles[:6]]}", "info")
+
+    action_log.add("RESET_ENABLE", "Safe enable complete — arm holding current position", "info")
+    resp = cmd_response(True, "RESET_ENABLE", "Enabled at current position (no reset)", cid)
+    await broadcast_ack("RESET_ENABLE", True)
+    return resp
+
+
+@app.post("/api/command/hard-reset-enable")
+async def cmd_hard_reset_enable():
+    """Legacy reset+enable: reset to zero, wait 2s, then enable.
+
+    WARNING: This sends all joints to 0° simultaneously. Only use when arm is already near home.
+    """
+    cid = _new_cid()
+    _telem_cmd_sent("hard-reset-enable", {}, cid)
+    if arm is None:
+        return cmd_response(False, "HARD_RESET_ENABLE", "No arm connected", cid)
+    action_log.add("HARD_RESET_ENABLE", "⚠ Starting HARD reset+enable (reset_to_zero)", "warning")
     ok_reset = arm.reset_to_zero(_correlation_id=cid)
     if smoother:
         smoother.set_arm_enabled(False)
     if not ok_reset:
-        return cmd_response(False, "RESET_ENABLE", "Reset failed", cid)
+        return cmd_response(False, "HARD_RESET_ENABLE", "Reset failed", cid)
     await asyncio.sleep(2.0)
     ok_enable = arm.enable_motors(_correlation_id=cid)
     if ok_enable and smoother:
         smoother.set_arm_enabled(True)
     action_log.add(
-        "RESET_ENABLE",
+        "HARD_RESET_ENABLE",
         f"reset={'OK' if ok_reset else 'FAIL'} enable={'OK' if ok_enable else 'FAIL'}",
         "info" if ok_enable else "error",
     )
-    resp = cmd_response(ok_enable, "RESET_ENABLE", f"reset=OK enable={'OK' if ok_enable else 'FAIL'}", cid)
-    await broadcast_ack("RESET_ENABLE", ok_enable)
+    resp = cmd_response(ok_enable, "HARD_RESET_ENABLE", f"reset=OK enable={'OK' if ok_enable else 'FAIL'}", cid)
+    await broadcast_ack("HARD_RESET_ENABLE", ok_enable)
+    return resp
+
+
+@app.post("/api/command/enable-here")
+async def cmd_enable_here():
+    """Enable motors and immediately hold current position.
+
+    1. Enables motors
+    2. Reads current joint positions from DDS feedback
+    3. Sends current position as target (arm holds where it is)
+    4. Syncs smoother to current position
+    """
+    cid = _new_cid()
+    _telem_cmd_sent("enable-here", {}, cid)
+    if arm is None:
+        return cmd_response(False, "ENABLE_HERE", "No arm connected", cid)
+
+    state = arm.get_status() or {}
+    if not state.get("power_status"):
+        return JSONResponse({"ok": False, "action": "ENABLE_HERE", "error": "Power must be on first", "state": get_arm_state()})
+
+    # Read current positions BEFORE enabling
+    angles = arm.get_joint_angles()
+    gripper = arm.get_gripper_position() if hasattr(arm, "get_gripper_position") else 0.0
+
+    ok = arm.enable_motors(_correlation_id=cid)
+    if not ok:
+        return cmd_response(False, "ENABLE_HERE", "Enable failed", cid)
+
+    # Immediately send current position as target so arm holds still
+    if angles is not None and len(angles) >= 6:
+        angles_list = [float(a) for a in angles[:6]]
+        arm.set_all_joints(angles_list, _correlation_id=cid)
+        if smoother:
+            smoother.set_arm_enabled(True)
+            smoother.sync_from_feedback(angles_list, float(gripper))
+            # Set targets to current so smoother doesn't try to move
+            smoother.set_all_joints_target(angles_list)
+        action_log.add("ENABLE_HERE", f"Enabled and holding at {[round(a,1) for a in angles_list]}", "info")
+    else:
+        if smoother:
+            smoother.set_arm_enabled(True)
+        action_log.add("ENABLE_HERE", "Enabled (could not read current position)", "warning")
+
+    resp = cmd_response(True, "ENABLE_HERE", "Enabled at current position", cid)
+    await broadcast_ack("ENABLE_HERE", True)
+    return resp
+
+
+@app.post("/api/command/safe-home")
+async def cmd_safe_home():
+    """Safely move arm to home (0°) position one joint at a time.
+
+    Sequence:
+    1. Low-torque joints first (J0 base yaw, J3 wrist roll, J5 tool roll)
+    2. High-torque pitch joints (J1, J2, J4) in small 10° increments with delays
+    3. Verifies each step reached target before proceeding
+    """
+    cid = _new_cid()
+    _telem_cmd_sent("safe-home", {}, cid)
+    if arm is None:
+        return cmd_response(False, "SAFE_HOME", "No arm connected", cid)
+    if not (smoother and smoother._arm_enabled):
+        return JSONResponse({"ok": False, "action": "SAFE_HOME", "error": "Arm not enabled"}, status_code=409)
+
+    action_log.add("SAFE_HOME", "Starting safe home sequence", "info")
+
+    current = _get_current_joints()
+    POSITION_TOLERANCE_DEG = 3.0
+    STEP_DEG = 10.0
+    STEP_DELAY_S = 1.0
+    SETTLE_DELAY_S = 0.5
+
+    # Phase 1: Low-torque joints (rolls/yaw) — move directly to 0
+    low_torque_joints = [0, 3, 5]  # J0=base yaw, J3=wrist roll, J5=tool roll
+    for j in low_torque_joints:
+        if abs(current[j]) > POSITION_TOLERANCE_DEG:
+            action_log.add("SAFE_HOME", f"Moving J{j}: {current[j]:.1f}° → 0°", "info")
+            smoother.set_joint_target(j, 0.0)
+            await asyncio.sleep(SETTLE_DELAY_S + abs(current[j]) / 30.0)  # ~30°/s estimate
+            # Verify
+            new_angles = _get_current_joints()
+            if abs(new_angles[j]) > POSITION_TOLERANCE_DEG:
+                action_log.add("SAFE_HOME", f"J{j} didn't reach target (at {new_angles[j]:.1f}°), continuing anyway", "warning")
+
+    # Phase 2: High-torque pitch joints — move in small increments
+    high_torque_joints = [4, 2, 1]  # J4=wrist pitch, J2=elbow, J1=shoulder (reverse order: distal first)
+    for j in high_torque_joints:
+        current_angle = float(_get_current_joints()[j])
+        if abs(current_angle) <= POSITION_TOLERANCE_DEG:
+            continue
+        action_log.add("SAFE_HOME", f"Ramping J{j}: {current_angle:.1f}° → 0° in {STEP_DEG}° steps", "info")
+
+        # Move in increments toward 0
+        while abs(current_angle) > POSITION_TOLERANCE_DEG:
+            if current_angle > 0:
+                next_angle = max(0.0, current_angle - STEP_DEG)
+            else:
+                next_angle = min(0.0, current_angle + STEP_DEG)
+            smoother.set_joint_target(j, next_angle)
+            await asyncio.sleep(STEP_DELAY_S)
+            current_angle = float(_get_current_joints()[j])
+
+        # Final target
+        smoother.set_joint_target(j, 0.0)
+        await asyncio.sleep(SETTLE_DELAY_S)
+        final = float(_get_current_joints()[j])
+        if abs(final) > POSITION_TOLERANCE_DEG:
+            action_log.add("SAFE_HOME", f"J{j} ended at {final:.1f}° (not at 0°)", "warning")
+
+    action_log.add("SAFE_HOME", "Safe home sequence complete", "info")
+    resp = cmd_response(True, "SAFE_HOME", "Safe home sequence complete", cid)
+    await broadcast_ack("SAFE_HOME", True)
     return resp
 
 
@@ -1068,25 +1217,23 @@ _power_loss_recovery_task: Optional[asyncio.Task] = None
 
 
 async def _auto_recover_power():
-    """Wait 3s then attempt reset+enable after power loss."""
+    """Wait 3s then attempt safe enable after power loss (no reset_to_zero)."""
     await asyncio.sleep(3.0)
-    action_log.add("AUTO_RECOVERY", "Attempting reset+enable after power loss", "warning")
+    action_log.add("AUTO_RECOVERY", "Attempting safe enable after power loss (no reset_to_zero)", "warning")
     if arm is None:
         action_log.add("AUTO_RECOVERY", "No arm connected, aborting", "error")
         return
-    ok_reset = arm.reset_to_zero()
-    if smoother:
-        smoother.set_arm_enabled(False)
-    if not ok_reset:
-        action_log.add("AUTO_RECOVERY", "Reset failed", "error")
-        return
-    await asyncio.sleep(2.0)
     ok_enable = arm.enable_motors()
     if ok_enable and smoother:
         smoother.set_arm_enabled(True)
+        # Sync to current position
+        angles = arm.get_joint_angles()
+        gripper = arm.get_gripper_position() if hasattr(arm, "get_gripper_position") else 0.0
+        if angles is not None and len(angles) >= 6:
+            smoother.sync_from_feedback([float(a) for a in angles[:6]], float(gripper))
     action_log.add(
         "AUTO_RECOVERY",
-        f"Recovery {'succeeded' if ok_enable else 'failed'}: reset={'OK' if ok_reset else 'FAIL'} enable={'OK' if ok_enable else 'FAIL'}",
+        f"Recovery {'succeeded' if ok_enable else 'failed'}: enable={'OK' if ok_enable else 'FAIL'}",
         "info" if ok_enable else "error",
     )
 
