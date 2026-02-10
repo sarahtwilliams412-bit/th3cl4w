@@ -396,6 +396,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>🗺️ Mapping</span></div>
     <div class="nav-items">
       <div class="nav-item" data-panel="bifocal" onclick="showPanel(this)"><span class="nav-icon">🔍</span> <span class="nav-label">Bifocal/Workspace</span></div>
+      <div class="nav-item" data-panel="object-detect" onclick="showPanel(this)"><span class="nav-icon">🎯</span> <span class="nav-label">Object Detection</span></div>
       <div class="nav-item" data-panel="scan3d" onclick="showPanel(this)"><span class="nav-icon">📡</span> <span class="nav-label">3D Scan</span></div>
     </div>
   </div>
@@ -652,8 +653,21 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <button class="btn on" id="simTogEnv" title="Toggle workspace envelope">Envelope</button>
         <button class="btn on" id="simTogGhost" title="Toggle ghost (live) arm">Ghost</button>
         <button class="btn on" id="simTogTrail" title="Toggle EE trail">Trail</button>
+        <button class="btn" id="simTogObjects" title="Toggle detected objects">Objects</button>
         <button class="btn on" id="simTogCams" title="Toggle camera frustums">Cameras</button>
       </div>
+
+      <div class="section-title" style="margin-top:8px">Object Detection</div>
+      <div class="sim-btn-row">
+        <button class="btn" id="simObjToggle" title="Enable/disable object detection">Enable</button>
+        <button class="btn primary" id="simObjDetect" title="Run detection on current camera frames" disabled>Detect</button>
+        <button class="btn" id="simObjClear" title="Clear detected objects">Clear</button>
+      </div>
+      <div id="simObjStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);padding:4px 0;line-height:1.5">
+        Detection: <span id="simObjEnabledLabel" style="color:var(--text-dim)">OFF</span><br>
+        Objects: <span id="simObjCount">0</span> total, <span id="simObjReachable" style="color:var(--success)">0</span> reachable
+      </div>
+      <div id="simObjList" style="font-family:var(--mono);font-size:9px;color:var(--text-dim);max-height:120px;overflow-y:auto;padding:2px 0"></div>
     </div>
     <div style="flex:1"></div>
     <div class="sim-execute-bar">
@@ -862,6 +876,52 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           <button class="btn" onclick="bifocalPreview()">👁 PREVIEW</button>
         </div>
         <div class="result-box" id="bifocalResult" style="margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Object Detection                                       -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-object-detect">
+  <div class="panel-body">
+    <div class="panel-header">Object Detection & Mapping</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>Detection Control</h3>
+        <div class="status-indicator stopped" id="objDetectPanelStatus">OFF</div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn primary" id="objPanelEnable" onclick="objPanelToggle()">ENABLE</button>
+          <button class="btn primary" id="objPanelDetect" onclick="objPanelRunDetect()" disabled>DETECT NOW</button>
+          <button class="btn" onclick="objPanelClear()">CLEAR</button>
+        </div>
+        <p style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:8px;line-height:1.5;">
+          Detects objects from the overhead camera (cam1) using color segmentation
+          and background subtraction. Objects within the arm's 550mm reach are
+          highlighted and mapped into the 3D simulator for pick practice.
+        </p>
+      </div>
+      <div class="panel-card">
+        <h3>Detected Objects</h3>
+        <div style="font-family:var(--mono);font-size:11px;margin-bottom:8px;">
+          Total: <span id="objPanelTotal">0</span> |
+          Reachable: <span id="objPanelReachable" style="color:var(--success)">0</span>
+        </div>
+        <div class="result-box" id="objPanelList" style="max-height:300px;">No objects detected</div>
+      </div>
+      <div class="panel-card">
+        <h3>Simulator Integration</h3>
+        <p style="font-family:var(--mono);font-size:10px;color:var(--text-dim);line-height:1.5;">
+          Detected objects within arm reach are automatically shown in the
+          3D Simulator panel. Open the simulator to see objects rendered at their
+          estimated positions and practice pick operations.<br><br>
+          <strong style="color:var(--success)">Green</strong> = within reach (can be picked)<br>
+          <strong style="color:var(--warning)">Orange</strong> = out of reach
+        </p>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn primary" onclick="showPanel(document.querySelector('[data-panel=simulator]'))">Open Simulator</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1616,10 +1676,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 <script>
 'use strict';
 
-// ============================================================
-//  NAVIGATION
-// ============================================================
-
+// =====================================================//  NAVIGATION
+// =====================================================
 function toggleNavGroup(el) {
   el.parentElement.classList.toggle('open');
 }
@@ -1673,10 +1731,8 @@ Object.defineProperty(window, '_activeTab', {
   set(v) { /* ignore */ }
 });
 
-// ============================================================
-//  CONSTANTS & SPECS
-// ============================================================
-
+// =====================================================//  CONSTANTS & SPECS
+// =====================================================
 const JOINT_SPECS = [
   { name: 'J0', min: -135, max: 135, label: 'Base Yaw',    type: 'yaw'   },  // was already ±135
   { name: 'J1', min: -90,  max: 90,  label: 'Shoulder',    type: 'pitch' },  // widened from ±80
@@ -1732,10 +1788,8 @@ function projectPoint3D(p3d,cam) {
   } catch(e) {}
 })();
 
-// ============================================================
-//  STATE
-// ============================================================
-
+// =====================================================//  STATE
+// =====================================================
 let ws = null;
 let armState = { connected: false, joints: [0,0,0,0,0,0], gripper: 0, power: false, enabled: false, error: 0, log: [] };
 let lastStateTs = 0;
@@ -1750,10 +1804,8 @@ let vizJoints = [0,0,0,0,0,0];
 let jointSource = 'init';
 let wsUpdateCount = 0;
 
-// ============================================================
-//  UTILITIES
-// ============================================================
-
+// =====================================================//  UTILITIES
+// =====================================================
 function logLocal(action, details, level) {
   const now = new Date();
   const ts_str = now.toTimeString().slice(0,8) + '.' + String(now.getMilliseconds()).padStart(3,'0');
@@ -1793,10 +1845,8 @@ function showResult(elId, data) {
   el.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
 }
 
-// ============================================================
-//  SLIDER SETUP
-// ============================================================
-
+// =====================================================//  SLIDER SETUP
+// =====================================================
 const slidersDiv = document.getElementById('jointSliders');
 for (let i = 0; i < 6; i++) {
   const spec = JOINT_SPECS[i];
@@ -1834,10 +1884,8 @@ gripSlider.addEventListener('change', gripRelease);
 const throttledSendJoint = makeThrottle((id, angle) => sendJoint(id, angle), 50);
 const throttledSendGripper = makeThrottle((pos) => sendGripper(pos), 50);
 
-// ============================================================
-//  COMMANDS (API calls)
-// ============================================================
-
+// =====================================================//  COMMANDS (API calls)
+// =====================================================
 async function cmd(action) {
   logLocal(action.toUpperCase(), `Sending POST /api/command/${action}`, 'info');
   try {
@@ -1880,10 +1928,8 @@ async function runTask(name, body={}) {
   } catch(e) { logLocal('TASK', `${name}: ${e.message}`, 'error'); }
 }
 
-// ============================================================
-//  BUTTON WIRING
-// ============================================================
-
+// =====================================================//  BUTTON WIRING
+// =====================================================
 document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
 document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
 document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
@@ -1917,10 +1963,8 @@ document.getElementById('btnRawSend').addEventListener('click', async () => {
 });
 document.getElementById('rawInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnRawSend').click(); });
 
-// ============================================================
-//  TEXT COMMAND
-// ============================================================
-
+// =====================================================//  TEXT COMMAND
+// =====================================================
 function textCmdFill(el) {
   document.getElementById('textCmdInput').value = el.textContent;
   document.getElementById('textCmdInput').focus();
@@ -1952,10 +1996,8 @@ document.getElementById('btnTextCmd').addEventListener('click', async () => {
 });
 document.getElementById('textCmdInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnTextCmd').click(); });
 
-// ============================================================
-//  WEBSOCKET
-// ============================================================
-
+// =====================================================//  WEBSOCKET
+// =====================================================
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws/state`);
@@ -1988,10 +2030,8 @@ function updateConn(on) {
   document.getElementById('connLabel').textContent = on ? 'CONNECTED' : 'DISCONNECTED';
 }
 
-// ============================================================
-//  UI UPDATE
-// ============================================================
-
+// =====================================================//  UI UPDATE
+// =====================================================
 function updateUI() {
   const bp = document.getElementById('badgePower');
   bp.textContent = armState.power ? 'PWR ON' : 'PWR OFF';
@@ -2064,10 +2104,8 @@ function renderLog() {
   el.scrollTop = el.scrollHeight;
 }
 
-// ============================================================
-//  ARM VISUALIZATION (Canvas FK) — preserved from V1
-// ============================================================
-
+// =====================================================//  ARM VISUALIZATION (Canvas FK) — preserved from V1
+// =====================================================
 const canvas = document.getElementById('armCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -2185,10 +2223,8 @@ function drawArm() {
   ctx.fillText(`src:${jointSource} ws#${wsUpdateCount} [${joints.map(v=>v.toFixed(1)).join(', ')}]`, 8, H - 8 * scale);
 }
 
-// ============================================================
-//  ANIMATION & RESIZE
-// ============================================================
-
+// =====================================================//  ANIMATION & RESIZE
+// =====================================================
 function animLoop() {
   if (vizDirty) { vizDirty = false; updateUI(); drawArm(); }
   animFrameId = requestAnimationFrame(animLoop);
@@ -2202,10 +2238,8 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 
-// ============================================================
-//  CAMERA STREAMING (MJPEG + WebSocket + Fallback)
-// ============================================================
-
+// =====================================================//  CAMERA STREAMING (MJPEG + WebSocket + Fallback)
+// =====================================================
 const CAM_PORT = 8081, CAM_HOST = location.hostname;
 let camMode = 'mjpeg';
 const camWsConnections = {}, camOverlays = {};
@@ -2290,10 +2324,8 @@ document.getElementById('btnCamToggle').addEventListener('click', () => {
   setTimeout(resizeCanvas, 50);
 });
 
-// ============================================================
-//  CAMERA SETTINGS
-// ============================================================
-
+// =====================================================//  CAMERA SETTINGS
+// =====================================================
 const PERSPECTIVES = ['overhead', 'side', 'front', 'arm-mounted', 'custom'];
 
 document.getElementById('btnCamSettings').addEventListener('click', () => {
@@ -2326,10 +2358,8 @@ document.getElementById('btnSaveCamConfig').addEventListener('click', async () =
 });
 loadCameraConfig();
 
-// ============================================================
-//  DEBUG TELEMETRY
-// ============================================================
-
+// =====================================================//  DEBUG TELEMETRY
+// =====================================================
 let debugOn = false, debugInterval = null, wsLastMsgTs = 0, wsRxIntervalMs = 0;
 
 function hookWsDebug() {
@@ -2406,10 +2436,8 @@ function renderDebugEvents(events) {
   container.scrollTop = container.scrollHeight;
 }
 
-// ============================================================
-//  NEW PANEL API HANDLERS
-// ============================================================
-
+// =====================================================//  NEW PANEL API HANDLERS
+// =====================================================
 // --- Visual Servo ---
 async function vsStart(mode) {
   const prefix = mode === 'overhead' ? 'Oh' : 'Ap';
@@ -3024,10 +3052,8 @@ async function simRefresh() {
   el.textContent = data.sim_mode ? 'SIMULATOR' : 'LIVE'; el.className = 'status-indicator ' + (data.sim_mode ? 'running' : 'stopped');
 }
 
-// ============================================================
-//  Camera Orientation
-// ============================================================
-
+// =====================================================//  Camera Orientation
+// =====================================================
 let _camOrientConfig = {};
 
 async function camOrientLoad() {
@@ -3142,10 +3168,8 @@ async function camOrientLoadCalib() {
   }
 }
 
-// ============================================================
-//  INIT
-// ============================================================
-
+// =====================================================//  INIT
+// =====================================================
 connectWS();
 setTimeout(() => { resizeCanvas(); animLoop(); }, 50);
 
@@ -3197,10 +3221,8 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
 // Performance monitoring
 (function(){window.addEventListener('load',()=>{console.log(`[perf] Page loaded in ${performance.now().toFixed(0)}ms`);});})();
 
-// ============================================================
-//  PICK CONFIG UI
-// ============================================================
-let _pickCfg = null, _pickDefaults = null;
+// =====================================================//  PICK CONFIG UI
+// =====================================================let _pickCfg = null, _pickDefaults = null;
 
 const PICK_CFG_LABELS = {
   detection: '🔍 Detection',
@@ -3395,12 +3417,90 @@ async function pickCfgReset() {
 <script defer src="factory3d.js"></script>
 <script defer src="realworld3d.js"></script>
 <script defer src="js/arm3d-overlay.js"></script>
+<script>
+// =====================================================//  Object Detection Panel Functions
+// =====================================================let _objPanelEnabled = false;
+
+async function objPanelToggle() {
+  try {
+    const resp = await fetch('/api/objects/toggle', { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      _objPanelEnabled = data.enabled;
+      _objPanelUpdateUI();
+    }
+  } catch (e) { console.error('objPanelToggle:', e); }
+}
+
+async function objPanelRunDetect() {
+  if (!_objPanelEnabled) return;
+  try {
+    await fetch('/api/objects/detect', { method: 'POST' });
+    const resp = await fetch('/api/objects/list');
+    const data = await resp.json();
+    _objPanelRenderList(data.objects || []);
+  } catch (e) { console.error('objPanelRunDetect:', e); }
+}
+
+async function objPanelClear() {
+  try {
+    await fetch('/api/objects/clear', { method: 'POST' });
+    _objPanelRenderList([]);
+  } catch (e) { console.error('objPanelClear:', e); }
+}
+
+function _objPanelUpdateUI() {
+  const statusEl = document.getElementById('objDetectPanelStatus');
+  const enableBtn = document.getElementById('objPanelEnable');
+  const detectBtn = document.getElementById('objPanelDetect');
+  if (statusEl) {
+    statusEl.textContent = _objPanelEnabled ? 'ACTIVE' : 'OFF';
+    statusEl.className = 'status-indicator ' + (_objPanelEnabled ? 'running' : 'stopped');
+  }
+  if (enableBtn) {
+    enableBtn.textContent = _objPanelEnabled ? 'DISABLE' : 'ENABLE';
+    enableBtn.className = _objPanelEnabled ? 'btn danger' : 'btn primary';
+  }
+  if (detectBtn) detectBtn.disabled = !_objPanelEnabled;
+}
+
+function _objPanelRenderList(objects) {
+  const totalEl = document.getElementById('objPanelTotal');
+  const reachEl = document.getElementById('objPanelReachable');
+  const listEl = document.getElementById('objPanelList');
+  if (totalEl) totalEl.textContent = objects.length;
+  const reachable = objects.filter(o => o.within_reach);
+  if (reachEl) reachEl.textContent = reachable.length;
+  if (listEl) {
+    if (objects.length === 0) {
+      listEl.textContent = 'No objects detected';
+    } else {
+      listEl.innerHTML = objects.map(o => {
+        const reach = o.within_reach
+          ? '<span style="color:var(--success);font-weight:bold">REACHABLE</span>'
+          : '<span style="color:var(--warning)">Out of reach</span>';
+        return `<div style="margin-bottom:6px;padding:4px;border-left:3px solid ${o.within_reach ? 'var(--success)' : 'var(--warning)'}">` +
+          `<span style="color:${o.color_hex}">\u25A0</span> <strong>${o.label}</strong> — ${reach}<br>` +
+          `Pos: (${o.x_mm}, ${o.y_mm}, ${o.z_mm}) mm<br>` +
+          `Size: ${o.width_mm}x${o.depth_mm}x${o.height_mm} mm<br>` +
+          `Distance: ${o.distance_mm} mm | Conf: ${(o.confidence * 100).toFixed(0)}%</div>`;
+      }).join('');
+    }
+  }
+}
+
+// Check status on page load
+fetch('/api/objects/status').then(r => r.json()).then(data => {
+  if (data.available) {
+    _objPanelEnabled = data.enabled;
+    _objPanelUpdateUI();
+  }
+}).catch(() => {});
+</script>
 <script src="js/simulator3d.js?v=2"></script>
 <script>
-// ============================================================
-//  3D Simulator Integration
-// ============================================================
-(function() {
+// =====================================================//  3D Simulator Integration
+// =====================================================(function() {
   'use strict';
 
   let sim = null;
@@ -3495,6 +3595,12 @@ async function pickCfgReset() {
     setupVizToggle('simTogEnv', (on) => sim.toggleEnvelope(on));
     setupVizToggle('simTogGhost', (on) => sim.toggleGhost(on));
     setupVizToggle('simTogTrail', (on) => sim.toggleTrail(on));
+    setupVizToggle('simTogObjects', (on) => sim.toggleDetectedObjects(on));
+
+    // Object detection buttons
+    document.getElementById('simObjToggle').addEventListener('click', toggleObjectDetection);
+    document.getElementById('simObjDetect').addEventListener('click', runObjectDetection);
+    document.getElementById('simObjClear').addEventListener('click', clearDetectedObjects);
     setupVizToggle('simTogCams', (on) => sim.toggleCameras(on));
 
     // Execute button
@@ -3640,6 +3746,134 @@ async function pickCfgReset() {
     requestAnimationFrame(updateSimFps);
   }
 
+  // ----------------------------------------------------------
+  //  Object Detection Integration
+  // ----------------------------------------------------------
+
+  let objDetectEnabled = false;
+  let objAutoDetectInterval = null;
+
+  async function toggleObjectDetection() {
+    try {
+      const resp = await fetch('/api/objects/toggle', { method: 'POST' });
+      const data = await resp.json();
+      if (data.ok) {
+        objDetectEnabled = data.enabled;
+        updateObjDetectUI();
+        // Auto-detect periodically when enabled
+        if (objDetectEnabled) {
+          // Enable the "Objects" viz toggle
+          const togBtn = document.getElementById('simTogObjects');
+          if (togBtn && !togBtn.classList.contains('on')) {
+            togBtn.classList.add('on');
+            if (sim) sim.toggleDetectedObjects(true);
+          }
+          startAutoDetect();
+        } else {
+          stopAutoDetect();
+        }
+      }
+    } catch (e) {
+      console.error('[sim] toggle object detection failed:', e);
+    }
+  }
+
+  async function runObjectDetection() {
+    if (!objDetectEnabled) return;
+    try {
+      const resp = await fetch('/api/objects/detect', { method: 'POST' });
+      const data = await resp.json();
+      if (data.ok) {
+        // Fetch the object list and update simulator
+        await refreshDetectedObjects();
+      }
+    } catch (e) {
+      console.error('[sim] object detection failed:', e);
+    }
+  }
+
+  async function refreshDetectedObjects() {
+    try {
+      const resp = await fetch('/api/objects/list');
+      const data = await resp.json();
+      if (data.objects && sim) {
+        sim.updateDetectedObjects(data.objects);
+        updateObjListUI(data.objects);
+      }
+    } catch (e) {
+      // silent
+    }
+  }
+
+  async function clearDetectedObjects() {
+    try {
+      await fetch('/api/objects/clear', { method: 'POST' });
+      if (sim) sim.clearDetectedObjects();
+      updateObjListUI([]);
+    } catch (e) {
+      console.error('[sim] clear objects failed:', e);
+    }
+  }
+
+  function startAutoDetect() {
+    stopAutoDetect();
+    // Run detection every 2 seconds when enabled
+    objAutoDetectInterval = setInterval(async () => {
+      if (!objDetectEnabled || !sim || !sim.active) return;
+      try {
+        await fetch('/api/objects/detect', { method: 'POST' });
+        await refreshDetectedObjects();
+      } catch (e) { /* silent */ }
+    }, 2000);
+  }
+
+  function stopAutoDetect() {
+    if (objAutoDetectInterval) {
+      clearInterval(objAutoDetectInterval);
+      objAutoDetectInterval = null;
+    }
+  }
+
+  function updateObjDetectUI() {
+    const toggleBtn = document.getElementById('simObjToggle');
+    const detectBtn = document.getElementById('simObjDetect');
+    const label = document.getElementById('simObjEnabledLabel');
+    if (toggleBtn) {
+      toggleBtn.textContent = objDetectEnabled ? 'Disable' : 'Enable';
+      toggleBtn.className = objDetectEnabled ? 'btn on' : 'btn';
+    }
+    if (detectBtn) {
+      detectBtn.disabled = !objDetectEnabled;
+    }
+    if (label) {
+      label.textContent = objDetectEnabled ? 'ON' : 'OFF';
+      label.style.color = objDetectEnabled ? 'var(--success)' : 'var(--text-dim)';
+    }
+  }
+
+  function updateObjListUI(objects) {
+    const countEl = document.getElementById('simObjCount');
+    const reachEl = document.getElementById('simObjReachable');
+    const listEl = document.getElementById('simObjList');
+
+    if (countEl) countEl.textContent = objects.length;
+    const reachable = objects.filter(o => o.within_reach);
+    if (reachEl) reachEl.textContent = reachable.length;
+
+    if (listEl) {
+      if (objects.length === 0) {
+        listEl.innerHTML = '<span style="color:#556">No objects detected</span>';
+      } else {
+        listEl.innerHTML = objects.map(o => {
+          const reachTag = o.within_reach
+            ? '<span style="color:var(--success)">[REACH]</span>'
+            : '<span style="color:var(--warning)">[FAR]</span>';
+          return `<div style="padding:1px 0">${reachTag} <span style="color:${o.color_hex}">\u25A0</span> ${o.label} — ${o.distance_mm}mm</div>`;
+        }).join('');
+      }
+    }
+  }
+
   // Feed live arm state to ghost on each WS update
   function simUpdateFromWS() {
     if (!sim || !sim.active) return;
@@ -3648,12 +3882,20 @@ async function pickCfgReset() {
     }
     updateSimEEInfo();
 
+    // Update detected objects from WebSocket state if available
+    if (typeof armState !== 'undefined' && armState.detected_objects) {
+      sim.updateDetectedObjects(armState.detected_objects);
+      updateObjListUI(armState.detected_objects);
+    }
+
     // Update overlay info
     const overlay = document.getElementById('simOverlayInfo');
     if (overlay && armState) {
       const mode = armState.sim_mode ? 'SIM' : 'LIVE';
       const conn = armState.connected ? 'Connected' : 'Disconnected';
-      overlay.textContent = `D1 Arm Simulator | Server: ${mode} | ${conn}`;
+      const objCount = armState.detected_objects ? armState.detected_objects.length : 0;
+      const objText = objCount > 0 ? ` | Obj: ${objCount}` : '';
+      overlay.textContent = `D1 Arm Simulator | Server: ${mode} | ${conn}${objText}`;
     }
   }
 
@@ -3666,10 +3908,22 @@ async function pickCfgReset() {
       simFpsLast = performance.now();
       updateSimFps();
       simUpdateFromWS();
+      // Check object detector status on activate
+      fetch('/api/objects/status').then(r => r.json()).then(data => {
+        if (data.available) {
+          objDetectEnabled = data.enabled;
+          updateObjDetectUI();
+          if (objDetectEnabled) {
+            startAutoDetect();
+            refreshDetectedObjects();
+          }
+        }
+      }).catch(() => {});
     }
   };
 
   window.sim_deactivate = function() {
+    stopAutoDetect();
     if (sim) sim.deactivate();
   };
 

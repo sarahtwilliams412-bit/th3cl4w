@@ -106,6 +106,20 @@ try:
 except ImportError:
     _HAS_CLAW_PREDICT = False
 
+try:
+    from src.vision.object_detector import ObjectDetector
+
+    _HAS_OBJECT_DETECT = True
+except ImportError:
+    _HAS_OBJECT_DETECT = False
+
+try:
+    from src.safety.collision_detector import CollisionDetector, StallEvent
+    from src.vision.collision_analyzer import CollisionAnalyzer
+
+    _HAS_COLLISION = True
+except ImportError:
+    _HAS_COLLISION = False
 # CollisionDetector + CollisionAnalyzer removed — too aggressive, false positives.
 # Files kept as dead code. See: simplify safety layers PR.
 _HAS_COLLISION = False
@@ -264,6 +278,7 @@ pose_fusion: Any = None  # PoseFusion engine
 arm3d_segmenters: dict = {}  # Per-camera ArmSegmenter instances
 arm3d_detector: Any = None  # JointDetector for arm3d pipeline
 camera_models: dict = {}  # CameraModel instances keyed by camera_id
+object_detector: Any = None  # ObjectDetector for camera-based object detection
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -382,6 +397,14 @@ async def lifespan(app: FastAPI):
         scene_analyzer = SceneAnalyzer()
         vision_task_planner = VisionTaskPlanner(task_planner=task_planner)
         action_log.add("SYSTEM", "Vision task planner initialized", "info")
+
+    # Initialize object detector for camera-based detection + mapping
+    global object_detector
+    if _HAS_OBJECT_DETECT:
+        object_detector = ObjectDetector()
+        action_log.add(
+            "SYSTEM", "Object detector initialized (disabled by default)", "info"
+        )
 
     # Initialize claw position predictor
     global claw_predictor
@@ -1688,6 +1711,27 @@ async def ws_state(ws: WebSocket):
                     state["claw_prediction"] = {"enabled": True, "detected": False}
             elif claw_predictor is not None:
                 state["claw_prediction"] = {"enabled": False}
+            # Include detected objects for simulator mapping
+            if _HAS_OBJECT_DETECT and object_detector is not None and object_detector.enabled:
+                reachable = object_detector.get_reachable_objects()
+                all_objs = object_detector.get_objects()
+                state["detected_objects"] = [o.to_dict() for o in all_objs]
+                state["reachable_objects"] = [o.to_dict() for o in reachable]
+
+            # Feed collision detector with commanded vs actual
+            if _HAS_COLLISION and collision_detector and smoother and smoother.arm_enabled:
+                commanded = []
+                for j in range(6):
+                    t = smoother._target[j]
+                    c = smoother._current[j]
+                    # Use target if set, else current smoother position
+                    commanded.append(
+                        t if t is not None else (c if c is not None else state["joints"][j])
+                    )
+                stall = collision_detector.update(commanded, state["joints"])
+                if stall is not None:
+                    asyncio.create_task(_handle_collision(stall, ws_clients[:]))
+
             await ws.send_json(state)
             if _HAS_TELEMETRY:
                 tc = get_collector()
@@ -2493,6 +2537,102 @@ async def bifocal_preview():
 async def bifocal_preview_target(req: SetAllJointsRequest):
     """Preview endpoint — collision preview removed (unreliable FK)."""
     return JSONResponse({"ok": False, "error": "Collision preview removed — unreliable FK"}, status_code=501)
+
+
+# ---------------------------------------------------------------------------
+# Object Detection + Mapping endpoints — detect objects and map to simulator
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/objects/toggle")
+async def objects_toggle():
+    """Toggle the object detector on/off."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+    enabled = object_detector.toggle()
+    action_log.add("OBJECTS", f"Object detector {'enabled' if enabled else 'disabled'}", "info")
+    return {"ok": True, "enabled": enabled}
+
+
+@app.get("/api/objects/status")
+async def objects_status():
+    """Get object detector status."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return {"available": False}
+    status = object_detector.get_status()
+    status["available"] = True
+    return status
+
+
+@app.post("/api/objects/detect")
+async def objects_detect():
+    """Trigger object detection from current camera frames."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+    if not object_detector.enabled:
+        return JSONResponse({"ok": False, "error": "Detector not enabled"}, status_code=409)
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp1 = await client.get("http://localhost:8081/snap/1")  # overhead
+            resp0 = None
+            try:
+                resp0 = await client.get("http://localhost:8081/snap/0")  # front
+            except Exception:
+                pass
+
+        if resp1.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
+
+        cam1_frame = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
+        if cam1_frame is None:
+            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
+
+        cam0_frame = None
+        if resp0 is not None and resp0.status_code == 200:
+            cam0_frame = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+
+        result = object_detector.detect_from_overhead(cam1_frame, cam0_frame)
+        return {"ok": True, **result}
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/objects/list")
+async def objects_list():
+    """Get all currently detected objects."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return {"objects": [], "count": 0}
+    objects = object_detector.get_objects()
+    return {
+        "objects": [o.to_dict() for o in objects],
+        "count": len(objects),
+    }
+
+
+@app.get("/api/objects/reachable")
+async def objects_reachable():
+    """Get only objects within the arm's reach (for simulator mapping)."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return {"objects": [], "count": 0}
+    objects = object_detector.get_reachable_objects()
+    return {
+        "objects": [o.to_dict() for o in objects],
+        "count": len(objects),
+    }
+
+
+@app.post("/api/objects/clear")
+async def objects_clear():
+    """Clear all detected objects."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+    object_detector.clear()
+    action_log.add("OBJECTS", "Detected objects cleared", "info")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

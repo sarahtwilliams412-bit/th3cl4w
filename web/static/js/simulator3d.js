@@ -75,6 +75,7 @@ class D1ArmSimulator {
     this._initWorkspaceEnvelope();
     this._initTrail();
     this._initLighting();
+    this._initDetectedObjects();
     this._initCameras();
 
     this._animId = null;
@@ -554,12 +555,316 @@ class D1ArmSimulator {
     this.renderer.setSize(w, h);
   }
 
+  // ----------------------------------------------------------
+  //  Detected Object Visualization
+  // ----------------------------------------------------------
+
+  /**
+   * Initialize the detected objects layer.
+   * Called once during construction (after scene is ready).
+   */
+  _initDetectedObjects() {
+    // Group to hold all object meshes
+    this._objectsGroup = new THREE.Group();
+    this._objectsGroup.name = 'detected_objects';
+    this.scene.add(this._objectsGroup);
+
+    // Currently rendered objects keyed by id
+    this._renderedObjects = {};
+
+    // Distance lines from base to objects
+    this._distanceLines = {};
+
+    // Labels (sprite-based)
+    this._objectLabels = {};
+
+    // Settings
+    this.showDetectedObjects = true;
+    this.showObjectLabels = true;
+    this.showDistanceLines = false;
+
+    // Max reach constant for visual ring matching
+    this._maxReachM = 0.55;
+  }
+
+  /**
+   * Update detected objects in the 3D scene.
+   * @param {Object[]} objects — array of detected object dicts from the API
+   *   Each has: id, label, x_m, y_m, z_m, width_mm, depth_mm, height_mm,
+   *             within_reach, color_hex, distance_mm, confidence
+   */
+  updateDetectedObjects(objects) {
+    if (!this._objectsGroup) this._initDetectedObjects();
+    if (!this.showDetectedObjects) {
+      this._objectsGroup.visible = false;
+      return;
+    }
+    this._objectsGroup.visible = true;
+
+    const currentIds = new Set();
+
+    for (const obj of objects) {
+      currentIds.add(obj.id);
+
+      if (this._renderedObjects[obj.id]) {
+        // Update existing object position
+        this._updateObjectMesh(obj);
+      } else {
+        // Create new object mesh
+        this._createObjectMesh(obj);
+      }
+    }
+
+    // Remove objects no longer detected
+    for (const id of Object.keys(this._renderedObjects)) {
+      if (!currentIds.has(parseInt(id))) {
+        this._removeObjectMesh(parseInt(id));
+      }
+    }
+  }
+
+  _createObjectMesh(obj) {
+    // Object dimensions in meters
+    const w = Math.max(0.01, (obj.width_mm || 40) / 1000);
+    const d = Math.max(0.01, (obj.depth_mm || 40) / 1000);
+    const h = Math.max(0.01, (obj.height_mm || 50) / 1000);
+
+    // Use a box geometry for the object
+    const geo = new THREE.BoxGeometry(w, h, d);
+
+    // Parse color
+    const color = new THREE.Color(obj.color_hex || '#ff8800');
+
+    // Reachable objects get full opacity + glow; out-of-reach are dimmed
+    const mat = new THREE.MeshStandardMaterial({
+      color: color,
+      roughness: 0.5,
+      metalness: 0.2,
+      transparent: true,
+      opacity: obj.within_reach ? 0.85 : 0.35,
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    // Position: x_m and y_m are workspace coords; Three.js uses Y-up
+    // Workspace X → Three.js X, Workspace Y → Three.js -Z (depth), height → Three.js Y
+    mesh.position.set(
+      obj.x_m || 0,
+      (h / 2) + 0.001,  // half height above table surface
+      -(obj.y_m || 0)    // workspace Y maps to negative Z (forward from arm)
+    );
+
+    this._objectsGroup.add(mesh);
+    this._renderedObjects[obj.id] = mesh;
+
+    // Wireframe outline for reachable objects
+    if (obj.within_reach) {
+      const wireGeo = new THREE.BoxGeometry(w + 0.004, h + 0.004, d + 0.004);
+      const wireMat = new THREE.MeshBasicMaterial({
+        color: 0x44ff88,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.5,
+      });
+      const wire = new THREE.Mesh(wireGeo, wireMat);
+      wire.position.copy(mesh.position);
+      this._objectsGroup.add(wire);
+      mesh.userData.wireframe = wire;
+
+      // Pulsing glow ring at base of reachable objects
+      const ringGeo = new THREE.RingGeometry(
+        Math.max(w, d) * 0.6,
+        Math.max(w, d) * 0.8,
+        24
+      );
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x44ff88,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide,
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(mesh.position.x, 0.002, mesh.position.z);
+      this._objectsGroup.add(ring);
+      mesh.userData.baseRing = ring;
+    }
+
+    // Distance line from arm base to object
+    if (this.showDistanceLines) {
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0.01, 0),
+        mesh.position.clone().setY(0.01),
+      ]);
+      const lineMat = new THREE.LineBasicMaterial({
+        color: obj.within_reach ? 0x44ff88 : 0xff6644,
+        transparent: true,
+        opacity: 0.3,
+      });
+      const line = new THREE.Line(lineGeo, lineMat);
+      this._objectsGroup.add(line);
+      this._distanceLines[obj.id] = line;
+    }
+
+    // Label sprite
+    if (this.showObjectLabels) {
+      const label = this._createLabelSprite(obj);
+      if (label) {
+        label.position.set(
+          mesh.position.x,
+          h + 0.02,
+          mesh.position.z
+        );
+        this._objectsGroup.add(label);
+        this._objectLabels[obj.id] = label;
+      }
+    }
+  }
+
+  _updateObjectMesh(obj) {
+    const mesh = this._renderedObjects[obj.id];
+    if (!mesh) return;
+
+    const h = Math.max(0.01, (obj.height_mm || 50) / 1000);
+
+    // Smoothly interpolate position
+    const targetX = obj.x_m || 0;
+    const targetY = (h / 2) + 0.001;
+    const targetZ = -(obj.y_m || 0);
+
+    mesh.position.lerp(new THREE.Vector3(targetX, targetY, targetZ), 0.2);
+
+    // Update opacity based on reachability
+    mesh.material.opacity = obj.within_reach ? 0.85 : 0.35;
+
+    // Update wireframe position
+    if (mesh.userData.wireframe) {
+      mesh.userData.wireframe.position.copy(mesh.position);
+    }
+    if (mesh.userData.baseRing) {
+      mesh.userData.baseRing.position.set(mesh.position.x, 0.002, mesh.position.z);
+    }
+
+    // Update label position
+    if (this._objectLabels[obj.id]) {
+      this._objectLabels[obj.id].position.set(
+        mesh.position.x,
+        h + 0.02,
+        mesh.position.z
+      );
+    }
+  }
+
+  _removeObjectMesh(id) {
+    const mesh = this._renderedObjects[id];
+    if (mesh) {
+      if (mesh.userData.wireframe) {
+        this._objectsGroup.remove(mesh.userData.wireframe);
+        mesh.userData.wireframe.geometry.dispose();
+        mesh.userData.wireframe.material.dispose();
+      }
+      if (mesh.userData.baseRing) {
+        this._objectsGroup.remove(mesh.userData.baseRing);
+        mesh.userData.baseRing.geometry.dispose();
+        mesh.userData.baseRing.material.dispose();
+      }
+      this._objectsGroup.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+      delete this._renderedObjects[id];
+    }
+
+    const line = this._distanceLines[id];
+    if (line) {
+      this._objectsGroup.remove(line);
+      line.geometry.dispose();
+      line.material.dispose();
+      delete this._distanceLines[id];
+    }
+
+    const label = this._objectLabels[id];
+    if (label) {
+      this._objectsGroup.remove(label);
+      if (label.material.map) label.material.map.dispose();
+      label.material.dispose();
+      delete this._objectLabels[id];
+    }
+  }
+
+  _createLabelSprite(obj) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.fillStyle = obj.within_reach ? 'rgba(0,40,0,0.8)' : 'rgba(40,20,0,0.8)';
+    ctx.fillRect(0, 0, 256, 64);
+    ctx.strokeStyle = obj.within_reach ? '#44ff88' : '#ff8844';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, 254, 62);
+
+    ctx.fillStyle = obj.within_reach ? '#44ff88' : '#ff8844';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(obj.label.toUpperCase(), 128, 24);
+
+    ctx.fillStyle = '#ccc';
+    ctx.font = '14px monospace';
+    ctx.fillText(`${obj.distance_mm}mm ${obj.within_reach ? 'REACH' : 'FAR'}`, 128, 48);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const spriteMat = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+    });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.12, 0.03, 1);
+    return sprite;
+  }
+
+  /**
+   * Clear all detected objects from the scene.
+   */
+  clearDetectedObjects() {
+    if (!this._objectsGroup) return;
+    const ids = Object.keys(this._renderedObjects).map(Number);
+    for (const id of ids) {
+      this._removeObjectMesh(id);
+    }
+  }
+
+  /**
+   * Toggle detected objects visibility.
+   */
+  toggleDetectedObjects(show) {
+    this.showDetectedObjects = show;
+    if (this._objectsGroup) {
+      this._objectsGroup.visible = show;
+    }
+  }
+
+  /**
+   * Toggle object labels visibility.
+   */
+  toggleObjectLabels(show) {
+    this.showObjectLabels = show;
+    for (const label of Object.values(this._objectLabels)) {
+      label.visible = show;
+    }
+  }
+
   dispose() {
     this._disposed = true;
     this.deactivate();
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
     }
+    this.clearDetectedObjects();
     this.arm.dispose();
     this.ghost.dispose();
     this.renderer.dispose();
