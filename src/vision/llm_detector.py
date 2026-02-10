@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 try:
     from google import genai
-    from google.genai import types as genai_types
+    from google.generativeai import types as genai_types
 except ImportError:
     genai = None  # type: ignore[assignment]
     genai_types = None

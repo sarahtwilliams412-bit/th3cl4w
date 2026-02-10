@@ -40,6 +40,7 @@ _ONTOLOGY_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "objec
 @dataclass
 class _CachedLabel:
     """Cached label result for a detected object position."""
+
     x_mm: float
     y_mm: float
     label: str
@@ -110,6 +111,7 @@ class ObjectLabeler:
         # Try .env first, then environment
         try:
             from dotenv import load_dotenv
+
             env_path = Path(__file__).resolve().parent.parent.parent / ".env"
             if env_path.exists():
                 load_dotenv(env_path)
@@ -123,6 +125,7 @@ class ObjectLabeler:
 
         try:
             import google.generativeai as genai
+
             genai.configure(api_key=self._api_key)
             self._model = genai.GenerativeModel("gemini-2.0-flash")
             logger.info("Gemini Flash vision labeler initialized")
@@ -191,6 +194,7 @@ class ObjectLabeler:
         """Send frame to Gemini and parse response."""
         try:
             import PIL.Image
+
             # Convert BGR to RGB for PIL
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             pil_img = PIL.Image.fromarray(rgb)
@@ -240,7 +244,9 @@ class ObjectLabeler:
             best_score = 0.0
 
             # Get object's color name for matching
-            obj_color = self._color_name_from_bgr(obj.color_bgr) if hasattr(obj, "color_bgr") else ""
+            obj_color = (
+                self._color_name_from_bgr(obj.color_bgr) if hasattr(obj, "color_bgr") else ""
+            )
 
             for llm_obj in llm_labels:
                 llm_x = llm_obj.get("x_position", 0.5)
@@ -250,7 +256,12 @@ class ObjectLabeler:
 
                 # Score: position proximity + color match bonus
                 pos_score = 1.0 - (pos_dist / 0.25)
-                color_score = 0.3 if llm_obj.get("color", "").lower() in obj_color.lower() or obj_color.lower() in llm_obj.get("color", "").lower() else 0.0
+                color_score = (
+                    0.3
+                    if llm_obj.get("color", "").lower() in obj_color.lower()
+                    or obj_color.lower() in llm_obj.get("color", "").lower()
+                    else 0.0
+                )
                 score = pos_score * 0.7 + color_score
 
                 if score > best_score:
@@ -323,14 +334,16 @@ class ObjectLabeler:
         """Update cache with current labels."""
         self._cache = []
         for obj in detected_objects:
-            self._cache.append(_CachedLabel(
-                x_mm=obj.x_mm,
-                y_mm=obj.y_mm,
-                label=obj.label,
-                category=getattr(obj, "category", "unknown"),
-                llm_confidence=getattr(obj, "llm_confidence", 0.0),
-                timestamp=time.monotonic(),
-            ))
+            self._cache.append(
+                _CachedLabel(
+                    x_mm=obj.x_mm,
+                    y_mm=obj.y_mm,
+                    label=obj.label,
+                    category=getattr(obj, "category", "unknown"),
+                    llm_confidence=getattr(obj, "llm_confidence", 0.0),
+                    timestamp=time.monotonic(),
+                )
+            )
 
     @staticmethod
     def _color_name_from_bgr(bgr: tuple) -> str:

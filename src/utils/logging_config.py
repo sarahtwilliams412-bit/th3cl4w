@@ -91,6 +91,4 @@ def setup_logging(
     logging.basicConfig(level=level, format=fmt, handlers=handlers)
 
     if resolved_log_file:
-        logging.getLogger().info(
-            "Debug logging pipeline active — writing to %s", resolved_log_file
-        )
+        logging.getLogger().info("Debug logging pipeline active — writing to %s", resolved_log_file)

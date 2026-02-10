@@ -267,8 +267,12 @@ class StiffnessScheduler:
             s_smooth = 10 * s**3 - 15 * s**4 + 6 * s**5
 
             # Interpolate from saved start to target (not from drifting current)
-            self._current_stiffness = self._start_stiffness + (self._target_stiffness - self._start_stiffness) * s_smooth
-            self._current_damping = self._start_damping + (self._target_damping - self._start_damping) * s_smooth
+            self._current_stiffness = (
+                self._start_stiffness + (self._target_stiffness - self._start_stiffness) * s_smooth
+            )
+            self._current_damping = (
+                self._start_damping + (self._target_damping - self._start_damping) * s_smooth
+            )
 
             if self._transition_progress >= 1.0:
                 self._current_stiffness = self._target_stiffness.copy()

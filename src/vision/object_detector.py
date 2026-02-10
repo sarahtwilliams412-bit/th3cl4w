@@ -46,8 +46,8 @@ _MIN_CONTOUR_AREA = 800
 _MAX_CONTOUR_AREA = 200000
 
 # Estimated workspace table dimensions in overhead camera FOV
-_TABLE_WIDTH_MM = 800.0   # X extent
-_TABLE_DEPTH_MM = 800.0   # Y extent
+_TABLE_WIDTH_MM = 800.0  # X extent
+_TABLE_DEPTH_MM = 800.0  # Y extent
 
 # Default object height when front camera not available (mm)
 _DEFAULT_OBJECT_HEIGHT_MM = 50.0
@@ -235,7 +235,7 @@ class ObjectDetector:
         ry = int(self._roi_y * h)
         rw = int(self._roi_w * w)
         rh = int(self._roi_h * h)
-        roi = overhead_frame[ry:ry+rh, rx:rx+rw]
+        roi = overhead_frame[ry : ry + rh, rx : rx + rw]
 
         # Auto-estimate scale if not calibrated
         if self._scale is None:
@@ -263,14 +263,12 @@ class ObjectDetector:
         # Compute workspace position and reachability
         for obj in merged:
             obj.distance_from_base_mm = math.sqrt(obj.x_mm**2 + obj.y_mm**2)
-            obj.within_reach = (
-                self._min_reach <= obj.distance_from_base_mm <= self._max_reach
-            )
+            obj.within_reach = self._min_reach <= obj.distance_from_base_mm <= self._max_reach
             obj.timestamp = time.monotonic()
 
         # Sort by distance (closest first) and limit count
         merged.sort(key=lambda o: o.distance_from_base_mm)
-        merged = merged[:self._max_objects]
+        merged = merged[: self._max_objects]
 
         with self._lock:
             self._objects = merged
@@ -328,8 +326,8 @@ class ObjectDetector:
                 x, y, bw, bh = cv2.boundingRect(cnt)
 
                 # Get dominant color from the object region
-                obj_region = roi[y:y+bh, x:x+bw]
-                obj_mask = mask[y:y+bh, x:x+bw]
+                obj_region = roi[y : y + bh, x : x + bw]
+                obj_mask = mask[y : y + bh, x : x + bw]
                 color_bgr = self._get_dominant_color(obj_region, obj_mask)
 
                 # Use contour moments for better centroid
@@ -344,7 +342,7 @@ class ObjectDetector:
 
                 # Use minAreaRect for true width/depth and rotation
                 rect = cv2.minAreaRect(cnt)
-                (_, (rect_w, rect_h), angle) = rect
+                _, (rect_w, rect_h), angle = rect
                 # Ensure width >= depth (swap if needed)
                 if rect_h > rect_w:
                     rect_w, rect_h = rect_h, rect_w
@@ -401,8 +399,8 @@ class ObjectDetector:
                 continue
 
             x, y, bw, bh = cv2.boundingRect(cnt)
-            obj_region = roi[y:y+bh, x:x+bw]
-            obj_mask = fg_mask[y:y+bh, x:x+bw]
+            obj_region = roi[y : y + bh, x : x + bw]
+            obj_mask = fg_mask[y : y + bh, x : x + bw]
             color_bgr = self._get_dominant_color(obj_region, obj_mask)
 
             # Use contour moments for better centroid
@@ -417,7 +415,7 @@ class ObjectDetector:
 
             # Use minAreaRect for true dimensions
             rect = cv2.minAreaRect(cnt)
-            (_, (rect_w, rect_h), angle) = rect
+            _, (rect_w, rect_h), angle = rect
             if rect_h > rect_w:
                 rect_w, rect_h = rect_h, rect_w
                 angle = angle + 90.0
@@ -509,9 +507,7 @@ class ObjectDetector:
 
         return merged
 
-    def _estimate_heights(
-        self, objects: list[DetectedObject], side_frame: np.ndarray
-    ):
+    def _estimate_heights(self, objects: list[DetectedObject], side_frame: np.ndarray):
         """Estimate object heights from the side camera (cam2=video6).
 
         Uses contour detection on the side camera to find object silhouettes,
@@ -548,9 +544,7 @@ class ObjectDetector:
         front_mask = cv2.morphologyEx(front_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
         front_mask = cv2.morphologyEx(front_mask, cv2.MORPH_OPEN, kernel, iterations=1)
 
-        front_contours, _ = cv2.findContours(
-            front_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        front_contours, _ = cv2.findContours(front_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # Build list of front-view silhouettes with their horizontal center and height
         front_silhouettes: list[tuple[float, float, float]] = []  # (cx_norm, top_y, bot_y)
@@ -698,8 +692,12 @@ class ObjectDetector:
 
             # Draw crosshair at center
             cross_size = 8
-            cv2.line(annotated, (cx - cross_size, cy), (cx + cross_size, cy), box_color, 1, cv2.LINE_AA)
-            cv2.line(annotated, (cx, cy - cross_size), (cx, cy + cross_size), box_color, 1, cv2.LINE_AA)
+            cv2.line(
+                annotated, (cx - cross_size, cy), (cx + cross_size, cy), box_color, 1, cv2.LINE_AA
+            )
+            cv2.line(
+                annotated, (cx, cy - cross_size), (cx, cy + cross_size), box_color, 1, cv2.LINE_AA
+            )
 
             # Draw a small filled circle at center
             cv2.circle(annotated, (cx, cy), 3, box_color, -1, cv2.LINE_AA)
@@ -726,35 +724,72 @@ class ObjectDetector:
 
             # Dark background behind label
             cv2.rectangle(
-                annotated,
-                (label_x, label_y),
-                (label_x + label_w, label_y + label_h),
-                (0, 0, 0), -1
+                annotated, (label_x, label_y), (label_x + label_w, label_y + label_h), (0, 0, 0), -1
             )
             cv2.rectangle(
-                annotated,
-                (label_x, label_y),
-                (label_x + label_w, label_y + label_h),
-                box_color, 1
+                annotated, (label_x, label_y), (label_x + label_w, label_y + label_h), box_color, 1
             )
 
             # Draw label text
             y_off = label_y + nh + 4
-            cv2.putText(annotated, name_text, (label_x + 5, y_off), font, font_scale_name, (255, 255, 255), thickness, cv2.LINE_AA)
+            cv2.putText(
+                annotated,
+                name_text,
+                (label_x + 5, y_off),
+                font,
+                font_scale_name,
+                (255, 255, 255),
+                thickness,
+                cv2.LINE_AA,
+            )
             y_off += ph + 6
-            cv2.putText(annotated, pos_text, (label_x + 5, y_off), font, font_scale_info, (200, 200, 200), thickness, cv2.LINE_AA)
+            cv2.putText(
+                annotated,
+                pos_text,
+                (label_x + 5, y_off),
+                font,
+                font_scale_info,
+                (200, 200, 200),
+                thickness,
+                cv2.LINE_AA,
+            )
             y_off += th + 4
-            cv2.putText(annotated, tag_text, (label_x + 5, y_off), font, font_scale_info, box_color, thickness, cv2.LINE_AA)
+            cv2.putText(
+                annotated,
+                tag_text,
+                (label_x + 5, y_off),
+                font,
+                font_scale_info,
+                box_color,
+                thickness,
+                cv2.LINE_AA,
+            )
 
         # Draw legend in corner
         if objects:
             legend_y = 20
-            cv2.putText(annotated, f"Detected: {len(objects)} objects", (10, legend_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(
+                annotated,
+                f"Detected: {len(objects)} objects",
+                (10, legend_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
             n_reach = sum(1 for o in objects if o.within_reach)
             legend_y += 20
-            cv2.putText(annotated, f"Reachable: {n_reach}", (10, legend_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 100), 1, cv2.LINE_AA)
+            cv2.putText(
+                annotated,
+                f"Reachable: {n_reach}",
+                (10, legend_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (0, 255, 100),
+                1,
+                cv2.LINE_AA,
+            )
 
         return annotated
 
