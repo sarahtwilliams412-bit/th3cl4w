@@ -768,13 +768,26 @@ class D1ArmSimulator {
       mesh.userData.baseRing.position.set(mesh.position.x, 0.002, mesh.position.z);
     }
 
-    // Update label position
-    if (this._objectLabels[obj.id]) {
-      this._objectLabels[obj.id].position.set(
-        mesh.position.x,
-        h + 0.02,
-        mesh.position.z
-      );
+    // Update label — recreate if the label text changed (e.g. Gemini identified the object)
+    const existingLabel = this._objectLabels[obj.id];
+    if (existingLabel) {
+      const currentText = obj.label.replace(/_/g, ' ').toUpperCase();
+      if (existingLabel.userData.labelText !== currentText) {
+        // Label changed — rebuild the sprite
+        this._objectsGroup.remove(existingLabel);
+        if (existingLabel.material.map) existingLabel.material.map.dispose();
+        existingLabel.material.dispose();
+        const newLabel = this._createLabelSprite(obj);
+        if (newLabel) {
+          newLabel.position.set(mesh.position.x, h + 0.02, mesh.position.z);
+          this._objectsGroup.add(newLabel);
+          this._objectLabels[obj.id] = newLabel;
+        } else {
+          delete this._objectLabels[obj.id];
+        }
+      } else {
+        existingLabel.position.set(mesh.position.x, h + 0.02, mesh.position.z);
+      }
     }
   }
 
@@ -830,12 +843,14 @@ class D1ArmSimulator {
     ctx.fillStyle = obj.within_reach ? '#44ff88' : '#ff8844';
     ctx.font = 'bold 18px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(obj.label.toUpperCase(), 128, 22);
+    // Convert snake_case labels to readable Title Case (e.g. "coca_cola_can" -> "COCA COLA CAN")
+    const displayLabel = obj.label.replace(/_/g, ' ').toUpperCase();
+    ctx.fillText(displayLabel, 128, 22);
 
-    if (obj.category) {
+    if (obj.category && obj.category !== 'unknown') {
       ctx.fillStyle = '#8af';
       ctx.font = '12px monospace';
-      ctx.fillText(obj.category, 128, 38);
+      ctx.fillText(obj.category.replace(/_/g, ' '), 128, 38);
     }
 
     ctx.fillStyle = '#ccc';
@@ -851,6 +866,8 @@ class D1ArmSimulator {
     });
     const sprite = new THREE.Sprite(spriteMat);
     sprite.scale.set(0.12, 0.03, 1);
+    // Store label text for change detection during updates
+    sprite.userData.labelText = displayLabel;
     return sprite;
   }
 
