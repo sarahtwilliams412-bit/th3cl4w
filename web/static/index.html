@@ -297,6 +297,36 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .sim-execute-bar .btn-execute.phys-mode { background: rgba(239,68,68,0.15); border-color: #ef4444; color: #ef4444; }
 .sim-execute-bar .btn-execute.phys-mode:hover { background: rgba(239,68,68,0.3); box-shadow: 0 0 15px rgba(239,68,68,0.3); }
 
+/* === Simulator Config Panel === */
+.sim-config-panel { padding: 0 10px 8px; }
+.sim-config-arrow { font-size: 8px; transition: transform 0.15s; display: inline-block; }
+.sim-config-arrow.open { transform: rotate(90deg); }
+.sim-validation-bar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; margin-bottom: 6px; font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+.sim-valid-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; flex-shrink: 0; }
+.sim-valid-dot.pass { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.sim-valid-dot.fail { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+.sim-valid-dot.warn { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+.sim-validation-results { font-family: var(--mono); font-size: 9px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; padding: 6px; margin-bottom: 6px; max-height: 180px; overflow-y: auto; line-height: 1.7; }
+.sim-vr-row { display: flex; align-items: center; gap: 4px; }
+.sim-vr-icon { width: 12px; text-align: center; flex-shrink: 0; }
+.sim-vr-icon.pass { color: var(--success); }
+.sim-vr-icon.fail { color: var(--danger); }
+.sim-vr-check { color: var(--text-dim); min-width: 90px; }
+.sim-vr-val { color: var(--text); }
+.sim-vr-limit { color: #556; }
+.sim-config-row { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
+.sim-config-row label { font-family: var(--mono); font-size: 9px; color: var(--text-dim); min-width: 60px; text-transform: uppercase; letter-spacing: 0.5px; }
+.sim-config-row input, .sim-config-row select { font-family: var(--mono); font-size: 10px; padding: 2px 4px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 3px; color: var(--text); }
+.sim-config-row select { flex: 1; min-width: 0; }
+.sim-config-unit { font-family: var(--mono); font-size: 9px; color: #556; }
+.sim-config-group { margin-bottom: 6px; }
+.sim-config-group-title { font-family: var(--mono); font-size: 9px; color: var(--info); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
+.sim-config-offset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+.sim-config-offset-grid .sim-cfg-cell { display: flex; align-items: center; gap: 2px; }
+.sim-config-offset-grid .sim-cfg-cell label { font-family: var(--mono); font-size: 9px; color: var(--text-dim); min-width: 18px; }
+.sim-config-offset-grid .sim-cfg-cell input { font-family: var(--mono); font-size: 9px; padding: 1px 3px; width: 50px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 2px; color: var(--text); }
+.sim-mapped-preview { font-family: var(--mono); font-size: 9px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; padding: 6px; color: var(--text-dim); line-height: 1.5; white-space: pre-wrap; }
+
 /* === Responsive === */
 @media (max-width: 900px) {
   .sidebar { position: fixed; left: 0; top: var(--statusbar-h); bottom: 0; z-index: 200; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
@@ -621,6 +651,86 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <button class="btn on" id="simTogEnv" title="Toggle workspace envelope">Envelope</button>
         <button class="btn on" id="simTogGhost" title="Toggle ghost (live) arm">Ghost</button>
         <button class="btn on" id="simTogTrail" title="Toggle EE trail">Trail</button>
+      </div>
+
+      <!-- Configuration / Mapping Section -->
+      <div class="section-title" style="margin-top:4px;display:flex;align-items:center;gap:6px;cursor:pointer" id="simConfigToggle">
+        <span class="sim-config-arrow" id="simConfigArrow">&#9654;</span> Configuration
+      </div>
+      <div class="sim-config-panel" id="simConfigPanel" style="display:none">
+        <!-- Validation status -->
+        <div class="sim-validation-bar" id="simValidationBar">
+          <span class="sim-valid-dot" id="simValidDot"></span>
+          <span id="simValidLabel">Not validated</span>
+          <button class="btn" id="simBtnValidate" style="font-size:9px;padding:2px 6px;margin-left:auto">Validate</button>
+        </div>
+        <div class="sim-validation-results" id="simValidationResults" style="display:none"></div>
+
+        <!-- Profile selection -->
+        <div class="sim-config-row">
+          <label>Profile</label>
+          <select id="simCfgProfile"><option value="default">default</option></select>
+          <button class="btn" id="simCfgSaveProfile" style="font-size:9px;padding:2px 6px" title="Save current settings to profile">Save</button>
+          <button class="btn" id="simCfgNewProfile" style="font-size:9px;padding:2px 6px" title="Create new profile">+</button>
+        </div>
+
+        <!-- Joint offsets -->
+        <div class="sim-config-group">
+          <div class="sim-config-group-title">Joint Offsets (deg)</div>
+          <div class="sim-config-offset-grid" id="simCfgOffsets"></div>
+        </div>
+
+        <!-- Joint scales -->
+        <div class="sim-config-group">
+          <div class="sim-config-group-title">Joint Scales</div>
+          <div class="sim-config-offset-grid" id="simCfgScales"></div>
+        </div>
+
+        <!-- Gripper mapping -->
+        <div class="sim-config-group">
+          <div class="sim-config-group-title">Gripper Mapping</div>
+          <div class="sim-config-row">
+            <label>Offset</label>
+            <input type="number" id="simCfgGripOff" value="0" step="0.5" style="width:60px">
+            <label>Scale</label>
+            <input type="number" id="simCfgGripScale" value="1" step="0.01" style="width:60px">
+          </div>
+        </div>
+
+        <!-- Safety constraints -->
+        <div class="sim-config-group">
+          <div class="sim-config-group-title">Safety Constraints</div>
+          <div class="sim-config-row">
+            <label>Max Step</label>
+            <input type="number" id="simCfgMaxStep" value="10" min="1" max="30" step="1" style="width:50px">
+            <span class="sim-config-unit">deg/tick</span>
+          </div>
+          <div class="sim-config-row">
+            <label>Torque Limit</label>
+            <input type="number" id="simCfgTorqueLimit" value="100" min="50" max="200" step="5" style="width:50px">
+          </div>
+          <div class="sim-config-row">
+            <label>Smooth Rate</label>
+            <input type="number" id="simCfgRate" value="10" min="1" max="50" step="1" style="width:50px">
+            <span class="sim-config-unit">Hz</span>
+          </div>
+          <div class="sim-config-row">
+            <label>Smooth &alpha;</label>
+            <input type="number" id="simCfgAlpha" value="0.35" min="0.05" max="1.0" step="0.05" style="width:50px">
+          </div>
+        </div>
+
+        <!-- Fetch from server -->
+        <div class="sim-btn-row" style="margin-top:4px">
+          <button class="btn primary" id="simCfgFetchServer" style="flex:1;font-size:9px">Fetch Server Config</button>
+          <button class="btn" id="simCfgApply" style="flex:1;font-size:9px">Apply</button>
+        </div>
+
+        <!-- Mapped command preview -->
+        <div class="sim-config-group" style="margin-top:4px">
+          <div class="sim-config-group-title">Mapped Command Preview</div>
+          <div class="sim-mapped-preview" id="simMappedPreview">--</div>
+        </div>
       </div>
     </div>
     <div style="flex:1"></div>
@@ -2133,7 +2243,7 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
 <script src="js/simulator3d.js"></script>
 <script>
 // ============================================================
-//  3D Simulator Integration
+//  3D Simulator Integration + Configuration / Mapping
 // ============================================================
 (function() {
   'use strict';
@@ -2142,6 +2252,7 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
   let simInitialized = false;
   let simFpsFrames = 0;
   let simFpsLast = performance.now();
+  let mappingCfg = null; // SimMappingConfig instance
 
   function initSimulator() {
     if (simInitialized) return;
@@ -2151,6 +2262,10 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
     sim = new D1ArmSimulator(container);
     window._sim = sim;
     simInitialized = true;
+
+    // Initialize mapping config manager
+    mappingCfg = new SimMappingConfig();
+    sim.setMappingConfig(mappingCfg.getActiveProfile());
 
     // Build joint sliders
     const sliderContainer = document.getElementById('simJointSliders');
@@ -2170,6 +2285,7 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
         sim.setSimJoint(i, v);
         document.getElementById('simVal' + i).textContent = v.toFixed(1);
         updateSimEEInfo();
+        runQuickValidation();
       });
     }
 
@@ -2178,6 +2294,7 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
       const v = parseFloat(this.value);
       sim.setSimGripper(v);
       document.getElementById('simGripperValue').textContent = v.toFixed(1);
+      runQuickValidation();
     });
 
     // Joints changed callback — update sliders when programmatic change
@@ -2193,6 +2310,8 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
       if (gs) gs.value = gripper;
       if (gv) gv.textContent = gripper.toFixed(1);
       updateSimEEInfo();
+      updateMappedPreview();
+      runQuickValidation();
     };
 
     // Mode toggle
@@ -2204,19 +2323,14 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
     });
 
     // Quick actions
-    document.getElementById('simBtnHome').addEventListener('click', () => {
-      sim.resetToHome();
-    });
+    document.getElementById('simBtnHome').addEventListener('click', () => sim.resetToHome());
     document.getElementById('simBtnSync').addEventListener('click', () => {
-      // Sync from the live arm state coming through WebSocket
       if (typeof armState !== 'undefined' && armState.joints) {
         sim.setLiveState(armState.joints, armState.gripper || 0);
         sim.syncFromLive();
       }
     });
-    document.getElementById('simBtnClearTrail').addEventListener('click', () => {
-      sim.clearTrail();
-    });
+    document.getElementById('simBtnClearTrail').addEventListener('click', () => sim.clearTrail());
 
     // Display toggles
     setupVizToggle('simTogGrid', (on) => sim.toggleGrid(on));
@@ -2228,8 +2342,255 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
     // Execute button
     document.getElementById('simBtnExecute').addEventListener('click', executeSimPose);
 
+    // ── Configuration panel wiring ──
+    initConfigPanel();
+
     updateSimModeUI();
   }
+
+  // ----------------------------------------------------------
+  //  Config panel initialization
+  // ----------------------------------------------------------
+
+  function initConfigPanel() {
+    // Toggle config panel visibility
+    document.getElementById('simConfigToggle').addEventListener('click', () => {
+      const panel = document.getElementById('simConfigPanel');
+      const arrow = document.getElementById('simConfigArrow');
+      const visible = panel.style.display !== 'none';
+      panel.style.display = visible ? 'none' : 'block';
+      arrow.classList.toggle('open', !visible);
+    });
+
+    // Build offset/scale input grids
+    buildOffsetGrid('simCfgOffsets', 'off', sim.getMappingConfig().jointOffsets);
+    buildOffsetGrid('simCfgScales', 'scl', sim.getMappingConfig().jointScales);
+
+    // Populate safety constraint fields from config
+    const cfg = sim.getMappingConfig();
+    document.getElementById('simCfgMaxStep').value = cfg.maxStepDeg;
+    document.getElementById('simCfgTorqueLimit').value = cfg.torqueProxyLimit;
+    document.getElementById('simCfgRate').value = cfg.smootherRateHz;
+    document.getElementById('simCfgAlpha').value = cfg.smoothingFactor;
+    document.getElementById('simCfgGripOff').value = cfg.gripperOffset;
+    document.getElementById('simCfgGripScale').value = cfg.gripperScale;
+
+    // Profile dropdown
+    refreshProfileDropdown();
+
+    document.getElementById('simCfgProfile').addEventListener('change', function() {
+      mappingCfg.setActiveProfile(this.value);
+      const profile = mappingCfg.getActiveProfile();
+      sim.setMappingConfig(profile);
+      populateConfigFields(profile);
+      runQuickValidation();
+    });
+
+    document.getElementById('simCfgSaveProfile').addEventListener('click', () => {
+      const name = document.getElementById('simCfgProfile').value;
+      const config = readConfigFromFields();
+      mappingCfg.saveProfile(name, config);
+      sim.setMappingConfig(config);
+    });
+
+    document.getElementById('simCfgNewProfile').addEventListener('click', () => {
+      const name = prompt('New profile name:');
+      if (!name || !name.trim()) return;
+      const config = readConfigFromFields();
+      mappingCfg.saveProfile(name.trim(), config);
+      refreshProfileDropdown();
+      document.getElementById('simCfgProfile').value = name.trim();
+      mappingCfg.setActiveProfile(name.trim());
+    });
+
+    // Apply button
+    document.getElementById('simCfgApply').addEventListener('click', () => {
+      const config = readConfigFromFields();
+      sim.setMappingConfig(config);
+      updateMappedPreview();
+      runQuickValidation();
+    });
+
+    // Validate button
+    document.getElementById('simBtnValidate').addEventListener('click', runServerValidation);
+
+    // Fetch server config
+    document.getElementById('simCfgFetchServer').addEventListener('click', fetchServerConfig);
+  }
+
+  function buildOffsetGrid(containerId, prefix, values) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    for (let i = 0; i < 6; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'sim-cfg-cell';
+      cell.innerHTML = `<label>J${i}</label><input type="number" id="simCfg_${prefix}${i}" value="${values[i]}" step="${prefix === 'scl' ? '0.01' : '0.5'}">`;
+      container.appendChild(cell);
+    }
+  }
+
+  function readConfigFromFields() {
+    const offsets = [], scales = [];
+    for (let i = 0; i < 6; i++) {
+      offsets.push(parseFloat(document.getElementById('simCfg_off' + i).value) || 0);
+      scales.push(parseFloat(document.getElementById('simCfg_scl' + i).value) || 1);
+    }
+    return {
+      jointOffsets: offsets,
+      jointScales: scales,
+      gripperOffset: parseFloat(document.getElementById('simCfgGripOff').value) || 0,
+      gripperScale: parseFloat(document.getElementById('simCfgGripScale').value) || 1,
+      maxStepDeg: parseFloat(document.getElementById('simCfgMaxStep').value) || 10,
+      smoothingFactor: parseFloat(document.getElementById('simCfgAlpha').value) || 0.35,
+      smootherRateHz: parseFloat(document.getElementById('simCfgRate').value) || 10,
+      torqueProxyLimit: parseFloat(document.getElementById('simCfgTorqueLimit').value) || 100,
+      feedbackMaxAgeS: 0.5,
+    };
+  }
+
+  function populateConfigFields(cfg) {
+    for (let i = 0; i < 6; i++) {
+      const offEl = document.getElementById('simCfg_off' + i);
+      const sclEl = document.getElementById('simCfg_scl' + i);
+      if (offEl) offEl.value = (cfg.jointOffsets || [])[i] || 0;
+      if (sclEl) sclEl.value = (cfg.jointScales || [])[i] || 1;
+    }
+    document.getElementById('simCfgMaxStep').value = cfg.maxStepDeg || 10;
+    document.getElementById('simCfgTorqueLimit').value = cfg.torqueProxyLimit || 100;
+    document.getElementById('simCfgRate').value = cfg.smootherRateHz || 10;
+    document.getElementById('simCfgAlpha').value = cfg.smoothingFactor || 0.35;
+    document.getElementById('simCfgGripOff').value = cfg.gripperOffset || 0;
+    document.getElementById('simCfgGripScale').value = cfg.gripperScale || 1;
+  }
+
+  function refreshProfileDropdown() {
+    if (!mappingCfg) return;
+    const sel = document.getElementById('simCfgProfile');
+    const active = mappingCfg.getActiveProfileName();
+    sel.innerHTML = '';
+    mappingCfg.getProfileNames().forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      if (name === active) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
+  // ----------------------------------------------------------
+  //  Validation
+  // ----------------------------------------------------------
+
+  function runQuickValidation() {
+    if (!sim) return;
+    const results = sim.validatePose();
+    const allPass = results.every(r => r.pass);
+    const dot = document.getElementById('simValidDot');
+    const label = document.getElementById('simValidLabel');
+    dot.className = 'sim-valid-dot ' + (allPass ? 'pass' : 'fail');
+    const failCount = results.filter(r => !r.pass).length;
+    label.textContent = allPass ? 'All checks pass' : `${failCount} check${failCount > 1 ? 's' : ''} failed`;
+    updateMappedPreview();
+  }
+
+  async function runServerValidation() {
+    if (!sim) return;
+    const { joints, gripper } = sim.getMappedCommand();
+    const dot = document.getElementById('simValidDot');
+    const label = document.getElementById('simValidLabel');
+    const resultsEl = document.getElementById('simValidationResults');
+
+    dot.className = 'sim-valid-dot warn';
+    label.textContent = 'Validating...';
+
+    try {
+      const resp = await fetch('/api/sim/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ angles: joints, gripper }),
+      });
+      const data = await resp.json();
+
+      if (data.ok) {
+        const allPass = data.valid;
+        dot.className = 'sim-valid-dot ' + (allPass ? 'pass' : 'fail');
+        label.textContent = allPass ? 'Server: All checks pass' : 'Server: Validation failed';
+
+        resultsEl.style.display = 'block';
+        resultsEl.innerHTML = data.results.map(r => {
+          const icon = r.pass ? '<span class="sim-vr-icon pass">&#10003;</span>' : '<span class="sim-vr-icon fail">&#10007;</span>';
+          return `<div class="sim-vr-row">${icon}<span class="sim-vr-check">${r.check}</span><span class="sim-vr-val">${r.value}</span><span class="sim-vr-limit">${r.limit}</span></div>`;
+        }).join('');
+      } else {
+        dot.className = 'sim-valid-dot fail';
+        label.textContent = 'Server error';
+      }
+    } catch (e) {
+      dot.className = 'sim-valid-dot fail';
+      label.textContent = 'Network error';
+    }
+  }
+
+  async function fetchServerConfig() {
+    if (!sim || !mappingCfg) return;
+    try {
+      const resp = await fetch('/api/sim/validate-config');
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      // Merge server constraints into current config
+      const cfg = sim.getMappingConfig();
+      if (data.smoother) {
+        cfg.maxStepDeg = data.smoother.max_step_deg || cfg.maxStepDeg;
+        cfg.smoothingFactor = data.smoother.smoothing_factor || cfg.smoothingFactor;
+        cfg.smootherRateHz = data.smoother.rate_hz || cfg.smootherRateHz;
+      }
+      if (data.torque_proxy_limit) cfg.torqueProxyLimit = data.torque_proxy_limit;
+      if (data.feedback_max_age_s) cfg.feedbackMaxAgeS = data.feedback_max_age_s;
+
+      sim.setMappingConfig(cfg);
+      populateConfigFields(cfg);
+
+      // Update validation bar with arm state
+      const armInfo = data.arm_state || {};
+      const label = document.getElementById('simValidLabel');
+      const parts = [];
+      parts.push(data.sim_mode ? 'SIM' : 'LIVE');
+      parts.push(armInfo.connected ? 'Connected' : 'Disconnected');
+      if (armInfo.enabled) parts.push('Enabled');
+      else parts.push('Disabled');
+      label.textContent = 'Server: ' + parts.join(' | ');
+
+      if (typeof logLocal === 'function') {
+        logLocal('SIM_CFG', 'Fetched server config: ' + parts.join(', '), 'info');
+      }
+    } catch (e) {
+      console.error('[sim] fetchServerConfig error:', e);
+    }
+  }
+
+  function updateMappedPreview() {
+    if (!sim) return;
+    const { joints, gripper } = sim.getMappedCommand();
+    const el = document.getElementById('simMappedPreview');
+    if (!el) return;
+    const lines = [];
+    lines.push('Mapped angles (deg):');
+    for (let i = 0; i < 6; i++) {
+      const [lo, hi] = SIM_JOINT_LIMITS[i];
+      const inRange = joints[i] >= lo && joints[i] <= hi;
+      const flag = inRange ? '' : ' !!';
+      lines.push(`  J${i}: ${joints[i].toFixed(1)}${flag}`);
+    }
+    lines.push(`Gripper: ${gripper.toFixed(1)} mm`);
+    const torque = Math.abs(joints[1]) + Math.abs(joints[2]) * 0.7;
+    lines.push(`Torque proxy: ${torque.toFixed(1)} / ${sim.getMappingConfig().torqueProxyLimit}`);
+    el.textContent = lines.join('\n');
+  }
+
+  // ----------------------------------------------------------
+  //  Shared helpers
+  // ----------------------------------------------------------
 
   function setupVizToggle(id, callback) {
     const btn = document.getElementById(id);
@@ -2268,19 +2629,26 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
 
   async function executeSimPose() {
     if (!sim) return;
-    const joints = sim.simJoints.slice();
-    const gripper = sim.simGripper;
+
+    // Use mapped command (applies offsets/scales)
+    const { joints, gripper } = sim.getMappedCommand();
+
+    // Run validation first
+    const results = sim.validatePose();
+    const criticalFail = results.filter(r => !r.pass && r.check !== 'Arm ready');
+    if (criticalFail.length > 0) {
+      const msgs = criticalFail.map(r => `  ${r.check}: ${r.msg}`).join('\n');
+      if (!confirm('Validation warnings:\n' + msgs + '\n\nSend anyway?')) return;
+    }
 
     if (sim.mode === 'physical') {
-      // Confirm before sending to real hardware
-      if (!confirm('Send simulated pose to physical arm?\n\nJoints: [' +
+      if (!confirm('Send mapped pose to physical arm?\n\nJoints: [' +
         joints.map(v => v.toFixed(1)).join(', ') + ']\nGripper: ' + gripper.toFixed(1) + ' mm')) {
         return;
       }
     }
 
     try {
-      // Send joints to arm via API
       const resp = await fetch('/api/command/set-all-joints', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2291,7 +2659,6 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
         console.warn('[sim] set-all-joints failed:', data.error || data);
       }
 
-      // Send gripper
       const gResp = await fetch('/api/command/set-gripper', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2299,9 +2666,8 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
       });
       await gResp.json();
 
-      // Log
       if (typeof logLocal === 'function') {
-        logLocal('SIM_EXEC', `Joints=[${joints.map(v=>v.toFixed(1)).join(',')}] G=${gripper.toFixed(1)}`, 'info');
+        logLocal('SIM_EXEC', `Mapped=[${joints.map(v=>v.toFixed(1)).join(',')}] G=${gripper.toFixed(1)}`, 'info');
       }
     } catch (e) {
       console.error('[sim] execute error:', e);
@@ -2334,7 +2700,6 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
     }
     updateSimEEInfo();
 
-    // Update overlay info
     const overlay = document.getElementById('simOverlayInfo');
     if (overlay && armState) {
       const mode = armState.sim_mode ? 'SIM' : 'LIVE';
@@ -2352,6 +2717,7 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
       simFpsLast = performance.now();
       updateSimFps();
       simUpdateFromWS();
+      runQuickValidation();
     }
   };
 
@@ -2360,7 +2726,6 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
   };
 
   // Hook into WebSocket state updates
-  const _origOnWsMessage = window._simWsHook;
   window._simWsHook = function(state) {
     if (sim && sim.active) simUpdateFromWS();
   };

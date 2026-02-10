@@ -911,6 +911,189 @@ async def api_sim_joint_limits():
     }
 
 
+@app.get("/api/sim/validate-config")
+async def api_sim_validate_config():
+    """Return full arm configuration for simulator mapping validation.
+
+    Includes joint limits, velocity limits, smoother parameters, torque proxy
+    limits, workspace radius, and current arm state — everything the simulator
+    needs to verify that a simulated pose maps to a valid real-arm command.
+    """
+    limits = {}
+    for i in range(6):
+        lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
+        limits[str(i)] = {"min": lo, "max": hi}
+
+    # Current smoother state
+    smoother_info = {}
+    if smoother:
+        smoother_info = {
+            "rate_hz": smoother._rate_hz,
+            "smoothing_factor": smoother._alpha,
+            "max_step_deg": smoother._max_step,
+            "max_gripper_step_mm": smoother._max_grip_step,
+            "synced": smoother.synced,
+            "running": smoother.running,
+            "arm_enabled": smoother._arm_enabled,
+        }
+
+    # Current arm state
+    state = get_arm_state()
+
+    # Velocity limits (deg/s)
+    vel_limits = {}
+    try:
+        from src.safety.limits import MAX_JOINT_SPEED_DEG, MAX_JOINT_ACCEL_DEG
+        vel_limits = {
+            "max_speed_deg_s": [float(v) for v in MAX_JOINT_SPEED_DEG],
+            "max_accel_deg_s2": [float(v) for v in MAX_JOINT_ACCEL_DEG],
+        }
+    except ImportError:
+        pass
+
+    return {
+        "ok": True,
+        "joint_limits": limits,
+        "gripper_range": {"min": GRIPPER_RANGE[0], "max": GRIPPER_RANGE[1]},
+        "torque_proxy_limit": 100,
+        "workspace_radius_m": 0.55,
+        "smoother": smoother_info,
+        "velocity_limits": vel_limits,
+        "feedback_max_age_s": 0.5,
+        "sim_mode": _sim_mode,
+        "arm_state": {
+            "connected": state.get("connected", False),
+            "power": state.get("power", False),
+            "enabled": state.get("enabled", False),
+            "joints": state.get("joints", [0]*6),
+            "gripper": state.get("gripper", 0),
+        },
+    }
+
+
+class SimValidateRequest(BaseModel):
+    angles: List[float] = Field(min_length=6, max_length=6)
+    gripper: float = Field(ge=0.0, le=65.0, default=0.0)
+
+
+@app.post("/api/sim/validate")
+async def api_sim_validate(req: SimValidateRequest):
+    """Validate a simulated pose against all real arm constraints.
+
+    Returns per-check pass/fail results matching exactly what the real
+    command pipeline would enforce. Use this to verify that a sim pose
+    would be accepted before executing it.
+    """
+    results = []
+    all_pass = True
+
+    # 1. Joint limits
+    for i, a in enumerate(req.angles):
+        lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
+        ok = lo <= a <= hi
+        if not ok:
+            all_pass = False
+        results.append({
+            "check": f"J{i} limits",
+            "pass": ok,
+            "value": round(a, 1),
+            "limit": f"[{lo}, {hi}]",
+        })
+
+    # 2. Gripper
+    g_ok = GRIPPER_RANGE[0] <= req.gripper <= GRIPPER_RANGE[1]
+    if not g_ok:
+        all_pass = False
+    results.append({
+        "check": "Gripper range",
+        "pass": g_ok,
+        "value": round(req.gripper, 1),
+        "limit": f"[{GRIPPER_RANGE[0]}, {GRIPPER_RANGE[1]}]",
+    })
+
+    # 3. Torque proxy
+    torque_proxy = abs(req.angles[1]) + abs(req.angles[2]) * 0.7
+    t_ok = torque_proxy <= 100
+    if not t_ok:
+        all_pass = False
+    results.append({
+        "check": "Torque proxy",
+        "pass": t_ok,
+        "value": round(torque_proxy, 1),
+        "limit": "<= 100",
+    })
+
+    # 4. FK workspace check
+    try:
+        from src.kinematics.kinematics import D1Kinematics
+        kin = D1Kinematics()
+        angles_rad = [a * 3.141592653589793 / 180.0 for a in req.angles] + [0.0]
+        T = kin.forward_kinematics(angles_rad)
+        ee = T[:3, 3]
+        reach = float(np.sqrt(ee[0]**2 + ee[1]**2 + ee[2]**2))
+        r_ok = reach <= 0.55
+        if not r_ok:
+            all_pass = False
+        results.append({
+            "check": "Workspace reach",
+            "pass": r_ok,
+            "value": f"{reach*1000:.0f}mm",
+            "limit": "<= 550mm",
+            "ee_position": {"x": float(ee[0]), "y": float(ee[1]), "z": float(ee[2])},
+        })
+
+        # 5. Table collision (EE below base)
+        above = float(ee[1]) >= -0.02
+        if not above:
+            all_pass = False
+        results.append({
+            "check": "EE above table",
+            "pass": above,
+            "value": f"{float(ee[1])*1000:.1f}mm",
+            "limit": ">= -20mm",
+        })
+    except Exception as e:
+        results.append({"check": "FK check", "pass": False, "value": str(e), "limit": "N/A"})
+        all_pass = False
+
+    # 6. Arm ready check
+    arm_ready = smoother is not None and smoother._arm_enabled and smoother.running
+    results.append({
+        "check": "Arm ready",
+        "pass": arm_ready,
+        "value": "enabled" if arm_ready else "not ready",
+        "limit": "enabled + running",
+    })
+
+    # 7. Max step from current position
+    if arm is not None:
+        current_joints = list((get_arm_state()).get("joints", [0]*6))
+        max_step = 0
+        max_step_j = 0
+        for i in range(6):
+            step = abs(req.angles[i] - current_joints[i])
+            if step > max_step:
+                max_step = step
+                max_step_j = i
+        rate = smoother._rate_hz if smoother else 10
+        step_limit = smoother._max_step if smoother else 10.0
+        ticks = int(max_step / step_limit) + 1 if step_limit > 0 else 999
+        results.append({
+            "check": "Max step",
+            "pass": True,
+            "value": f"{max_step:.1f} (J{max_step_j})",
+            "limit": f"{step_limit}/tick",
+            "ticks_needed": ticks,
+            "est_duration_ms": round(ticks * (1000 / rate)),
+        })
+
+    return {
+        "ok": True,
+        "valid": all_pass,
+        "results": results,
+    }
+
+
 @app.get("/api/diagnostics/feedback")
 async def api_diagnostics_feedback():
     """Return DDS feedback health and recent samples for debugging."""

@@ -61,6 +61,20 @@ class D1ArmSimulator {
     // Callbacks
     this.onJointsChanged = null;  // called when sim joints change
     this.onExecute = null;        // called when user clicks Execute
+    this.onValidation = null;     // called after validation runs
+
+    // Mapping config
+    this.mappingConfig = {
+      jointOffsets: [0,0,0,0,0,0],
+      jointScales: [1,1,1,1,1,1],
+      gripperOffset: 0,
+      gripperScale: 1,
+      maxStepDeg: 10.0,
+      smoothingFactor: 0.35,
+      smootherRateHz: 10,
+      torqueProxyLimit: 100,
+      feedbackMaxAgeS: 0.5,
+    };
 
     this._initScene();
     this._initArm();
@@ -465,9 +479,252 @@ class D1ArmSimulator {
   }
 }
 
+  // ----------------------------------------------------------
+  //  Configuration & mapping validation
+  // ----------------------------------------------------------
+
+  /**
+   * Apply a mapping configuration profile.
+   * @param {object} config - { jointOffsets, jointScales, gripperOffset, gripperScale }
+   */
+  setMappingConfig(config) {
+    this.mappingConfig = {
+      jointOffsets: config.jointOffsets || [0,0,0,0,0,0],
+      jointScales: config.jointScales || [1,1,1,1,1,1],
+      gripperOffset: config.gripperOffset || 0,
+      gripperScale: config.gripperScale || 1,
+      maxStepDeg: config.maxStepDeg || 10.0,
+      smoothingFactor: config.smoothingFactor || 0.35,
+      smootherRateHz: config.smootherRateHz || 10,
+      torqueProxyLimit: config.torqueProxyLimit || 100,
+      feedbackMaxAgeS: config.feedbackMaxAgeS || 0.5,
+    };
+  }
+
+  /**
+   * Get current mapping config (returns copy).
+   */
+  getMappingConfig() {
+    return Object.assign({}, this.mappingConfig || {
+      jointOffsets: [0,0,0,0,0,0],
+      jointScales: [1,1,1,1,1,1],
+      gripperOffset: 0,
+      gripperScale: 1,
+      maxStepDeg: 10.0,
+      smoothingFactor: 0.35,
+      smootherRateHz: 10,
+      torqueProxyLimit: 100,
+      feedbackMaxAgeS: 0.5,
+    });
+  }
+
+  /**
+   * Map simulated joints to physical arm commands using the current config.
+   * @returns {{ joints: number[], gripper: number }}
+   */
+  getMappedCommand() {
+    const cfg = this.getMappingConfig();
+    const mapped = [];
+    for (let i = 0; i < 6; i++) {
+      mapped.push(this.simJoints[i] * cfg.jointScales[i] + cfg.jointOffsets[i]);
+    }
+    const gripperMapped = this.simGripper * cfg.gripperScale + cfg.gripperOffset;
+    return { joints: mapped, gripper: gripperMapped };
+  }
+
+  /**
+   * Validate that the current sim pose would produce a valid real-arm command.
+   * Returns an array of validation results, each { check, pass, value, limit, msg }.
+   */
+  validatePose() {
+    const cfg = this.getMappingConfig();
+    const { joints, gripper } = this.getMappedCommand();
+    const results = [];
+
+    // 1. Joint limits
+    for (let i = 0; i < 6; i++) {
+      const [lo, hi] = SIM_JOINT_LIMITS[i];
+      const inRange = joints[i] >= lo && joints[i] <= hi;
+      results.push({
+        check: `J${i} limits`,
+        pass: inRange,
+        value: joints[i].toFixed(1),
+        limit: `[${lo}, ${hi}]`,
+        msg: inRange ? 'OK' : `J${i} = ${joints[i].toFixed(1)} out of range [${lo}, ${hi}]`,
+      });
+    }
+
+    // 2. Gripper range
+    const gOk = gripper >= SIM_GRIPPER_RANGE[0] && gripper <= SIM_GRIPPER_RANGE[1];
+    results.push({
+      check: 'Gripper range',
+      pass: gOk,
+      value: gripper.toFixed(1),
+      limit: `[${SIM_GRIPPER_RANGE[0]}, ${SIM_GRIPPER_RANGE[1]}]`,
+      msg: gOk ? 'OK' : `Gripper ${gripper.toFixed(1)}mm out of range`,
+    });
+
+    // 3. Torque proxy: |J1| + 0.7*|J2| <= limit
+    const torqueProxy = Math.abs(joints[1]) + Math.abs(joints[2]) * 0.7;
+    const torqueOk = torqueProxy <= cfg.torqueProxyLimit;
+    results.push({
+      check: 'Torque proxy',
+      pass: torqueOk,
+      value: torqueProxy.toFixed(1),
+      limit: `<= ${cfg.torqueProxyLimit}`,
+      msg: torqueOk ? 'OK' : `Torque proxy ${torqueProxy.toFixed(1)} exceeds limit ${cfg.torqueProxyLimit}`,
+    });
+
+    // 4. Workspace reach
+    const pose = this.arm.getEEPose();
+    const reach = Math.sqrt(pose.position.x**2 + pose.position.y**2 + pose.position.z**2);
+    const reachOk = reach <= 0.55;
+    results.push({
+      check: 'Workspace reach',
+      pass: reachOk,
+      value: (reach * 1000).toFixed(0) + 'mm',
+      limit: '<= 550mm',
+      msg: reachOk ? 'OK' : `EE at ${(reach*1000).toFixed(0)}mm exceeds 550mm reach`,
+    });
+
+    // 5. Max step check: how far each joint moves from current live position
+    let maxStep = 0;
+    let maxStepJoint = -1;
+    for (let i = 0; i < 6; i++) {
+      const step = Math.abs(joints[i] - this.liveJoints[i]);
+      if (step > maxStep) { maxStep = step; maxStepJoint = i; }
+    }
+    const stepPerTick = cfg.maxStepDeg;
+    const ticksNeeded = Math.ceil(maxStep / stepPerTick);
+    const moveDurationMs = ticksNeeded * (1000 / cfg.smootherRateHz);
+    results.push({
+      check: 'Max step',
+      pass: true, // informational
+      value: `${maxStep.toFixed(1)} (J${maxStepJoint})`,
+      limit: `${stepPerTick}/tick`,
+      msg: `Largest move: J${maxStepJoint} ${maxStep.toFixed(1)} -> ~${ticksNeeded} ticks (~${moveDurationMs}ms)`,
+    });
+
+    // 6. EE height check (don't go below table)
+    const eeY = pose.position.y;
+    const aboveTable = eeY >= -0.02;
+    results.push({
+      check: 'EE above table',
+      pass: aboveTable,
+      value: (eeY * 1000).toFixed(1) + 'mm',
+      limit: '>= -20mm',
+      msg: aboveTable ? 'OK' : `EE below table at ${(eeY*1000).toFixed(1)}mm`,
+    });
+
+    return results;
+  }
+
+  /**
+   * Quick check: does the current sim pose pass all critical validations?
+   */
+  isPoseValid() {
+    return this.validatePose().every(r => r.pass);
+  }
+}
+
+/**
+ * SimMappingConfig — manages save/load of mapping profiles.
+ */
+class SimMappingConfig {
+  constructor() {
+    this._storageKey = 'th3cl4w_sim_mapping';
+    this._profiles = {};
+    this._activeProfile = 'default';
+    this._load();
+  }
+
+  _load() {
+    try {
+      const raw = localStorage.getItem(this._storageKey);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        this._profiles = saved.profiles || {};
+        this._activeProfile = saved.active || 'default';
+      }
+    } catch (e) {}
+    // Ensure default exists
+    if (!this._profiles['default']) {
+      this._profiles['default'] = {
+        jointOffsets: [0,0,0,0,0,0],
+        jointScales: [1,1,1,1,1,1],
+        gripperOffset: 0,
+        gripperScale: 1,
+        maxStepDeg: 10.0,
+        smoothingFactor: 0.35,
+        smootherRateHz: 10,
+        torqueProxyLimit: 100,
+        feedbackMaxAgeS: 0.5,
+      };
+    }
+  }
+
+  _save() {
+    try {
+      localStorage.setItem(this._storageKey, JSON.stringify({
+        profiles: this._profiles,
+        active: this._activeProfile,
+      }));
+    } catch (e) {}
+  }
+
+  getProfileNames() {
+    return Object.keys(this._profiles);
+  }
+
+  getActiveProfileName() {
+    return this._activeProfile;
+  }
+
+  getProfile(name) {
+    return this._profiles[name] || null;
+  }
+
+  getActiveProfile() {
+    return this._profiles[this._activeProfile] || this._profiles['default'];
+  }
+
+  setActiveProfile(name) {
+    if (this._profiles[name]) {
+      this._activeProfile = name;
+      this._save();
+    }
+  }
+
+  saveProfile(name, config) {
+    this._profiles[name] = Object.assign({}, config);
+    this._save();
+  }
+
+  deleteProfile(name) {
+    if (name === 'default') return;
+    delete this._profiles[name];
+    if (this._activeProfile === name) this._activeProfile = 'default';
+    this._save();
+  }
+
+  /**
+   * Fetch and merge real arm constraints from the server.
+   */
+  async fetchServerConfig() {
+    try {
+      const resp = await fetch('/api/sim/validate-config');
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch (e) {
+      return null;
+    }
+  }
+}
+
 // Export for global use
 if (typeof window !== 'undefined') {
   window.D1ArmSimulator = D1ArmSimulator;
   window.SIM_JOINT_LIMITS = SIM_JOINT_LIMITS;
   window.SIM_GRIPPER_RANGE = SIM_GRIPPER_RANGE;
+  window.SimMappingConfig = SimMappingConfig;
 }
