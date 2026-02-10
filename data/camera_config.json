@@ -1,0 +1,14 @@
+{
+  "0": {
+    "label": "Overhead",
+    "perspective": "overhead"
+  },
+  "1": {
+    "label": "Arm Cam",
+    "perspective": "arm-mounted"
+  },
+  "2": {
+    "label": "Side View",
+    "perspective": "side"
+  }
+}

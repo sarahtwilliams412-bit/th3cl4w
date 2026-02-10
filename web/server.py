@@ -1489,6 +1489,225 @@ async def ws_state(ws: WebSocket):
 
 
 # ---------------------------------------------------------------------------
+# Frame Processing Pipeline (CV Overlays)
+# ---------------------------------------------------------------------------
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Callable
+
+import cv2
+
+
+@dataclass
+class Overlay:
+    """A single overlay element for client-side rendering."""
+    type: str  # 'rect', 'circle', 'line', 'crosshair', 'text'
+    data: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, **self.data}
+
+
+@dataclass
+class ProcessedFrame:
+    """Result of running frame processors on a camera frame."""
+    cam_id: int
+    timestamp: float
+    raw_jpeg: bytes
+    annotated_jpeg: Optional[bytes] = None
+    overlays: list = field(default_factory=list)
+
+    def get_jpeg(self, annotated: bool = True) -> bytes:
+        if annotated and self.annotated_jpeg:
+            return self.annotated_jpeg
+        return self.raw_jpeg
+
+
+class FrameProcessorBase(ABC):
+    """Base class for frame processors in the CV pipeline."""
+
+    @abstractmethod
+    def process(self, cam_id: int, frame: np.ndarray, timestamp: float) -> tuple:
+        """Process a frame. Return (annotated_frame_or_None, list[Overlay])."""
+        ...
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        ...
+
+
+class CrosshairOverlay(FrameProcessorBase):
+    """Demo processor: draws a crosshair at frame center."""
+
+    @property
+    def name(self) -> str:
+        return "crosshair"
+
+    def process(self, cam_id: int, frame: np.ndarray, timestamp: float) -> tuple:
+        h, w = frame.shape[:2]
+        cx, cy = w // 2, h // 2
+        size = min(w, h) // 30
+        annotated = frame.copy()
+        color = (0, 255, 0)  # Green
+        cv2.line(annotated, (cx - size, cy), (cx + size, cy), color, 1, cv2.LINE_AA)
+        cv2.line(annotated, (cx, cy - size), (cx, cy + size), color, 1, cv2.LINE_AA)
+        # Small circle at center
+        cv2.circle(annotated, (cx, cy), size // 3, color, 1, cv2.LINE_AA)
+        overlays = [Overlay("crosshair", {"x": cx, "y": cy, "size": size, "color": "#00ff00"})]
+        return annotated, overlays
+
+
+class FrameProcessingPipeline:
+    """Manages a chain of frame processors."""
+
+    def __init__(self):
+        self.processors: List[FrameProcessorBase] = []
+        self._enabled = True
+
+    def add_processor(self, proc: FrameProcessorBase):
+        self.processors.append(proc)
+        logger.info("Frame processor added: %s", proc.name)
+
+    def remove_processor(self, name: str):
+        self.processors = [p for p in self.processors if p.name != name]
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled and len(self.processors) > 0
+
+    def process_frame(self, cam_id: int, raw_frame: np.ndarray, timestamp: float) -> ProcessedFrame:
+        """Run all processors on a frame."""
+        all_overlays = []
+        annotated = raw_frame
+
+        for proc in self.processors:
+            try:
+                result_frame, overlays = proc.process(cam_id, raw_frame, timestamp)
+                if result_frame is not None:
+                    annotated = result_frame
+                all_overlays.extend(overlays)
+            except Exception as e:
+                logger.warning("Frame processor %s failed: %s", proc.name, e)
+
+        # Encode
+        _, raw_buf = cv2.imencode('.jpg', raw_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        raw_jpeg = raw_buf.tobytes()
+
+        annotated_jpeg = None
+        if annotated is not raw_frame:
+            _, ann_buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            annotated_jpeg = ann_buf.tobytes()
+
+        return ProcessedFrame(
+            cam_id=cam_id,
+            timestamp=timestamp,
+            raw_jpeg=raw_jpeg,
+            annotated_jpeg=annotated_jpeg,
+            overlays=all_overlays,
+        )
+
+
+# Global pipeline instance with crosshair demo
+frame_pipeline = FrameProcessingPipeline()
+frame_pipeline.add_processor(CrosshairOverlay())
+
+
+# ---------------------------------------------------------------------------
+# WebSocket Camera Feed — streams JPEG frames from camera server
+# ---------------------------------------------------------------------------
+
+
+@app.websocket("/ws/cam/{cam_id}")
+async def ws_camera_feed(websocket: WebSocket, cam_id: int):
+    """Stream camera frames as binary WebSocket messages.
+
+    Fetches JPEG snapshots from camera_server (port 8081) and optionally
+    runs them through the CV processing pipeline before sending.
+
+    Query params:
+      ?overlay=true  — send processed frames with CV overlays (default: true)
+      ?fps=15        — target frame rate (default: 15)
+    """
+    import httpx
+
+    if cam_id not in (0, 1, 2):
+        await websocket.close(code=4004)
+        return
+
+    await websocket.accept()
+
+    # Parse query params
+    query = dict(websocket.query_params)
+    use_overlay = query.get("overlay", "true").lower() != "false"
+    target_fps = min(int(query.get("fps", "15")), 30)
+    interval = 1.0 / target_fps
+
+    logger.info("WebSocket camera feed started: cam=%d overlay=%s fps=%d", cam_id, use_overlay, target_fps)
+
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            while True:
+                try:
+                    resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+                    if resp.status_code != 200:
+                        await asyncio.sleep(interval)
+                        continue
+                    jpeg_bytes = resp.content
+
+                    # Run through pipeline if overlays requested
+                    if use_overlay and frame_pipeline.enabled:
+                        # Decode, process, re-encode
+                        nparr = np.frombuffer(jpeg_bytes, np.uint8)
+                        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                        if frame is not None:
+                            result = frame_pipeline.process_frame(cam_id, frame, time.time())
+                            jpeg_bytes = result.get_jpeg(annotated=True)
+                            # Send overlays as JSON if any
+                            if result.overlays:
+                                try:
+                                    overlay_msg = json.dumps({
+                                        "type": "overlays",
+                                        "cam_id": cam_id,
+                                        "overlays": [o.to_dict() for o in result.overlays],
+                                    })
+                                    await websocket.send_text(overlay_msg)
+                                except Exception:
+                                    pass
+
+                    await websocket.send_bytes(jpeg_bytes)
+
+                except httpx.RequestError:
+                    # Camera server unavailable, send nothing, wait
+                    await asyncio.sleep(1.0)
+                    continue
+
+                await asyncio.sleep(interval)
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket camera feed disconnected: cam=%d", cam_id)
+    except Exception as e:
+        logger.warning("WebSocket camera feed error: cam=%d %s", cam_id, e)
+
+
+@app.get("/api/cv/pipeline")
+async def api_cv_pipeline():
+    """Return current CV pipeline status."""
+    return {
+        "enabled": frame_pipeline.enabled,
+        "processors": [p.name for p in frame_pipeline.processors],
+    }
+
+
+@app.post("/api/cv/pipeline/toggle")
+async def api_cv_pipeline_toggle():
+    """Toggle the CV pipeline on/off."""
+    frame_pipeline._enabled = not frame_pipeline._enabled
+    return {"enabled": frame_pipeline._enabled}
+
+
+# ---------------------------------------------------------------------------
 # Debug / telemetry endpoints
 # ---------------------------------------------------------------------------
 
@@ -2116,6 +2335,110 @@ class VisualPickFromPositionRequest(BaseModel):
     label: str = Field(default="redbull")
     speed: float = Field(default=0.5, ge=0.1, le=1.0)
     execute: bool = Field(default=False)
+
+
+# ---------------------------------------------------------------------------
+# Overhead visual servo (Phase 1 — color-based, no Gemini)
+# ---------------------------------------------------------------------------
+
+try:
+    from src.control.visual_servo_controller import VisualServoController, ServoConfig, ServoState
+    from src.vision.overhead_calibrator import OverheadCalibrator
+
+    _HAS_OVERHEAD_SERVO = True
+except ImportError:
+    _HAS_OVERHEAD_SERVO = False
+
+_overhead_calibrator: Optional["OverheadCalibrator"] = None
+_vs_controller: Optional["VisualServoController"] = None
+_vs_task: Optional[asyncio.Task] = None
+
+
+def _get_overhead_calibrator():
+    global _overhead_calibrator
+    if _overhead_calibrator is None and _HAS_OVERHEAD_SERVO:
+        _overhead_calibrator = OverheadCalibrator()
+    return _overhead_calibrator
+
+
+def _get_vs_controller():
+    global _vs_controller
+    if _vs_controller is None and _HAS_OVERHEAD_SERVO:
+        _vs_controller = VisualServoController(calibrator=_get_overhead_calibrator())
+    return _vs_controller
+
+
+class OverheadServoRequest(BaseModel):
+    target: str = "redbull"
+    camera_id: int = 0
+
+
+class OverheadCalibrationRequest(BaseModel):
+    pixel_points: list[list[float]]
+    world_points: list[list[float]]
+
+
+@app.post("/api/servo/visual-servo")
+async def start_visual_servo(req: OverheadServoRequest):
+    """Start overhead visual servo to move gripper to detected object."""
+    global _vs_task
+    if not _HAS_OVERHEAD_SERVO:
+        return JSONResponse({"ok": False, "error": "Visual servo module not available"}, status_code=501)
+    ctrl = _get_vs_controller()
+    if ctrl.state == ServoState.RUNNING:
+        return JSONResponse({"ok": False, "error": "Visual servo already running"}, status_code=409)
+
+    async def _run():
+        await ctrl.run(target=req.target, camera_id=req.camera_id)
+
+    _vs_task = asyncio.create_task(_run())
+    return {"ok": True, "message": f"Visual servo started toward '{req.target}'"}
+
+
+@app.get("/api/servo/visual-servo/status")
+async def visual_servo_status():
+    """Get overhead visual servo status."""
+    if not _HAS_OVERHEAD_SERVO:
+        return {"available": False}
+    ctrl = _get_vs_controller()
+    return {"available": True, **ctrl.get_status()}
+
+
+@app.post("/api/servo/visual-servo/stop")
+async def visual_servo_stop():
+    """Abort overhead visual servo."""
+    global _vs_task
+    if not _HAS_OVERHEAD_SERVO:
+        return JSONResponse({"ok": False, "error": "Not available"}, status_code=501)
+    ctrl = _get_vs_controller()
+    if ctrl.state != ServoState.RUNNING:
+        return {"ok": False, "error": "Not running"}
+    ctrl.abort()
+    if _vs_task and not _vs_task.done():
+        _vs_task.cancel()
+    return {"ok": True}
+
+
+@app.post("/api/calibration/overhead")
+async def set_overhead_calibration(req: OverheadCalibrationRequest):
+    """Calibrate overhead camera with point correspondences."""
+    if not _HAS_OVERHEAD_SERVO:
+        return JSONResponse({"ok": False, "error": "Module not available"}, status_code=501)
+    cal = _get_overhead_calibrator()
+    try:
+        result = cal.calibrate(req.pixel_points, req.world_points)
+        return {"ok": True, **result}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+@app.get("/api/calibration/overhead")
+async def get_overhead_calibration():
+    """Get overhead camera calibration status."""
+    if not _HAS_OVERHEAD_SERVO:
+        return {"available": False}
+    cal = _get_overhead_calibrator()
+    return {"available": True, **cal.get_status()}
 
 
 # ---------------------------------------------------------------------------

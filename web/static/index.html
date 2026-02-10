@@ -256,20 +256,27 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       </div>
       <div class="camera-feeds" id="cameraFeeds">
         <div class="cam-feed">
-          <div class="cam-label"><span class="cam-live">● LIVE</span> <span class="cam-label-text" id="camLabel0">Camera 0</span></div>
-          <img class="cam-img" id="camImg0" src="http://localhost:8081/cam/0" alt="Camera 0">
-          <button class="btn cam-snap" onclick="window.open('http://localhost:8081/snap/0','_blank')">📷 Snap</button>
+          <div class="cam-label"><span class="cam-live" id="camLive0">● LIVE</span> <span class="cam-label-text" id="camLabel0">Camera 0</span> <span class="cam-mode-badge" id="camMode0" style="font-size:8px;padding:1px 4px;border-radius:3px;background:#1a2744;color:var(--text-dim)">MJPEG</span></div>
+          <img class="cam-img" id="camImg0" alt="Camera 0">
+          <canvas class="cam-img" id="camCanvas0" style="display:none"></canvas>
+          <button class="btn cam-snap" onclick="window.open(`http://${location.hostname}:8081/snap/0`,'_blank')">📷 Snap</button>
         </div>
         <div class="cam-feed">
-          <div class="cam-label"><span class="cam-live">● LIVE</span> <span class="cam-label-text" id="camLabel1">Camera 1</span></div>
-          <img class="cam-img" id="camImg1" src="http://localhost:8081/cam/1" alt="Camera 1">
-          <button class="btn cam-snap" onclick="window.open('http://localhost:8081/snap/1','_blank')">📷 Snap</button>
+          <div class="cam-label"><span class="cam-live" id="camLive1">● LIVE</span> <span class="cam-label-text" id="camLabel1">Camera 1</span> <span class="cam-mode-badge" id="camMode1" style="font-size:8px;padding:1px 4px;border-radius:3px;background:#1a2744;color:var(--text-dim)">MJPEG</span></div>
+          <img class="cam-img" id="camImg1" alt="Camera 1">
+          <canvas class="cam-img" id="camCanvas1" style="display:none"></canvas>
+          <button class="btn cam-snap" onclick="window.open(`http://${location.hostname}:8081/snap/1`,'_blank')">📷 Snap</button>
         </div>
         <div class="cam-feed">
-          <div class="cam-label"><span class="cam-live">● LIVE</span> <span class="cam-label-text" id="camLabel2">Camera 2</span></div>
-          <img class="cam-img" id="camImg2" src="http://localhost:8081/cam/2" alt="Camera 2">
-          <button class="btn cam-snap" onclick="window.open('http://localhost:8081/snap/2','_blank')">📷 Snap</button>
+          <div class="cam-label"><span class="cam-live" id="camLive2">● LIVE</span> <span class="cam-label-text" id="camLabel2">Camera 2</span> <span class="cam-mode-badge" id="camMode2" style="font-size:8px;padding:1px 4px;border-radius:3px;background:#1a2744;color:var(--text-dim)">MJPEG</span></div>
+          <img class="cam-img" id="camImg2" alt="Camera 2">
+          <canvas class="cam-img" id="camCanvas2" style="display:none"></canvas>
+          <button class="btn cam-snap" onclick="window.open(`http://${location.hostname}:8081/snap/2`,'_blank')">📷 Snap</button>
         </div>
+      </div>
+      <div style="padding:2px 12px 6px;display:flex;gap:6px;align-items:center;">
+        <button class="btn" id="btnCamModeToggle" style="font-size:9px;padding:2px 8px" title="Toggle between MJPEG and WebSocket+Canvas mode">🔄 WS MODE</button>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim)" id="camModeInfo">MJPEG streaming (low latency)</span>
       </div>
       <div id="cameraSettings" style="display:none; padding:8px 12px; border-top:1px solid var(--card-border);">
         <div class="section-title" style="margin-bottom:6px">Camera Settings</div>
@@ -1271,19 +1278,219 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 
 // ============================================================
-//  CAMERA TOGGLE
+//  CAMERA STREAMING (MJPEG + WebSocket + Fallback)
 // ============================================================
 
+const CAM_PORT = 8081;
+const CAM_HOST = location.hostname;
+let camMode = 'mjpeg';  // 'mjpeg' or 'ws'
+const camWsConnections = {};  // cam_id -> WebSocket
+const camOverlays = {};       // cam_id -> [{type, ...}]
+let camSnapshotTimers = {};   // cam_id -> setInterval for fallback polling
+let camMjpegErrors = {};      // cam_id -> consecutive error count
+
+function getMjpegUrl(camId) { return `http://${CAM_HOST}:${CAM_PORT}/cam/${camId}`; }
+function getSnapUrl(camId) { return `http://${CAM_HOST}:${CAM_PORT}/snap/${camId}`; }
+
+function initCameraStreams() {
+  for (let i = 0; i < 3; i++) {
+    const img = document.getElementById(`camImg${i}`);
+    camMjpegErrors[i] = 0;
+
+    if (camMode === 'mjpeg') {
+      startMjpegStream(i);
+    } else {
+      startWsStream(i);
+    }
+  }
+}
+
+function startMjpegStream(camId) {
+  const img = document.getElementById(`camImg${camId}`);
+  const canvas = document.getElementById(`camCanvas${camId}`);
+  img.style.display = '';
+  canvas.style.display = 'none';
+  stopWsStream(camId);
+  stopSnapshotPolling(camId);
+
+  img.src = getMjpegUrl(camId);
+  const badge = document.getElementById(`camMode${camId}`);
+  if (badge) badge.textContent = 'MJPEG';
+
+  // Error handler: fall back to snapshot polling if MJPEG fails
+  img.onerror = () => {
+    camMjpegErrors[camId] = (camMjpegErrors[camId] || 0) + 1;
+    if (camMjpegErrors[camId] >= 3) {
+      console.warn(`Camera ${camId} MJPEG failed, falling back to snapshot polling`);
+      if (badge) badge.textContent = 'POLL';
+      startSnapshotPolling(camId);
+    } else {
+      // Retry MJPEG after 2s
+      setTimeout(() => {
+        img.src = getMjpegUrl(camId) + '?retry=' + Date.now();
+      }, 2000);
+    }
+  };
+  img.onload = () => { camMjpegErrors[camId] = 0; };
+}
+
+function startSnapshotPolling(camId) {
+  stopSnapshotPolling(camId);
+  const img = document.getElementById(`camImg${camId}`);
+  camSnapshotTimers[camId] = setInterval(() => {
+    img.src = getSnapUrl(camId) + '?t=' + Date.now();
+  }, 200);
+}
+
+function stopSnapshotPolling(camId) {
+  if (camSnapshotTimers[camId]) {
+    clearInterval(camSnapshotTimers[camId]);
+    delete camSnapshotTimers[camId];
+  }
+}
+
+function startWsStream(camId) {
+  const img = document.getElementById(`camImg${camId}`);
+  const canvas = document.getElementById(`camCanvas${camId}`);
+  img.style.display = 'none';
+  canvas.style.display = '';
+  stopSnapshotPolling(camId);
+  stopWsStream(camId);
+
+  const ctx = canvas.getContext('2d');
+  const badge = document.getElementById(`camMode${camId}`);
+  if (badge) { badge.textContent = 'WS'; badge.style.background = '#0a3d20'; badge.style.color = 'var(--success)'; }
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${proto}//${location.host}/ws/cam/${camId}?overlay=true&fps=15`;
+  const ws = new WebSocket(wsUrl);
+  ws.binaryType = 'blob';
+  let rendering = false;
+
+  ws.onmessage = (e) => {
+    if (typeof e.data === 'string') {
+      // JSON overlay data
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'overlays') {
+          camOverlays[camId] = msg.overlays || [];
+        }
+      } catch (_) {}
+      return;
+    }
+    // Binary JPEG frame
+    if (rendering) return;  // Drop frame if still drawing
+    rendering = true;
+    createImageBitmap(e.data).then(bmp => {
+      canvas.width = bmp.width;
+      canvas.height = bmp.height;
+      ctx.drawImage(bmp, 0, 0);
+      // Draw client-side overlays
+      drawCamOverlays(ctx, camId);
+      bmp.close();
+      rendering = false;
+    }).catch(() => { rendering = false; });
+  };
+
+  ws.onclose = () => {
+    console.warn(`Camera ${camId} WebSocket closed, reconnecting in 2s`);
+    if (badge) { badge.textContent = 'WS ✗'; badge.style.background = '#3d0a0a'; badge.style.color = 'var(--danger)'; }
+    delete camWsConnections[camId];
+    if (camMode === 'ws') {
+      setTimeout(() => startWsStream(camId), 2000);
+    }
+  };
+
+  ws.onerror = () => ws.close();
+  camWsConnections[camId] = ws;
+}
+
+function stopWsStream(camId) {
+  if (camWsConnections[camId]) {
+    try { camWsConnections[camId].close(); } catch (_) {}
+    delete camWsConnections[camId];
+  }
+}
+
+function drawCamOverlays(ctx, camId) {
+  const overlays = camOverlays[camId] || [];
+  for (const o of overlays) {
+    ctx.strokeStyle = o.color || '#00ff00';
+    ctx.lineWidth = 1;
+    if (o.type === 'crosshair') {
+      const sz = o.size || 20;
+      ctx.beginPath();
+      ctx.moveTo(o.x - sz, o.y); ctx.lineTo(o.x + sz, o.y);
+      ctx.moveTo(o.x, o.y - sz); ctx.lineTo(o.x, o.y + sz);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, sz / 3, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (o.type === 'rect') {
+      ctx.strokeRect(o.x, o.y, o.w, o.h);
+      if (o.label) {
+        ctx.fillStyle = o.color || '#00ff00';
+        ctx.font = '14px monospace';
+        ctx.fillText(o.label, o.x, o.y - 4);
+      }
+    } else if (o.type === 'circle') {
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+function switchCameraMode(mode) {
+  camMode = mode;
+  const info = document.getElementById('camModeInfo');
+  const btn = document.getElementById('btnCamModeToggle');
+  if (mode === 'ws') {
+    info.textContent = 'WebSocket + Canvas (CV overlays enabled)';
+    btn.textContent = '🔄 MJPEG MODE';
+    btn.style.borderColor = 'var(--success)';
+    btn.style.color = 'var(--success)';
+  } else {
+    info.textContent = 'MJPEG streaming (low latency)';
+    btn.textContent = '🔄 WS MODE';
+    btn.style.borderColor = '';
+    btn.style.color = '';
+  }
+  for (let i = 0; i < 3; i++) {
+    if (mode === 'mjpeg') startMjpegStream(i);
+    else startWsStream(i);
+  }
+}
+
+document.getElementById('btnCamModeToggle').addEventListener('click', () => {
+  switchCameraMode(camMode === 'mjpeg' ? 'ws' : 'mjpeg');
+});
+
+// Initialize camera streams on page load
+initCameraStreams();
+
+// Camera toggle (show/hide)
 document.getElementById('btnCamToggle').addEventListener('click', () => {
   const feeds = document.getElementById('cameraFeeds');
   const btn = document.getElementById('btnCamToggle');
   const hidden = feeds.classList.toggle('hidden');
   btn.textContent = hidden ? '👁 SHOW' : '👁 HIDE';
-  const imgs = feeds.querySelectorAll('.cam-img');
-  imgs.forEach((img, i) => {
-    if (hidden) { img.dataset.src = img.src; img.src = ''; }
-    else { img.src = img.dataset.src || `http://localhost:8081/cam/${i}`; }
-  });
+  if (hidden) {
+    // Stop all streams when hidden
+    for (let i = 0; i < 3; i++) {
+      stopWsStream(i);
+      stopSnapshotPolling(i);
+      const img = document.getElementById(`camImg${i}`);
+      img.dataset.src = img.src;
+      img.src = '';
+    }
+  } else {
+    // Restart streams when shown
+    for (let i = 0; i < 3; i++) {
+      if (camMode === 'mjpeg') startMjpegStream(i);
+      else startWsStream(i);
+    }
+  }
   setTimeout(resizeCanvas, 50);
 });
 
