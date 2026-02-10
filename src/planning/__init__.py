@@ -6,6 +6,7 @@ from src.planning.path_optimizer import PathOptimizer
 from src.planning.collision_preview import CollisionPreview, PreviewResult
 from src.planning.pick_executor import PickExecutor, PickResult, PickPhase
 from src.planning.vision_task_planner import VisionTaskPlanner, VisionTaskPlan, ActionType
+from src.planning.virtual_grip import VirtualGripDetector, GripCheckResult
 
 __all__ = [
     "MotionPlanner",
@@ -23,4 +24,6 @@ __all__ = [
     "VisionTaskPlanner",
     "VisionTaskPlan",
     "ActionType",
+    "VirtualGripDetector",
+    "GripCheckResult",
 ]

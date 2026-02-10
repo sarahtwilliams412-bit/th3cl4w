@@ -94,6 +94,13 @@ except ImportError:
     _HAS_VISION_PLANNING = False
 
 try:
+    from src.planning.virtual_grip import VirtualGripDetector
+
+    _HAS_VIRTUAL_GRIP = True
+except ImportError:
+    _HAS_VIRTUAL_GRIP = False
+
+try:
     from src.vla import VLAController, DataCollector, GeminiVLABackend
 
     _HAS_VLA = True
@@ -6681,6 +6688,56 @@ async def serve_root():
     from starlette.responses import RedirectResponse
 
     return RedirectResponse(url="/ui/")
+
+
+# ---------------------------------------------------------------------------
+# Virtual Grip Detection (sim mode)
+# ---------------------------------------------------------------------------
+
+_virtual_grip_detector = VirtualGripDetector() if _HAS_VIRTUAL_GRIP else None
+
+
+class VirtualGripRequest(BaseModel):
+    joints_deg: Optional[List[float]] = None
+    gripper_width_mm: Optional[float] = None
+    detected_objects: Optional[List[Dict[str, Any]]] = None
+    grip_distance_mm: float = 50.0
+    grip_width_mm: float = 30.0
+
+
+@app.post("/api/virtual-grip/check")
+async def virtual_grip_check(req: VirtualGripRequest = VirtualGripRequest()):
+    """Check virtual grip using current arm state and detected objects."""
+    if _virtual_grip_detector is None:
+        return JSONResponse({"error": "Virtual grip module not available"}, status_code=501)
+
+    # Use provided joints or read current
+    joints = req.joints_deg
+    if joints is None:
+        joints = _get_current_joints().tolist()
+    if len(joints) < 6:
+        return JSONResponse({"error": "Need at least 6 joint angles"}, status_code=400)
+
+    gripper_w = req.gripper_width_mm
+    if gripper_w is None:
+        gripper_w = armState_gripper()
+
+    objects = req.detected_objects if req.detected_objects is not None else []
+
+    result = _virtual_grip_detector.check_grip(
+        joints, gripper_w, objects,
+        grip_distance_mm=req.grip_distance_mm,
+        grip_width_mm=req.grip_width_mm,
+    )
+    return {
+        "gripped": result.gripped,
+        "object_label": result.object_label,
+        "distance_mm": result.distance_mm,
+        "gripper_width_mm": result.gripper_width_mm,
+        "object_width_mm": result.object_width_mm,
+        "position": result.position,
+        "message": result.message,
+    }
 
 
 # ---------------------------------------------------------------------------
