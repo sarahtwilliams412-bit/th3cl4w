@@ -1,4 +1,4 @@
-<!-- th3cl4w V1 Control Panel — Stable Base -->
+<!-- th3cl4w V4 Control Panel — Sidebar Navigation -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,28 +20,68 @@
   --text-dim: #8892a4;
   --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
   --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --sidebar-w: 220px;
+  --sidebar-collapsed: 48px;
+  --statusbar-h: 32px;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); font-family: var(--sans); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-/* === Top Bar === */
-.topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--card); border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
-.logo { font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 2px; color: var(--danger); }
-.conn-dot { width: 10px; height: 10px; border-radius: 50%; background: #666; flex-shrink: 0; }
-.conn-dot.on { background: var(--success); box-shadow: 0 0 8px var(--success); }
-.conn-dot.off { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+/* === Status Bar (top) === */
+.statusbar { display: flex; align-items: center; gap: 10px; padding: 4px 12px; background: #0d1525; border-bottom: 1px solid var(--card-border); flex-shrink: 0; height: var(--statusbar-h); font-family: var(--mono); font-size: 11px; z-index: 100; }
+.statusbar .logo { font-size: 16px; font-weight: 700; letter-spacing: 2px; color: var(--danger); cursor: pointer; }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; flex-shrink: 0; }
+.conn-dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.conn-dot.off { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+.sb-sep { width: 1px; height: 16px; background: var(--card-border); }
 .badge { font-size: 10px; font-family: var(--mono); padding: 2px 8px; border-radius: 3px; background: #1a2744; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
 .badge.active { background: #0a3d20; color: var(--success); }
 .badge.error { background: #3d0a0a; color: var(--danger); }
-.conn-quality { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
-.topbar-spacer { flex: 1; }
+.badge.warn { background: #3d2a0a; color: var(--warning); }
+.statusbar .spacer { flex: 1; }
+#connLabel { color: var(--text-dim); }
+#connQuality { color: var(--text-dim); }
+#simBadge { display:none; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:bold; cursor:pointer; background:#f59e0b; color:#000; }
+#taskStatus { color: var(--info); font-size: 10px; }
 
-/* === Layout === */
-.main { display: flex; flex: 1; overflow: hidden; }
-.panel-left { flex: 1; min-width: 300px; display: flex; flex-direction: column; border-right: 1px solid var(--card-border); }
-.panel-right { width: 400px; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; }
+/* === Layout: sidebar + content === */
+.app-layout { display: flex; flex: 1; overflow: hidden; }
 
-/* === Visualization === */
+/* === Sidebar === */
+.sidebar { width: var(--sidebar-w); background: var(--card); border-right: 1px solid var(--card-border); display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; overflow-x: hidden; transition: width 0.2s; z-index: 50; }
+.sidebar.collapsed { width: var(--sidebar-collapsed); }
+.sidebar.collapsed .nav-label, .sidebar.collapsed .nav-group-title span, .sidebar.collapsed .nav-ext-label { display: none; }
+.sidebar.collapsed .nav-group-title { justify-content: center; padding: 6px 0; }
+.sidebar.collapsed .nav-item { justify-content: center; padding: 6px 0; }
+
+.sidebar-toggle { display: flex; align-items: center; justify-content: center; padding: 8px; cursor: pointer; color: var(--text-dim); border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+.sidebar-toggle:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+
+.nav-group { border-bottom: 1px solid rgba(26,39,68,0.5); }
+.nav-group-title { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; cursor: pointer; user-select: none; }
+.nav-group-title:hover { color: var(--text); background: rgba(255,255,255,0.02); }
+.nav-group-title .arrow { font-size: 8px; transition: transform 0.15s; }
+.nav-group.open .arrow { transform: rotate(90deg); }
+.nav-items { display: none; }
+.nav-group.open .nav-items { display: block; }
+
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 24px; font-size: 12px; color: var(--text-dim); cursor: pointer; transition: all 0.1s; white-space: nowrap; }
+.nav-item:hover { color: var(--text); background: rgba(74,144,217,0.08); }
+.nav-item.active { color: var(--info); background: rgba(74,144,217,0.12); border-right: 2px solid var(--info); }
+.nav-item .nav-icon { width: 16px; text-align: center; flex-shrink: 0; }
+.nav-item.ext::after { content: '↗'; font-size: 9px; margin-left: auto; opacity: 0.4; }
+
+/* === Content area === */
+.content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+/* === Panels (each nav item shows one) === */
+.panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.panel.active { display: flex; }
+
+/* === Panel: Control (preserves original layout) === */
+.ctrl-layout { display: flex; flex: 1; overflow: hidden; }
+.ctrl-left { flex: 1; min-width: 300px; display: flex; flex-direction: column; border-right: 1px solid var(--card-border); }
+.ctrl-right { width: 400px; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; }
 .viz-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; }
 .viz-container canvas { max-width: 100%; max-height: 100%; }
 
@@ -57,7 +97,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .joint-slider::-webkit-slider-thumb:hover { background: #4a90d9; }
 .joint-slider::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--primary); cursor: pointer; border: 2px solid #4a90d9; }
 .joint-value { font-family: var(--mono); font-size: 11px; width: 58px; text-align: right; color: var(--text); }
-.joint-range { font-family: var(--mono); font-size: 9px; color: #555; width: 40px; text-align: center; }
 
 /* === Buttons === */
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -66,7 +105,11 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .btn:active:not(:disabled) { transform: scale(0.97); }
 .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn.on { background: #0a3d20; border-color: var(--success); color: var(--success); }
-.btn.danger-active { background: #3d1a1a; border-color: var(--danger); color: var(--danger); }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn.danger:hover:not(:disabled) { background: #3d1a1a; }
+.btn.warn { border-color: var(--warning); color: var(--warning); }
+.btn.primary { border-color: var(--info); color: var(--info); }
+.btn.primary:hover:not(:disabled) { background: rgba(74,144,217,0.15); }
 
 /* === Emergency Stop === */
 .estop { width: 100%; padding: 14px; font-size: 15px; font-weight: 700; background: var(--danger); color: #fff; border: 2px solid #ff6b81; border-radius: 6px; cursor: pointer; letter-spacing: 3px; text-transform: uppercase; font-family: var(--mono); transition: all 0.15s; }
@@ -95,7 +138,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .raw-cmd input:focus { border-color: var(--info); }
 
 /* === Action Log === */
-.log-panel { height: 150px; flex-shrink: 0; border-top: 1px solid var(--card-border); display: flex; flex-direction: column; }
+.log-panel { height: 140px; flex-shrink: 0; border-top: 1px solid var(--card-border); display: flex; flex-direction: column; }
 .log-title { font-family: var(--mono); font-size: 10px; color: var(--text-dim); padding: 6px 12px 2px; text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0; }
 .log-scroll { flex: 1; overflow-y: auto; padding: 0 12px 6px; font-family: var(--mono); font-size: 10px; line-height: 1.5; }
 .log-entry { white-space: nowrap; }
@@ -121,13 +164,35 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .cam-img { width: 100%; aspect-ratio: 4/3; object-fit: contain; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; }
 .cam-snap { font-size: 9px !important; padding: 2px 6px !important; align-self: flex-start; }
 
+/* === Generic panel content === */
+.panel-body { padding: 16px; overflow-y: auto; flex: 1; }
+.panel-header { font-family: var(--mono); font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.panel-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+.panel-card h3 { font-family: var(--mono); font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px; }
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.form-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.form-row label { font-family: var(--mono); font-size: 11px; color: var(--text-dim); min-width: 80px; }
+.form-row input, .form-row select { font-family: var(--mono); font-size: 11px; padding: 5px 8px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 3px; color: var(--text); flex: 1; }
+.form-row input:focus, .form-row select:focus { border-color: var(--info); outline: none; }
+.status-indicator { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; padding: 4px 10px; border-radius: 4px; background: #0d1525; }
+.status-indicator.running { border-left: 3px solid var(--success); }
+.status-indicator.stopped { border-left: 3px solid var(--text-dim); }
+.status-indicator.error { border-left: 3px solid var(--danger); }
+.phase-display { display: flex; gap: 4px; margin: 8px 0; flex-wrap: wrap; }
+.phase-chip { font-family: var(--mono); font-size: 10px; padding: 3px 8px; border-radius: 3px; background: #1a2744; color: var(--text-dim); border: 1px solid var(--card-border); }
+.phase-chip.active { background: rgba(74,144,217,0.15); color: var(--info); border-color: var(--info); }
+.phase-chip.done { background: rgba(83,215,105,0.1); color: var(--success); border-color: rgba(83,215,105,0.3); }
+.phase-chip.error { background: rgba(233,69,96,0.1); color: var(--danger); border-color: rgba(233,69,96,0.3); }
+.result-box { font-family: var(--mono); font-size: 11px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; padding: 8px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; color: var(--text-dim); line-height: 1.5; }
+.inline-status { font-family: var(--mono); font-size: 10px; padding: 2px 8px; border-radius: 3px; }
+
 /* === Scrollbar === */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 3px; }
 
 /* === Debug Panel === */
-.debug-panel { background: #111827; border-top: 2px solid #4a90d9; font-family: var(--mono); font-size: 11px; padding: 8px 12px; overflow-y: auto; max-height: 340px; }
+.debug-panel { background: #111827; border-top: 2px solid #4a90d9; font-family: var(--mono); font-size: 11px; padding: 8px 12px; overflow-y: auto; max-height: 340px; display: none; }
 .debug-section { margin-bottom: 10px; }
 .debug-title { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; }
 .debug-pipeline { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -162,16 +227,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .de-ERROR { color: #e94560; }
 .de-CAM_FRAME { color: #888; }
 
-/* === Tabs === */
-.tab-bar { display: flex; gap: 0; margin-left: 16px; }
-.tab-btn { font-family: var(--mono); font-size: 11px; padding: 6px 14px; border: 1px solid transparent; border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; background: transparent; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; transition: all 0.15s; position: relative; top: 1px; }
-.tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
-.tab-btn.active { background: var(--bg); color: var(--text); border-color: var(--card-border); }
-.tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
-.tab-content.active { display: flex; }
-.beta-pill { font-size: 8px; padding: 1px 5px; border-radius: 8px; background: rgba(240,173,78,0.2); color: var(--warning); margin-left: 6px; vertical-align: middle; font-weight: 700; letter-spacing: 0.5px; }
-
-/* === ASCII Tab === */
+/* === ASCII Tab (inside panel) === */
 .ascii-tab-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .ascii-controls-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--card); border-bottom: 1px solid var(--card-border); flex-wrap: wrap; flex-shrink: 0; }
 .ascii-controls-bar label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
@@ -192,13 +248,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 #asciiOutput { white-space: pre; line-height: 1.1; letter-spacing: 0.5px; color: #88cc88; text-align: center; user-select: text; font-family: var(--mono); }
 #asciiOutput.color-mode { color: unset; }
 
-/* === Responsive === */
-@media (max-width: 800px) {
-  .main { flex-direction: column; }
-  .panel-left { min-height: 220px; border-right: none; border-bottom: 1px solid var(--card-border); }
-  .panel-right { width: 100%; flex: 1; }
-  .debug-stats { grid-template-columns: repeat(2, 1fr); }
-}
 /* === Collision Alert === */
 .collision-alert { position: fixed; bottom: 12px; right: 12px; z-index: 9999; background: rgba(139,0,0,0.92); color: #fff; padding: 10px 14px; box-shadow: 0 2px 12px rgba(233,69,96,0.4); border-radius: 8px; border-left: 3px solid #e74c3c; animation: collisionFlash 0.3s ease-in-out; display: none; max-width: 340px; font-size: 12px; backdrop-filter: blur(8px); }
 .collision-alert.visible { display: block; }
@@ -207,12 +256,22 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .collision-alert .collision-images { display: flex; gap: 4px; margin: 6px 0; }
 .collision-alert .collision-images img { width: 80px; height: 60px; object-fit: cover; border: 1px solid rgba(255,255,255,0.3); border-radius: 3px; }
 .collision-alert .dismiss-btn { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: #fff; padding: 2px 12px; border-radius: 3px; cursor: pointer; font-family: var(--mono); font-size: 11px; margin-top: 4px; }
-.collision-alert .dismiss-btn:hover { background: rgba(255,255,255,0.3); }
 @keyframes collisionFlash { 0% { opacity: 0; transform: translateY(-20px); } 100% { opacity: 1; transform: translateY(0); } }
+
+/* === Responsive === */
+@media (max-width: 900px) {
+  .sidebar { position: fixed; left: 0; top: var(--statusbar-h); bottom: 0; z-index: 200; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+  .sidebar.collapsed { width: 0; overflow: hidden; }
+  .ctrl-layout { flex-direction: column; }
+  .ctrl-left { min-height: 220px; border-right: none; border-bottom: 1px solid var(--card-border); }
+  .ctrl-right { width: 100%; flex: 1; }
+  .debug-stats { grid-template-columns: repeat(2, 1fr); }
+}
 </style>
 </head>
 <body>
 
+<!-- === Collision Alert Overlay === -->
 <div id="collisionAlert" class="collision-alert">
   <h3>⚠ COLLISION DETECTED</h3>
   <p id="collisionInfo"></p>
@@ -221,30 +280,120 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <button class="dismiss-btn" onclick="dismissCollision()">Dismiss</button>
 </div>
 
-<div class="topbar">
-  <div class="logo">th3cl4w</div>
+<!-- === Status Bar === -->
+<div class="statusbar">
+  <span class="logo" onclick="document.querySelector('.sidebar').classList.toggle('collapsed')">th3cl4w</span>
+  <div class="sb-sep"></div>
   <div class="conn-dot" id="connDot"></div>
-  <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">DISCONNECTED</span>
-  <span id="simBadge" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:10px;font-family:var(--mono);font-weight:bold;cursor:pointer;background:#f59e0b;color:#000" title="Click to toggle SIM/LIVE mode">SIM</span>
-  <span class="conn-quality" id="connQuality"></span>
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="control">CONTROL</button>
-    <button class="tab-btn" data-tab="ascii">ASCII VIDEO <span class="beta-pill">BETA</span></button>
-    <button class="tab-btn" data-tab="factory">FACTORY 3D <span class="beta-pill">BETA</span></button>
-    <button class="tab-btn" data-tab="realworld">REAL WORLD 3D <span class="beta-pill">BETA</span></button>
-  </div>
-  <button class="btn" id="btnDebug" style="font-size:10px;padding:3px 8px">🔧 DEBUG</button>
-  <button class="btn" id="btnCalibrateViz" style="font-size:10px;padding:3px 8px" title="Calibrate arm visualization using camera">📐 CALIBRATE VIZ</button>
-  <a href="/telemetry" class="btn" style="font-size:10px;padding:3px 8px;text-decoration:none">📊 TELEMETRY</a>
-  <div class="topbar-spacer"></div>
+  <span id="connLabel" style="font-size:10px">DISCONNECTED</span>
+  <span id="connQuality"></span>
+  <span id="simBadge" title="Click to toggle SIM/LIVE mode">SIM</span>
+  <div class="sb-sep"></div>
   <div class="badge" id="badgePower">PWR OFF</div>
   <div class="badge" id="badgeEnabled">DISABLED</div>
   <div class="badge" id="badgeError">NO ERR</div>
+  <div class="sb-sep"></div>
+  <span id="taskStatus"></span>
+  <div class="spacer"></div>
+  <span style="font-size:10px;color:var(--text-dim)" id="camStatusBar">CAM: --</span>
 </div>
 
-<div class="tab-content active" id="tabControl">
-<div class="main">
-  <div class="panel-left">
+<!-- === Main Layout === -->
+<div class="app-layout">
+
+<!-- === Sidebar Navigation === -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-toggle" onclick="this.parentElement.classList.toggle('collapsed')" title="Toggle sidebar">☰</div>
+
+  <!-- 🎮 Control -->
+  <div class="nav-group open" data-group="control">
+    <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>🎮 Control</span></div>
+    <div class="nav-items">
+      <div class="nav-item active" data-panel="control" onclick="showPanel(this)"><span class="nav-icon">🦾</span> <span class="nav-label">Arm Control</span></div>
+      <div class="nav-item" data-panel="cameras" onclick="showPanel(this)"><span class="nav-icon">📷</span> <span class="nav-label">Cameras</span></div>
+    </div>
+  </div>
+
+  <!-- 🎯 Pick & Place -->
+  <div class="nav-group" data-group="pick">
+    <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>🎯 Pick & Place</span></div>
+    <div class="nav-items">
+      <div class="nav-item" data-panel="visual-servo" onclick="showPanel(this)"><span class="nav-icon">🎯</span> <span class="nav-label">Visual Servo</span></div>
+      <div class="nav-item" data-panel="multiview-pick" onclick="showPanel(this)"><span class="nav-icon">🤏</span> <span class="nav-label">Multi-view Pick</span></div>
+      <div class="nav-item" data-panel="pick-planner" onclick="showPanel(this)"><span class="nav-icon">📐</span> <span class="nav-label">Pick Planner</span></div>
+      <div class="nav-item" data-panel="vla" onclick="showPanel(this)"><span class="nav-icon">🧠</span> <span class="nav-label">VLA Agent</span></div>
+    </div>
+  </div>
+
+  <!-- 🗺️ Mapping -->
+  <div class="nav-group" data-group="mapping">
+    <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>🗺️ Mapping</span></div>
+    <div class="nav-items">
+      <div class="nav-item" data-panel="bifocal" onclick="showPanel(this)"><span class="nav-icon">🔍</span> <span class="nav-label">Bifocal/Workspace</span></div>
+      <div class="nav-item" data-panel="scan3d" onclick="showPanel(this)"><span class="nav-icon">📡</span> <span class="nav-label">3D Scan</span></div>
+    </div>
+  </div>
+
+  <!-- 🔧 Calibration -->
+  <div class="nav-group" data-group="calib">
+    <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>🔧 Calibration</span></div>
+    <div class="nav-items">
+      <div class="nav-item" data-panel="calibration" onclick="showPanel(this)"><span class="nav-icon">🎯</span> <span class="nav-label">Calibration</span></div>
+    </div>
+  </div>
+
+  <!-- 📊 Telemetry -->
+  <div class="nav-group" data-group="telemetry">
+    <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>📊 Telemetry</span></div>
+    <div class="nav-items">
+      <div class="nav-item" data-panel="debug" onclick="showPanel(this)"><span class="nav-icon">🔧</span> <span class="nav-label">Debug Pipeline</span></div>
+      <div class="nav-item" data-panel="diagnostics" onclick="showPanel(this)"><span class="nav-icon">🩺</span> <span class="nav-label">Diagnostics</span></div>
+      <div class="nav-item" data-panel="collision-history" onclick="showPanel(this)"><span class="nav-icon">💥</span> <span class="nav-label">Collision History</span></div>
+      <div class="nav-item ext" onclick="window.open('/telemetry','_blank')"><span class="nav-icon">📊</span> <span class="nav-label">Telemetry Page</span></div>
+    </div>
+  </div>
+
+  <!-- 🤖 Vision -->
+  <div class="nav-group" data-group="vision">
+    <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>🤖 Vision</span></div>
+    <div class="nav-items">
+      <div class="nav-item" data-panel="locate" onclick="showPanel(this)"><span class="nav-icon">🔎</span> <span class="nav-label">Object Locator</span></div>
+      <div class="nav-item" data-panel="scene-analysis" onclick="showPanel(this)"><span class="nav-icon">👁</span> <span class="nav-label">Scene Analysis</span></div>
+      <div class="nav-item" data-panel="claw-prediction" onclick="showPanel(this)"><span class="nav-icon">🦀</span> <span class="nav-label">Claw Prediction</span></div>
+    </div>
+  </div>
+
+  <!-- 🎬 3D Views -->
+  <div class="nav-group" data-group="3d">
+    <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>🎬 3D Views</span></div>
+    <div class="nav-items">
+      <div class="nav-item" data-panel="ascii" onclick="showPanel(this)"><span class="nav-icon">▓</span> <span class="nav-label">ASCII Video</span></div>
+      <div class="nav-item" data-panel="factory" onclick="showPanel(this)"><span class="nav-icon">🏭</span> <span class="nav-label">Factory 3D</span></div>
+      <div class="nav-item" data-panel="realworld" onclick="showPanel(this)"><span class="nav-icon">🌍</span> <span class="nav-label">Real World 3D</span></div>
+      <div class="nav-item ext" onclick="window.open('/map3d.html','_blank')"><span class="nav-icon">🗺️</span> <span class="nav-label">Map 3D</span></div>
+      <div class="nav-item ext" onclick="window.open('/scan3d.html','_blank')"><span class="nav-icon">☁️</span> <span class="nav-label">Scan Viewer</span></div>
+      <div class="nav-item ext" onclick="window.open('http://'+location.hostname+':8084','_blank')"><span class="nav-icon">📺</span> <span class="nav-label">ASCII Server</span></div>
+    </div>
+  </div>
+
+  <!-- ⚙️ Settings -->
+  <div class="nav-group" data-group="settings">
+    <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>⚙️ Settings</span></div>
+    <div class="nav-items">
+      <div class="nav-item" data-panel="settings" onclick="showPanel(this)"><span class="nav-icon">⚙️</span> <span class="nav-label">Settings</span></div>
+    </div>
+  </div>
+</nav>
+
+<!-- === Content Area === -->
+<div class="content">
+
+<!-- ============================================================ -->
+<!-- PANEL: Arm Control (original control tab)                     -->
+<!-- ============================================================ -->
+<div class="panel active" id="panel-control">
+<div class="ctrl-layout">
+  <div class="ctrl-left">
     <div class="viz-container">
       <canvas id="armCanvas" width="600" height="500"></canvas>
     </div>
@@ -286,7 +435,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     </div>
   </div>
 
-  <div class="panel-right">
+  <div class="ctrl-right">
     <div class="controls">
       <div class="section-title">Joint Control (6 DOF)</div>
       <div id="jointSliders"></div>
@@ -307,7 +456,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           <button class="btn" id="btnPowerOff">Power Off</button>
           <button class="btn" id="btnEnable">Enable</button>
           <button class="btn" id="btnDisable">Disable</button>
-          <button class="btn" id="btnResetEnable" style="border-color:var(--warning);color:var(--warning)">Reset + Enable</button>
+          <button class="btn warn" id="btnResetEnable">Reset + Enable</button>
         </div>
       </div>
 
@@ -317,7 +466,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           <button class="btn" id="btnTaskHome">Home</button>
           <button class="btn" id="btnTaskReady">Ready</button>
           <button class="btn" id="btnTaskWave">Wave</button>
-          <button class="btn" id="btnTaskStop" style="border-color:var(--warning);color:var(--warning)">Stop Task</button>
+          <button class="btn warn" id="btnTaskStop">Stop Task</button>
         </div>
       </div>
 
@@ -346,12 +495,11 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <button class="btn" id="btnRawSend">Send</button>
       </div>
 
-      <!-- Calibration Comparison Section -->
       <div style="margin-top:10px;padding:8px;background:var(--card);border:1px solid var(--card-border);border-radius:4px;">
         <div class="section-title">LLM/CV Calibration</div>
         <div style="display:flex;gap:6px;margin-top:4px;">
           <button class="btn" id="btnStartCalib" style="flex:1">START CALIBRATION</button>
-          <button class="btn" id="btnStopCalib" style="flex:1;border-color:var(--warning);color:var(--warning)" disabled>STOP</button>
+          <button class="btn warn" id="btnStopCalib" style="flex:1" disabled>STOP</button>
         </div>
         <div id="calibProgress" style="display:none;margin-top:6px;font-size:11px;color:var(--text-dim);">
           <div>Pose <span id="calibCurrent">0</span> / <span id="calibTotal">20</span></div>
@@ -361,19 +509,460 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         </div>
         <div id="calibResults" style="display:none;margin-top:6px;font-size:11px;color:var(--text-dim);max-height:150px;overflow-y:auto;white-space:pre-wrap;font-family:var(--mono);"></div>
       </div>
-
     </div>
   </div>
 </div>
-
 <div class="log-panel">
   <div class="log-title">Action Log</div>
   <div class="log-scroll" id="logScroll"></div>
 </div>
+</div><!-- /panel-control -->
 
-</div><!-- /tabControl -->
+<!-- ============================================================ -->
+<!-- PANEL: Cameras (dedicated full-page camera view)              -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-cameras">
+  <div class="panel-body">
+    <div class="panel-header">📷 Camera Feeds</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:12px;">
+      <div class="panel-card" id="camFullCard0"><h3>Camera 0</h3><img id="camFull0" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 0"><div style="margin-top:6px;display:flex;gap:6px;"><button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/0`,'_blank')">📷 Snap</button></div></div>
+      <div class="panel-card" id="camFullCard1"><h3>Camera 1</h3><img id="camFull1" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 1"><div style="margin-top:6px;display:flex;gap:6px;"><button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/1`,'_blank')">📷 Snap</button></div></div>
+      <div class="panel-card" id="camFullCard2"><h3>Camera 2</h3><img id="camFull2" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 2"><div style="margin-top:6px;display:flex;gap:6px;"><button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/2`,'_blank')">📷 Snap</button></div></div>
+    </div>
+  </div>
+</div>
 
-<div class="tab-content" id="tabAscii">
+<!-- ============================================================ -->
+<!-- PANEL: Visual Servo                                           -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-visual-servo">
+  <div class="panel-body">
+    <div class="panel-header">🎯 Visual Servo</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>Overhead Servo</h3>
+        <div class="status-indicator stopped" id="vsOverheadStatus">STOPPED</div>
+        <div class="form-row" style="margin-top:8px;">
+          <label>Target X</label><input type="number" id="vsOhX" value="0" step="0.01">
+        </div>
+        <div class="form-row">
+          <label>Target Y</label><input type="number" id="vsOhY" value="0" step="0.01">
+        </div>
+        <div class="form-row">
+          <label>Camera</label>
+          <select id="vsOhCam"><option value="1">Camera 1 (Overhead)</option><option value="0">Camera 0</option><option value="2">Camera 2</option></select>
+        </div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn primary" onclick="vsStart('overhead')">▶ START</button>
+          <button class="btn danger" onclick="vsStop('overhead')">⏹ STOP</button>
+          <button class="btn" onclick="vsStatus('overhead')">↻ STATUS</button>
+        </div>
+        <div class="result-box" id="vsOverheadResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>Approach Servo</h3>
+        <div class="status-indicator stopped" id="vsApproachStatus">STOPPED</div>
+        <div class="form-row" style="margin-top:8px;">
+          <label>Target X</label><input type="number" id="vsApX" value="0" step="0.01">
+        </div>
+        <div class="form-row">
+          <label>Target Y</label><input type="number" id="vsApY" value="0" step="0.01">
+        </div>
+        <div class="form-row">
+          <label>Camera</label>
+          <select id="vsApCam"><option value="2">Camera 2 (Arm)</option><option value="0">Camera 0</option><option value="1">Camera 1</option></select>
+        </div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn primary" onclick="vsStart('approach')">▶ START</button>
+          <button class="btn danger" onclick="vsStop('approach')">⏹ STOP</button>
+          <button class="btn" onclick="vsStatus('approach')">↻ STATUS</button>
+        </div>
+        <div class="result-box" id="vsApproachResult" style="margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Multi-view Pick                                        -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-multiview-pick">
+  <div class="panel-body">
+    <div class="panel-header">🤏 Multi-view Pick Pipeline</div>
+    <div class="panel-card">
+      <h3>Pipeline Status</h3>
+      <div class="status-indicator stopped" id="mvpStatus">IDLE</div>
+      <div class="phase-display" id="mvpPhases" style="margin-top:8px;">
+        <div class="phase-chip" data-phase="detect">1. Detect</div>
+        <div class="phase-chip" data-phase="plan">2. Plan</div>
+        <div class="phase-chip" data-phase="approach">3. Approach</div>
+        <div class="phase-chip" data-phase="servo">4. Servo</div>
+        <div class="phase-chip" data-phase="grasp">5. Grasp</div>
+        <div class="phase-chip" data-phase="retreat">6. Retreat</div>
+      </div>
+      <div class="form-row" style="margin-top:8px;">
+        <label>Target</label><input type="text" id="mvpTarget" placeholder="Object to pick (e.g., red block)">
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn primary" onclick="mvpStart()">▶ START PICK</button>
+        <button class="btn danger" onclick="mvpStop()">⏹ ABORT</button>
+        <button class="btn" onclick="mvpRefresh()">↻ STATUS</button>
+      </div>
+      <div class="result-box" id="mvpResult" style="margin-top:8px;display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Pick Planner                                           -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-pick-planner">
+  <div class="panel-body">
+    <div class="panel-header">📐 Pick Planner</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>Detect Objects</h3>
+        <div class="form-row">
+          <label>Camera</label>
+          <select id="ppDetectCam"><option value="1">Camera 1</option><option value="0">Camera 0</option><option value="2">Camera 2</option></select>
+        </div>
+        <div class="btn-row" style="margin-top:6px;">
+          <button class="btn primary" onclick="ppDetect()">🔍 DETECT</button>
+        </div>
+        <div class="result-box" id="ppDetectResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>Plan Pick</h3>
+        <div class="form-row">
+          <label>Target</label><input type="text" id="ppTarget" placeholder="Object name or ID">
+        </div>
+        <div class="btn-row" style="margin-top:6px;">
+          <button class="btn primary" onclick="ppPlan()">📋 PLAN</button>
+          <button class="btn" onclick="ppFromPos()">📍 FROM POSITION</button>
+        </div>
+        <div class="result-box" id="ppPlanResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>Camera-Arm Calibration</h3>
+        <button class="btn primary" onclick="ppCalibrate()">🎯 CALIBRATE</button>
+        <div class="result-box" id="ppCalibResult" style="margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: VLA Agent                                              -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-vla">
+  <div class="panel-body">
+    <div class="panel-header">🧠 Vision-Language-Action Agent</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>VLA Status</h3>
+        <div class="status-indicator stopped" id="vlaStatus">UNKNOWN</div>
+        <button class="btn" onclick="vlaRefreshStatus()" style="margin-top:6px;">↻ REFRESH</button>
+      </div>
+      <div class="panel-card">
+        <h3>Execute Action</h3>
+        <div class="form-row">
+          <label>Prompt</label><input type="text" id="vlaPrompt" placeholder="Pick up the red object" style="flex:2">
+        </div>
+        <div class="form-row">
+          <label>Camera</label>
+          <select id="vlaCam"><option value="1">Camera 1</option><option value="0">Camera 0</option><option value="2">Camera 2</option></select>
+        </div>
+        <div class="btn-row" style="margin-top:6px;">
+          <button class="btn primary" onclick="vlaAct()">🚀 ACT</button>
+        </div>
+        <div class="result-box" id="vlaActResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>Demonstrations</h3>
+        <div class="form-row">
+          <label>Task</label><input type="text" id="vlaDemoTask" placeholder="Task name">
+        </div>
+        <div class="btn-row" style="margin-top:6px;">
+          <button class="btn primary" onclick="vlaDemoStart()">⏺ COLLECT</button>
+          <button class="btn danger" onclick="vlaDemoStop()">⏹ STOP</button>
+          <button class="btn" onclick="vlaDemoList()">📋 LIST</button>
+        </div>
+        <div class="result-box" id="vlaDemoResult" style="margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Bifocal / Workspace Mapping                            -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-bifocal">
+  <div class="panel-body">
+    <div class="panel-header">🔍 Bifocal / Workspace Mapping</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>Bifocal Mode</h3>
+        <div class="status-indicator stopped" id="bifocalStatus">OFF</div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn primary" onclick="bifocalToggle(true)">ENABLE</button>
+          <button class="btn danger" onclick="bifocalToggle(false)">DISABLE</button>
+        </div>
+      </div>
+      <div class="panel-card">
+        <h3>Workspace Calibration</h3>
+        <div class="btn-row">
+          <button class="btn primary" onclick="bifocalCalibrate()">🎯 CALIBRATE</button>
+          <button class="btn" onclick="bifocalPreview()">👁 PREVIEW</button>
+        </div>
+        <div class="result-box" id="bifocalResult" style="margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: 3D Scan                                                -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-scan3d">
+  <div class="panel-body">
+    <div class="panel-header">📡 3D Scan</div>
+    <div class="panel-card">
+      <h3>Scan Control</h3>
+      <div class="status-indicator stopped" id="scan3dStatus">IDLE</div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn primary" onclick="scan3dStart()">▶ START SCAN</button>
+        <button class="btn danger" onclick="scan3dStop()">⏹ STOP</button>
+        <button class="btn" onclick="scan3dRefresh()">↻ STATUS</button>
+      </div>
+      <div class="result-box" id="scan3dResult" style="margin-top:8px;display:none;"></div>
+    </div>
+    <div class="panel-card">
+      <h3>Scan History</h3>
+      <button class="btn" onclick="scan3dList()">📋 LIST SCANS</button>
+      <div class="result-box" id="scan3dListResult" style="margin-top:8px;display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Calibration Dashboard                                  -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-calibration">
+  <div class="panel-body">
+    <div class="panel-header">🔧 Calibration Dashboard</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>Calibration Runs</h3>
+        <div class="btn-row">
+          <button class="btn primary" onclick="calibStartRun('overhead')">▶ OVERHEAD</button>
+          <button class="btn primary" onclick="calibStartRun('side')">▶ SIDE</button>
+          <button class="btn danger" onclick="calibStopRun()">⏹ STOP</button>
+        </div>
+        <div class="status-indicator stopped" id="calibRunStatus" style="margin-top:8px;">IDLE</div>
+        <div class="result-box" id="calibRunResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>Calibration Results</h3>
+        <div class="btn-row">
+          <button class="btn" onclick="calibListResults()">📋 LIST</button>
+          <button class="btn" onclick="calibViewReport()">📊 REPORT</button>
+        </div>
+        <div class="result-box" id="calibResultsBox" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>Frame Viewer</h3>
+        <div class="form-row">
+          <label>Session</label><input type="text" id="calibFrameSession" placeholder="Session ID">
+        </div>
+        <button class="btn" onclick="calibViewFrames()" style="margin-top:6px;">🖼 VIEW FRAMES</button>
+        <div id="calibFrameContainer" style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>Extrinsics</h3>
+        <button class="btn" onclick="calibViewExtrinsics()">📐 VIEW</button>
+        <div class="result-box" id="calibExtrinsicsResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>Viz Calibration</h3>
+        <button class="btn primary" id="btnCalibrateViz" title="Move arm through ~20 poses to calibrate visualization">📐 CALIBRATE VIZ</button>
+        <div class="result-box" id="vizCalibResult" style="margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Debug Pipeline                                         -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-debug">
+  <div class="panel-body" style="padding:0;">
+    <div style="padding:12px 16px;display:flex;align-items:center;gap:8px;">
+      <span class="panel-header" style="margin:0;">🔧 Debug Pipeline</span>
+      <button class="btn" id="btnDebug">ENABLE</button>
+    </div>
+    <div class="debug-panel" id="debugPanel">
+      <div class="debug-section">
+        <div class="debug-title">Pipeline</div>
+        <div class="debug-pipeline" id="debugPipeline">
+          <div class="pipe-stage" data-stage="CMD_SENT"><div class="pipe-dot"></div><div class="pipe-label">CMD</div><div class="pipe-latency" id="plCmd">—</div></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-stage" data-stage="DDS_PUBLISH"><div class="pipe-dot"></div><div class="pipe-label">DDS TX</div><div class="pipe-latency" id="plDdsTx">—</div></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-stage" data-stage="DDS_RECEIVE"><div class="pipe-dot"></div><div class="pipe-label">ARM RX</div><div class="pipe-latency" id="plArmRx">—</div></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-stage" data-stage="CMD_EXEC"><div class="pipe-dot"></div><div class="pipe-label">EXEC</div><div class="pipe-latency" id="plExec">—</div></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-stage" data-stage="STATE_UPDATE"><div class="pipe-dot"></div><div class="pipe-label">STATE</div><div class="pipe-latency" id="plState">—</div></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-stage" data-stage="WS_SEND"><div class="pipe-dot"></div><div class="pipe-label">WS TX</div><div class="pipe-latency" id="plWsTx">—</div></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-stage" data-stage="UI"><div class="pipe-dot"></div><div class="pipe-label">UI</div><div class="pipe-latency" id="plUi">—</div></div>
+        </div>
+      </div>
+      <div class="debug-section">
+        <div class="debug-title">Stats</div>
+        <div class="debug-stats" id="debugStats">
+          <div class="stat-group"><div class="stat-header">DDS</div><div class="stat-row"><span>TX rate</span><span id="dsTxRate">N/A</span></div><div class="stat-row"><span>RX rate</span><span id="dsRxRate">N/A</span></div><div class="stat-row"><span>Last RX age</span><span id="dsRxAge">N/A</span></div></div>
+          <div class="stat-group"><div class="stat-header">Cameras</div><div class="stat-row"><span>C0 FPS</span><span id="dsC0Fps">N/A</span></div><div class="stat-row"><span>C1 FPS</span><span id="dsC1Fps">N/A</span></div><div class="stat-row"><span>Motion</span><span id="dsMotion">N/A</span></div></div>
+          <div class="stat-group"><div class="stat-header">WebSocket</div><div class="stat-row"><span>Send rate</span><span id="dsWsSend">N/A</span></div><div class="stat-row"><span>Latency</span><span id="dsWsLat">N/A</span></div><div class="stat-row"><span>RX interval</span><span id="dsWsRxInt">N/A</span></div></div>
+          <div class="stat-group"><div class="stat-header">Latency</div><div class="stat-row"><span>Cmd→Ack</span><span id="dsLatCmdAck">N/A</span></div><div class="stat-row"><span>Ack→Exec</span><span id="dsLatAckExec">N/A</span></div><div class="stat-row"><span>End-to-end</span><span id="dsLatE2e">N/A</span></div></div>
+        </div>
+      </div>
+      <div class="debug-section">
+        <div class="debug-title">Event Stream</div>
+        <div class="debug-events" id="debugEvents"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Diagnostics                                            -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-diagnostics">
+  <div class="panel-body">
+    <div class="panel-header">🩺 Diagnostics</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>Feedback Monitor</h3>
+        <button class="btn primary" onclick="diagFeedback()">📡 QUERY</button>
+        <div class="result-box" id="diagFeedbackResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>Smoother Status</h3>
+        <button class="btn primary" onclick="diagSmoother()">📡 QUERY</button>
+        <div class="result-box" id="diagSmootherResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>GPU Status</h3>
+        <button class="btn primary" onclick="diagGpu()">📡 QUERY</button>
+        <div class="result-box" id="diagGpuResult" style="margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Collision History                                       -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-collision-history">
+  <div class="panel-body">
+    <div class="panel-header">💥 Collision History</div>
+    <div class="panel-card">
+      <div class="btn-row">
+        <button class="btn primary" onclick="collisionHistoryLoad()">📋 LOAD HISTORY</button>
+        <button class="btn danger" onclick="collisionHistoryClear()">🗑 CLEAR</button>
+      </div>
+      <div class="result-box" id="collisionHistoryResult" style="margin-top:8px;display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Object Locator                                         -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-locate">
+  <div class="panel-body">
+    <div class="panel-header">🔎 Object Locator</div>
+    <div class="panel-card">
+      <div class="form-row">
+        <label>Target</label><input type="text" id="locateTarget" placeholder="Object to find (e.g., red ball)">
+      </div>
+      <div class="form-row">
+        <label>Camera</label>
+        <select id="locateCam"><option value="1">Camera 1</option><option value="0">Camera 0</option><option value="2">Camera 2</option></select>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn primary" onclick="locateObject()">🔍 LOCATE</button>
+      </div>
+      <div class="result-box" id="locateResult" style="margin-top:8px;display:none;"></div>
+      <div style="margin-top:8px;">
+        <img id="locatePreview" style="max-width:100%;border-radius:4px;display:none;" alt="Location preview">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Scene Analysis                                         -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-scene-analysis">
+  <div class="panel-body">
+    <div class="panel-header">👁 Scene Analysis</div>
+    <div class="panel-card">
+      <div class="form-row">
+        <label>Camera</label>
+        <select id="sceneCam"><option value="1">Camera 1</option><option value="0">Camera 0</option><option value="2">Camera 2</option></select>
+      </div>
+      <div class="form-row">
+        <label>Prompt</label><input type="text" id="scenePrompt" placeholder="What do you see? (optional)">
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn primary" onclick="sceneAnalyze()">👁 ANALYZE</button>
+      </div>
+      <div class="result-box" id="sceneResult" style="margin-top:8px;display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Claw Prediction                                        -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-claw-prediction">
+  <div class="panel-body">
+    <div class="panel-header">🦀 Claw Prediction</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>Toggle</h3>
+        <div class="status-indicator stopped" id="clawPredStatus">OFF</div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn primary" onclick="clawPredToggle(true)">ENABLE</button>
+          <button class="btn danger" onclick="clawPredToggle(false)">DISABLE</button>
+        </div>
+      </div>
+      <div class="panel-card">
+        <h3>HSV Config</h3>
+        <div class="form-row"><label>H Low</label><input type="number" id="cpHL" value="0" min="0" max="179"></div>
+        <div class="form-row"><label>H High</label><input type="number" id="cpHH" value="179" min="0" max="179"></div>
+        <div class="form-row"><label>S Low</label><input type="number" id="cpSL" value="0" min="0" max="255"></div>
+        <div class="form-row"><label>S High</label><input type="number" id="cpSH" value="255" min="0" max="255"></div>
+        <div class="form-row"><label>V Low</label><input type="number" id="cpVL" value="0" min="0" max="255"></div>
+        <div class="form-row"><label>V High</label><input type="number" id="cpVH" value="255" min="0" max="255"></div>
+        <button class="btn primary" onclick="clawPredSaveHSV()" style="margin-top:6px;">💾 SAVE HSV</button>
+      </div>
+      <div class="panel-card">
+        <h3>ROI Config</h3>
+        <button class="btn" onclick="clawPredGetROI()">📋 GET ROI</button>
+        <div class="result-box" id="cpRoiResult" style="margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: ASCII Video                                            -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-ascii">
   <div class="ascii-tab-wrap">
     <div class="ascii-controls-bar">
       <label>CHARS</label>
@@ -405,52 +994,113 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       </div>
     </div>
   </div>
-</div><!-- /tabAscii -->
+</div>
 
-<div class="tab-content" id="tabFactory" style="position:relative;background:#000;">
+<!-- ============================================================ -->
+<!-- PANEL: Factory 3D                                             -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-factory" style="position:relative;background:#000;">
   <canvas id="factoryCanvas" tabindex="0" style="display:block;width:100%;height:100%;image-rendering:pixelated;outline:none;"></canvas>
-</div><!-- /tabFactory -->
+</div>
 
-<div class="tab-content" id="tabRealworld" style="position:relative;background:#000;">
+<!-- ============================================================ -->
+<!-- PANEL: Real World 3D                                          -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-realworld" style="position:relative;background:#000;">
   <canvas id="realworldCanvas" tabindex="0" style="display:block;width:100%;height:100%;image-rendering:pixelated;outline:none;"></canvas>
-</div><!-- /tabRealworld -->
+</div>
 
-<div class="debug-panel" id="debugPanel" style="display:none">
-  <div class="debug-section">
-    <div class="debug-title">Pipeline</div>
-    <div class="debug-pipeline" id="debugPipeline">
-      <div class="pipe-stage" data-stage="CMD_SENT"><div class="pipe-dot"></div><div class="pipe-label">CMD</div><div class="pipe-latency" id="plCmd">—</div></div>
-      <div class="pipe-arrow">→</div>
-      <div class="pipe-stage" data-stage="DDS_PUBLISH"><div class="pipe-dot"></div><div class="pipe-label">DDS TX</div><div class="pipe-latency" id="plDdsTx">—</div></div>
-      <div class="pipe-arrow">→</div>
-      <div class="pipe-stage" data-stage="DDS_RECEIVE"><div class="pipe-dot"></div><div class="pipe-label">ARM RX</div><div class="pipe-latency" id="plArmRx">—</div></div>
-      <div class="pipe-arrow">→</div>
-      <div class="pipe-stage" data-stage="CMD_EXEC"><div class="pipe-dot"></div><div class="pipe-label">EXEC</div><div class="pipe-latency" id="plExec">—</div></div>
-      <div class="pipe-arrow">→</div>
-      <div class="pipe-stage" data-stage="STATE_UPDATE"><div class="pipe-dot"></div><div class="pipe-label">STATE</div><div class="pipe-latency" id="plState">—</div></div>
-      <div class="pipe-arrow">→</div>
-      <div class="pipe-stage" data-stage="WS_SEND"><div class="pipe-dot"></div><div class="pipe-label">WS TX</div><div class="pipe-latency" id="plWsTx">—</div></div>
-      <div class="pipe-arrow">→</div>
-      <div class="pipe-stage" data-stage="UI"><div class="pipe-dot"></div><div class="pipe-label">UI</div><div class="pipe-latency" id="plUi">—</div></div>
+<!-- ============================================================ -->
+<!-- PANEL: Settings                                               -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-settings">
+  <div class="panel-body">
+    <div class="panel-header">⚙️ Settings</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>Simulator</h3>
+        <div class="status-indicator stopped" id="simStatus">UNKNOWN</div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn primary" onclick="simToggle()">🔄 TOGGLE SIM/LIVE</button>
+          <button class="btn" onclick="simRefresh()">↻ STATUS</button>
+        </div>
+      </div>
+      <div class="panel-card">
+        <h3>GPU Status</h3>
+        <button class="btn primary" onclick="diagGpu()">📡 QUERY GPU</button>
+        <div class="result-box" id="settingsGpuResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card">
+        <h3>External Pages</h3>
+        <div class="btn-row">
+          <a href="/telemetry" class="btn" target="_blank" style="text-decoration:none">📊 Telemetry</a>
+          <a href="/scan3d.html" class="btn" target="_blank" style="text-decoration:none">☁️ 3D Scan</a>
+          <a href="/map3d.html" class="btn" target="_blank" style="text-decoration:none">🗺️ Map 3D</a>
+        </div>
+      </div>
     </div>
-  </div>
-  <div class="debug-section">
-    <div class="debug-title">Stats</div>
-    <div class="debug-stats" id="debugStats">
-      <div class="stat-group"><div class="stat-header">DDS</div><div class="stat-row"><span>TX rate</span><span id="dsTxRate">N/A</span></div><div class="stat-row"><span>RX rate</span><span id="dsRxRate">N/A</span></div><div class="stat-row"><span>Last RX age</span><span id="dsRxAge">N/A</span></div></div>
-      <div class="stat-group"><div class="stat-header">Cameras</div><div class="stat-row"><span>C0 FPS</span><span id="dsC0Fps">N/A</span></div><div class="stat-row"><span>C1 FPS</span><span id="dsC1Fps">N/A</span></div><div class="stat-row"><span>Motion</span><span id="dsMotion">N/A</span></div></div>
-      <div class="stat-group"><div class="stat-header">WebSocket</div><div class="stat-row"><span>Send rate</span><span id="dsWsSend">N/A</span></div><div class="stat-row"><span>Latency</span><span id="dsWsLat">N/A</span></div><div class="stat-row"><span>RX interval</span><span id="dsWsRxInt">N/A</span></div></div>
-      <div class="stat-group"><div class="stat-header">Latency</div><div class="stat-row"><span>Cmd→Ack</span><span id="dsLatCmdAck">N/A</span></div><div class="stat-row"><span>Ack→Exec</span><span id="dsLatAckExec">N/A</span></div><div class="stat-row"><span>End-to-end</span><span id="dsLatE2e">N/A</span></div></div>
-    </div>
-  </div>
-  <div class="debug-section">
-    <div class="debug-title">Event Stream</div>
-    <div class="debug-events" id="debugEvents"></div>
   </div>
 </div>
 
+</div><!-- /content -->
+</div><!-- /app-layout -->
+
 <script>
 'use strict';
+
+// ============================================================
+//  NAVIGATION
+// ============================================================
+
+function toggleNavGroup(el) {
+  el.parentElement.classList.toggle('open');
+}
+
+let _activePanel = 'control';
+
+function showPanel(navItem) {
+  const panelId = navItem.dataset.panel;
+  if (!panelId) return;
+
+  // Deactivate previous
+  const prevPanel = _activePanel;
+  if (prevPanel === 'ascii' && typeof asciiDisconnect === 'function') asciiDisconnect();
+  if (prevPanel === 'factory' && typeof fw_deactivate === 'function') fw_deactivate();
+  if (prevPanel === 'realworld' && typeof rw_deactivate === 'function') rw_deactivate();
+
+  // Update nav
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  navItem.classList.add('active');
+
+  // Update panels
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById('panel-' + panelId);
+  if (panel) panel.classList.add('active');
+  _activePanel = panelId;
+
+  // Activate new panel
+  setTimeout(() => {
+    if (panelId === 'control') resizeCanvas();
+    if (panelId === 'ascii' && typeof asciiConnect === 'function') asciiConnect();
+    if (panelId === 'factory' && typeof fw_activate === 'function') fw_activate();
+    if (panelId === 'realworld' && typeof rw_activate === 'function') rw_activate();
+    if (panelId === 'cameras') refreshCameraPanel();
+    if (panelId === 'debug' && debugOn) pollDebug();
+  }, 100);
+}
+
+function refreshCameraPanel() {
+  for (let i = 0; i < 3; i++) {
+    const img = document.getElementById('camFull' + i);
+    if (img) img.src = `http://${location.hostname}:8081/snap/${i}?t=` + Date.now();
+  }
+}
+
+// Compat: keep window._activeTab for ascii-video.js etc
+Object.defineProperty(window, '_activeTab', {
+  get() { return _activePanel; },
+  set(v) { /* ignore */ }
+});
 
 // ============================================================
 //  CONSTANTS & SPECS
@@ -465,102 +1115,50 @@ const JOINT_SPECS = [
   { name: 'J5', min: -135, max: 135, label: 'Wrist Roll',  type: 'roll'  },
 ];
 
-// D1 link lengths in mm for side-view FK (legacy fallback)
-let LINKS_MM = {
-  base: 80, shoulder: 170, elbow: 170, wrist1: 60, wrist2: 60, end: 50
-};
+let LINKS_MM = { base: 80, shoulder: 170, elbow: 170, wrist1: 60, wrist2: 60, end: 50 };
+let CAM_PARAMS = null;
+let USE_3D_PROJECTION = false;
 
-let CAM_PARAMS = null; // {fx, fy, cx, cy, rx, ry, rz, tx, ty, tz}
-let USE_3D_PROJECTION = false; // true when camera calibration is loaded
-
-// --- Geometric FK (empirically verified against real D1 arm) ---
-// Returns 5 key positions [x,y,z] in meters: base, shoulder, elbow, wrist, EE
-// Coordinate frame: Z=up, X=forward (arm extends +X at home), Y=left
-// Joint conventions (from empirical mapping):
-//   J0: base yaw (+CCW from above)
-//   J1: shoulder pitch (+UP/backward, applied as -Ry)
-//   J2: elbow pitch (+straightens arm, applied as -Ry from 90° home bend)
-//   J3: forearm roll (+CW looking down arm)
-//   J4: wrist pitch (+gripper down, applied as +Ry)
-//   J5: gripper roll (+CW from above)
 function fkPositions(jointsDeg) {
   const D = Math.PI / 180;
   const j = jointsDeg.map(v => (v || 0) * D);
   const d0 = 0.1215, L1 = 0.2085, L2 = 0.2085, L3 = 0.1130;
-
-  // Rotation helpers (return 3x3 as flat [9])
   function rz(a) { const c=Math.cos(a),s=Math.sin(a); return [c,-s,0, s,c,0, 0,0,1]; }
   function ry(a) { const c=Math.cos(a),s=Math.sin(a); return [c,0,s, 0,1,0, -s,0,c]; }
-  function mul(A,B) {
-    const C = new Array(9);
-    for (let r=0;r<3;r++) for (let c=0;c<3;c++)
-      C[r*3+c] = A[r*3]*B[c] + A[r*3+1]*B[3+c] + A[r*3+2]*B[6+c];
-    return C;
-  }
-  function apply(R, v) {
-    return [R[0]*v[0]+R[1]*v[1]+R[2]*v[2],
-            R[3]*v[0]+R[4]*v[1]+R[5]*v[2],
-            R[6]*v[0]+R[7]*v[1]+R[8]*v[2]];
-  }
-  function vadd(a,b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
-
-  const base = [0, 0, 0];
-  const shoulder = [0, 0, d0];
-
-  let R = mul(rz(j[0]), ry(j[1]));                // J0 yaw + J1 pitch (sign flipped)
-  const elbow = vadd(shoulder, apply(R, [0,0,L1]));
-
-  R = mul(R, ry(Math.PI/2 + j[2]));               // 90° home bend + J2 (sign flipped)
-  const wrist = vadd(elbow, apply(R, [0,0,L2]));
-
-  R = mul(R, rz(j[3]));                           // J3 forearm roll
-  R = mul(R, ry(j[4]));                           // J4 wrist pitch
-  const ee = vadd(wrist, apply(R, [0,0,L3]));
-
-  return [base, shoulder, elbow, wrist, ee];
+  function mul(A,B) { const C=new Array(9); for(let r=0;r<3;r++) for(let c=0;c<3;c++) C[r*3+c]=A[r*3]*B[c]+A[r*3+1]*B[3+c]+A[r*3+2]*B[6+c]; return C; }
+  function apply(R,v) { return [R[0]*v[0]+R[1]*v[1]+R[2]*v[2], R[3]*v[0]+R[4]*v[1]+R[5]*v[2], R[6]*v[0]+R[7]*v[1]+R[8]*v[2]]; }
+  function vadd(a,b) { return [a[0]+b[0],a[1]+b[1],a[2]+b[2]]; }
+  const base=[0,0,0], shoulder=[0,0,d0];
+  let R=mul(rz(j[0]),ry(j[1]));
+  const elbow=vadd(shoulder,apply(R,[0,0,L1]));
+  R=mul(R,ry(Math.PI/2+j[2]));
+  const wrist=vadd(elbow,apply(R,[0,0,L2]));
+  R=mul(R,rz(j[3]));
+  R=mul(R,ry(j[4]));
+  const ee=vadd(wrist,apply(R,[0,0,L3]));
+  return [base,shoulder,elbow,wrist,ee];
 }
 
 function rodrigues(rv) {
-  // Rodrigues vector [rx,ry,rz] -> 3x3 rotation matrix
-  const angle = Math.sqrt(rv[0]*rv[0]+rv[1]*rv[1]+rv[2]*rv[2]);
-  if (angle < 1e-8) return [[1,0,0],[0,1,0],[0,0,1]];
-  const k = [rv[0]/angle, rv[1]/angle, rv[2]/angle];
-  const c = Math.cos(angle), s = Math.sin(angle), v = 1-c;
-  return [
-    [k[0]*k[0]*v+c,       k[0]*k[1]*v-k[2]*s, k[0]*k[2]*v+k[1]*s],
-    [k[1]*k[0]*v+k[2]*s,  k[1]*k[1]*v+c,       k[1]*k[2]*v-k[0]*s],
-    [k[2]*k[0]*v-k[1]*s,  k[2]*k[1]*v+k[0]*s,  k[2]*k[2]*v+c      ]
-  ];
+  const angle=Math.sqrt(rv[0]*rv[0]+rv[1]*rv[1]+rv[2]*rv[2]);
+  if(angle<1e-8) return [[1,0,0],[0,1,0],[0,0,1]];
+  const k=[rv[0]/angle,rv[1]/angle,rv[2]/angle];
+  const c=Math.cos(angle),s=Math.sin(angle),v=1-c;
+  return [[k[0]*k[0]*v+c,k[0]*k[1]*v-k[2]*s,k[0]*k[2]*v+k[1]*s],[k[1]*k[0]*v+k[2]*s,k[1]*k[1]*v+c,k[1]*k[2]*v-k[0]*s],[k[2]*k[0]*v-k[1]*s,k[2]*k[1]*v+k[0]*s,k[2]*k[2]*v+c]];
 }
 
-function projectPoint3D(p3d, cam) {
-  // p3d: [x,y,z], cam: {fx,fy,cx,cy,rx,ry,rz,tx,ty,tz}
-  const R = rodrigues([cam.rx, cam.ry, cam.rz]);
-  const pc = [
-    R[0][0]*p3d[0]+R[0][1]*p3d[1]+R[0][2]*p3d[2]+cam.tx,
-    R[1][0]*p3d[0]+R[1][1]*p3d[1]+R[1][2]*p3d[2]+cam.ty,
-    R[2][0]*p3d[0]+R[2][1]*p3d[1]+R[2][2]*p3d[2]+cam.tz
-  ];
-  if (pc[2] <= 0) return null;
-  return [cam.fx * pc[0]/pc[2] + cam.cx, cam.fy * pc[1]/pc[2] + cam.cy];
+function projectPoint3D(p3d,cam) {
+  const R=rodrigues([cam.rx,cam.ry,cam.rz]);
+  const pc=[R[0][0]*p3d[0]+R[0][1]*p3d[1]+R[0][2]*p3d[2]+cam.tx, R[1][0]*p3d[0]+R[1][1]*p3d[1]+R[1][2]*p3d[2]+cam.ty, R[2][0]*p3d[0]+R[2][1]*p3d[1]+R[2][2]*p3d[2]+cam.tz];
+  if(pc[2]<=0) return null;
+  return [cam.fx*pc[0]/pc[2]+cam.cx, cam.fy*pc[1]/pc[2]+cam.cy];
 }
 
-// Load camera calibration if available (for 3D projection mode)
 (async function loadVizCalibration() {
   try {
-    const resp = await fetch('/api/viz/calibration');
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.ok && data.camera_params) {
-        const cam = data.camera_params.cam1 || data.camera_params.cam0;
-        if (cam) {
-          CAM_PARAMS = cam;
-          USE_3D_PROJECTION = true;
-          console.log('Camera calibration loaded for 3D projection:', cam);
-        }
-      }
-    }
-  } catch (e) { console.log('No viz calibration available'); }
+    const resp=await fetch('/api/viz/calibration');
+    if(resp.ok) { const data=await resp.json(); if(data.ok&&data.camera_params) { const cam=data.camera_params.cam1||data.camera_params.cam0; if(cam){CAM_PARAMS=cam;USE_3D_PROJECTION=true;} } }
+  } catch(e) {}
 })();
 
 // ============================================================
@@ -570,16 +1168,16 @@ function projectPoint3D(p3d, cam) {
 let ws = null;
 let armState = { connected: false, joints: [0,0,0,0,0,0], gripper: 0, power: false, enabled: false, error: 0, log: [] };
 let lastStateTs = 0;
-let userDragging = -1;           // -1=none, 0-5=joint, 6=gripper
+let userDragging = -1;
 let animFrameId = null;
-let localLog = [];               // Client-side log entries
-let armSynced = false;           // SAFETY: don't send commands until first state received
-let updatingFromState = false;   // Guard against state→slider→command feedback loop
-let vizDirty = true;             // Only redraw when state changes
-let lastGoodJoints = [0,0,0,0,0,0]; // Client-side cache to prevent zero-snap
-let vizJoints = [0,0,0,0,0,0];  // Smoothed joints actually rendered
-let jointSource = 'init';        // Telemetry: where current joint values came from
-let wsUpdateCount = 0;           // Telemetry: count of WS updates received
+let localLog = [];
+let armSynced = false;
+let updatingFromState = false;
+let vizDirty = true;
+let lastGoodJoints = [0,0,0,0,0,0];
+let vizJoints = [0,0,0,0,0,0];
+let jointSource = 'init';
+let wsUpdateCount = 0;
 
 // ============================================================
 //  UTILITIES
@@ -592,29 +1190,40 @@ function logLocal(action, details, level) {
   if (localLog.length > 100) localLog.shift();
 }
 
-function esc(s) {
-  if (!s) return '';
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
+function esc(s) { if(!s) return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
-function makeThrottle(fn, ms = 50) {
-  let lastCall = 0, timer = null;
+function makeThrottle(fn, ms=50) {
+  let lastCall=0, timer=null;
   return function(...args) {
-    const now = Date.now();
-    if (now - lastCall >= ms) {
-      lastCall = now;
-      fn(...args);
-    } else {
-      clearTimeout(timer);
-      timer = setTimeout(() => { lastCall = Date.now(); fn(...args); }, ms - (now - lastCall));
-    }
+    const now=Date.now();
+    if(now-lastCall>=ms){lastCall=now;fn(...args);}
+    else{clearTimeout(timer);timer=setTimeout(()=>{lastCall=Date.now();fn(...args);},ms-(now-lastCall));}
   };
 }
 
+// Generic API helper
+async function apiCall(url, opts={}) {
+  try {
+    const resp = await fetch(url, opts);
+    return await resp.json();
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function apiPost(url, body={}) {
+  return apiCall(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+}
+
+function showResult(elId, data) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+}
+
 // ============================================================
-//  SLIDER SETUP (Joint + Gripper)
+//  SLIDER SETUP
 // ============================================================
 
 const slidersDiv = document.getElementById('jointSliders');
@@ -622,13 +1231,8 @@ for (let i = 0; i < 6; i++) {
   const spec = JOINT_SPECS[i];
   const row = document.createElement('div');
   row.className = 'joint-row';
-  row.innerHTML = `
-    <span class="joint-label">${spec.name}</span>
-    <input type="range" class="joint-slider" id="js${i}" min="${spec.min}" max="${spec.max}" step="0.5" value="0">
-    <span class="joint-value" id="jv${i}">0.0°</span>
-  `;
+  row.innerHTML = `<span class="joint-label">${spec.name}</span><input type="range" class="joint-slider" id="js${i}" min="${spec.min}" max="${spec.max}" step="0.5" value="0"><span class="joint-value" id="jv${i}">0.0°</span>`;
   slidersDiv.appendChild(row);
-
   const slider = row.querySelector('input');
   slider.addEventListener('mousedown', () => userDragging = i);
   slider.addEventListener('touchstart', () => userDragging = i);
@@ -668,25 +1272,18 @@ async function cmd(action) {
   try {
     const resp = await fetch(`/api/command/${action}`, { method: 'POST' });
     const data = await resp.json();
-    if (data.ok) {
-      logLocal(action.toUpperCase(), '✓ Success', 'info');
-    } else {
-      logLocal(action.toUpperCase(), `✗ Failed: ${data.error || 'unknown'}`, 'error');
-    }
+    if (data.ok) logLocal(action.toUpperCase(), '✓ Success', 'info');
+    else logLocal(action.toUpperCase(), `✗ Failed: ${data.error || 'unknown'}`, 'error');
     if (data.state) { armState = { ...armState, ...data.state }; vizDirty = true; }
     updateUI();
-  } catch(e) {
-    logLocal(action.toUpperCase(), `✗ Network error: ${e.message}`, 'error');
-  }
+  } catch(e) { logLocal(action.toUpperCase(), `✗ Network error: ${e.message}`, 'error'); }
 }
 
 async function sendJoint(id, angle) {
   if (!armSynced) return;
   logLocal('SET_JOINT', `J${id} -> ${angle.toFixed(1)}°`, 'info');
   try {
-    const resp = await fetch('/api/command/set-joint', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, angle })
-    });
+    const resp = await fetch('/api/command/set-joint', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({id, angle}) });
     const data = await resp.json();
     if (!data.ok) logLocal('SET_JOINT', `✗ ${data.error || 'failed'}`, 'error');
   } catch(e) { logLocal('SET_JOINT', `✗ ${e.message}`, 'error'); }
@@ -696,26 +1293,19 @@ async function sendGripper(pos) {
   if (!armSynced) return;
   logLocal('SET_GRIPPER', `${pos.toFixed(1)} mm`, 'info');
   try {
-    const resp = await fetch('/api/command/set-gripper', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: pos })
-    });
+    const resp = await fetch('/api/command/set-gripper', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({position:pos}) });
     const data = await resp.json();
     if (!data.ok) logLocal('SET_GRIPPER', `✗ ${data.error || 'failed'}`, 'error');
   } catch(e) { logLocal('SET_GRIPPER', `✗ ${e.message}`, 'error'); }
 }
 
-async function runTask(name, body = {}) {
+async function runTask(name, body={}) {
   logLocal('TASK', `Starting task: ${name}`, 'info');
   try {
-    const resp = await fetch(`/api/task/${name}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-    });
+    const resp = await fetch(`/api/task/${name}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
     const data = await resp.json();
-    if (data.ok) {
-      logLocal('TASK', `${name}: ${data.points} pts, ${data.duration_s}s`, 'info');
-    } else {
-      logLocal('TASK', `${name}: ${data.error || 'failed'}`, 'error');
-    }
+    if (data.ok) logLocal('TASK', `${name}: ${data.points} pts, ${data.duration_s}s`, 'info');
+    else logLocal('TASK', `${name}: ${data.error || 'failed'}`, 'error');
   } catch(e) { logLocal('TASK', `${name}: ${e.message}`, 'error'); }
 }
 
@@ -742,9 +1332,7 @@ document.getElementById('btnRawSend').addEventListener('click', async () => {
     const parsed = JSON.parse(raw);
     const action = parsed.action || 'set-joint';
     delete parsed.action;
-    const resp = await fetch(`/api/command/${action}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parsed)
-    });
+    const resp = await fetch(`/api/command/${action}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(parsed) });
     const data = await resp.json();
     logLocal('RAW', `Response: ${JSON.stringify(data).slice(0,120)}`, data.ok ? 'info' : 'error');
   } catch(e) { logLocal('RAW', `Error: ${e.message}`, 'error'); }
@@ -752,7 +1340,7 @@ document.getElementById('btnRawSend').addEventListener('click', async () => {
 document.getElementById('rawInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnRawSend').click(); });
 
 // ============================================================
-//  TEXT COMMAND INTERFACE
+//  TEXT COMMAND
 // ============================================================
 
 function textCmdFill(el) {
@@ -764,50 +1352,27 @@ document.getElementById('btnTextCmd').addEventListener('click', async () => {
   const input = document.getElementById('textCmdInput');
   const text = input.value.trim();
   if (!text) return;
-
   const feedback = document.getElementById('textCmdFeedback');
-  feedback.className = 'text-cmd-feedback';
-  feedback.style.display = 'none';
-
+  feedback.className = 'text-cmd-feedback'; feedback.style.display = 'none';
   logLocal('TEXT_CMD', `Sending: "${text}"`, 'info');
   try {
-    const resp = await fetch('/api/command/text', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
-    });
+    const resp = await fetch('/api/command/text', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text}) });
     const data = await resp.json();
     if (data.ok) {
       const desc = data.description || data.action || 'OK';
       const extra = data.points ? ` (${data.points} pts, ${data.duration_s}s)` : '';
-      feedback.textContent = `${desc}${extra}`;
-      feedback.className = 'text-cmd-feedback ok';
-      logLocal('TEXT_CMD', `${desc}${extra}`, 'info');
-      input.value = '';
+      feedback.textContent = `${desc}${extra}`; feedback.className = 'text-cmd-feedback ok';
+      logLocal('TEXT_CMD', `${desc}${extra}`, 'info'); input.value = '';
     } else {
-      const errMsg = data.error || 'Unknown error';
-      feedback.textContent = errMsg;
-      feedback.className = 'text-cmd-feedback err';
-      logLocal('TEXT_CMD', `Error: ${errMsg}`, 'error');
+      feedback.textContent = data.error || 'Unknown error'; feedback.className = 'text-cmd-feedback err';
+      logLocal('TEXT_CMD', `Error: ${data.error}`, 'error');
     }
     if (data.state) { armState = { ...armState, ...data.state }; vizDirty = true; }
     updateUI();
-  } catch(e) {
-    feedback.textContent = `Network error: ${e.message}`;
-    feedback.className = 'text-cmd-feedback err';
-    logLocal('TEXT_CMD', `Network error: ${e.message}`, 'error');
-  }
-
-  // Auto-hide feedback after 5 seconds
-  setTimeout(() => {
-    feedback.className = 'text-cmd-feedback';
-    feedback.style.display = 'none';
-  }, 5000);
+  } catch(e) { feedback.textContent = `Network error: ${e.message}`; feedback.className = 'text-cmd-feedback err'; }
+  setTimeout(() => { feedback.className = 'text-cmd-feedback'; feedback.style.display = 'none'; }, 5000);
 });
-
-document.getElementById('textCmdInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('btnTextCmd').click();
-});
+document.getElementById('textCmdInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnTextCmd').click(); });
 
 // ============================================================
 //  WEBSOCKET
@@ -822,40 +1387,18 @@ function connectWS() {
   ws.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      if (data.type === 'ack') {
-        logLocal('ACK', `${data.action}: ${data.ok ? 'OK' : 'FAIL'}`, data.ok ? 'info' : 'error');
-        return;
-      }
-      if (data.type === 'collision') {
-        showCollisionAlert(data);
-        logLocal('COLLISION', `⚠ J${data.joint} stalled: cmd=${data.commanded}° actual=${data.actual}°`, 'error');
-        return;
-      }
-
-      // Zero-snap protection: if server sends all-zero joints but we had real values, keep cached
+      if (data.type === 'ack') { logLocal('ACK', `${data.action}: ${data.ok ? 'OK' : 'FAIL'}`, data.ok ? 'info' : 'error'); return; }
+      if (data.type === 'collision') { showCollisionAlert(data); logLocal('COLLISION', `⚠ J${data.joint} stalled`, 'error'); return; }
       const newJoints = data.joints || [0,0,0,0,0,0];
       const allZero = newJoints.every(v => Math.abs(v) < 0.01);
       const hadReal = lastGoodJoints.some(v => Math.abs(v) > 0.1);
-      if (allZero && hadReal && armSynced) {
-        data.joints = lastGoodJoints.slice();
-        jointSource = 'cached (zero-snap blocked)';
-      } else {
-        lastGoodJoints = newJoints.slice();
-        jointSource = 'ws';
-      }
-
-      // Only mark dirty if joints actually changed meaningfully (>0.05° on any joint)
+      if (allZero && hadReal && armSynced) { data.joints = lastGoodJoints.slice(); jointSource = 'cached'; }
+      else { lastGoodJoints = newJoints.slice(); jointSource = 'ws'; }
       const jointsDiff = newJoints.some((v, i) => Math.abs(v - vizJoints[i]) > 0.05);
       const otherChanged = data.power !== armState.power || data.enabled !== armState.enabled || data.error !== armState.error;
-
-      armState = data;
-      lastStateTs = Date.now();
-      wsUpdateCount++;
+      armState = data; lastStateTs = Date.now(); wsUpdateCount++;
       if (jointsDiff || otherChanged || !armSynced) vizDirty = true;
-      if (!armSynced) {
-        armSynced = true;
-        logLocal('SYNC', 'First arm state received — sliders synced', 'info');
-      }
+      if (!armSynced) { armSynced = true; logLocal('SYNC', 'First arm state received', 'info'); }
     } catch(err) {}
   };
 }
@@ -866,41 +1409,27 @@ function updateConn(on) {
 }
 
 // ============================================================
-//  UI UPDATE & LOG RENDERING
+//  UI UPDATE
 // ============================================================
 
 function updateUI() {
-  // Badges
   const bp = document.getElementById('badgePower');
   bp.textContent = armState.power ? 'PWR ON' : 'PWR OFF';
   bp.className = 'badge' + (armState.power ? ' active' : '');
-
   const be = document.getElementById('badgeEnabled');
   be.textContent = armState.enabled ? 'ENABLED' : 'DISABLED';
   be.className = 'badge' + (armState.enabled ? ' active' : '');
-
   const berr = document.getElementById('badgeError');
   if (armState.error) { berr.textContent = 'ERR ' + armState.error; berr.className = 'badge error'; }
   else { berr.textContent = 'NO ERR'; berr.className = 'badge'; }
 
-  // SIM mode badge
   const simBadge = document.getElementById('simBadge');
   if (armState.sim_mode !== undefined) {
     simBadge.style.display = 'inline';
-    if (armState.sim_mode) {
-      simBadge.textContent = '⚡ SIM';
-      simBadge.style.background = '#f59e0b';
-      simBadge.style.color = '#000';
-      simBadge.title = 'Running in SIMULATION mode — click to switch to LIVE';
-    } else {
-      simBadge.textContent = '🔴 LIVE';
-      simBadge.style.background = '#ef4444';
-      simBadge.style.color = '#fff';
-      simBadge.title = 'Running in LIVE mode — click to switch to SIM';
-    }
+    if (armState.sim_mode) { simBadge.textContent = '⚡ SIM'; simBadge.style.background = '#f59e0b'; simBadge.style.color = '#000'; }
+    else { simBadge.textContent = '🔴 LIVE'; simBadge.style.background = '#ef4444'; simBadge.style.color = '#fff'; }
   }
 
-  // Connection quality
   if (lastStateTs > 0) {
     const age = Date.now() - lastStateTs;
     const q = document.getElementById('connQuality');
@@ -910,68 +1439,53 @@ function updateUI() {
     q.style.color = age < 500 ? 'var(--success)' : age < 2000 ? 'var(--warning)' : 'var(--danger)';
   }
 
-  // Button states
   document.getElementById('btnPowerOn').disabled = armState.power;
   document.getElementById('btnPowerOn').className = 'btn' + (armState.power ? ' on' : '');
   document.getElementById('btnPowerOff').disabled = !armState.power;
   document.getElementById('btnEnable').disabled = !armState.power || armState.enabled;
   document.getElementById('btnEnable').className = 'btn' + (armState.enabled ? ' on' : '');
   document.getElementById('btnDisable').disabled = !armState.enabled;
-
-  // E-stop flash when enabled
   document.getElementById('btnEstop').className = armState.enabled ? 'estop flash' : 'estop';
 
-  // Joint sliders — dead-band update to prevent jitter, guarded against feedback loops
   updatingFromState = true;
   const joints = armState.joints || [0,0,0,0,0,0];
   for (let i = 0; i < 6; i++) {
     if (userDragging !== i) {
       const val = joints[i] || 0;
       const slider = document.getElementById(`js${i}`);
-      const current = parseFloat(slider.value);
-      if (Math.abs(current - val) > 0.25) slider.value = val;
+      if (Math.abs(parseFloat(slider.value) - val) > 0.25) slider.value = val;
       const label = document.getElementById(`jv${i}`);
       const txt = val.toFixed(1) + '°';
       if (label.textContent !== txt) label.textContent = txt;
     }
   }
-
-  // Gripper slider — same dead-band guard
   if (userDragging !== 6) {
     const gv = armState.gripper || 0;
-    const current = parseFloat(gripSlider.value);
-    if (Math.abs(current - gv) > 0.25) gripSlider.value = gv;
+    if (Math.abs(parseFloat(gripSlider.value) - gv) > 0.25) gripSlider.value = gv;
     const gLabel = document.getElementById('gripperValue');
     const gTxt = gv.toFixed(1) + ' mm';
     if (gLabel.textContent !== gTxt) gLabel.textContent = gTxt;
   }
   updatingFromState = false;
-
   renderLog();
 }
 
 let lastLogHash = '';
 function renderLog() {
-  const serverEntries = (armState.log || []).map(e => ({
-    ts_str: e.ts_str, action: e.action, details: e.details, level: e.level, src: 's'
-  }));
+  const serverEntries = (armState.log || []).map(e => ({ ts_str: e.ts_str, action: e.action, details: e.details, level: e.level, src: 's' }));
   const all = [...serverEntries, ...localLog.map(e => ({ ...e, src: 'c' }))];
   all.sort((a, b) => a.ts_str.localeCompare(b.ts_str));
   const last40 = all.slice(-40);
-
   const hash = last40.map(e => e.ts_str + e.action).join('|');
   if (hash === lastLogHash) return;
   lastLogHash = hash;
-
   const el = document.getElementById('logScroll');
-  el.innerHTML = last40.map(e =>
-    `<div class="log-entry ${e.level}"><span class="ts">${esc(e.ts_str)}</span><span class="act">${esc(e.action)}</span><span class="detail">${esc(e.details)}</span></div>`
-  ).join('');
+  el.innerHTML = last40.map(e => `<div class="log-entry ${e.level}"><span class="ts">${esc(e.ts_str)}</span><span class="act">${esc(e.action)}</span><span class="detail">${esc(e.details)}</span></div>`).join('');
   el.scrollTop = el.scrollHeight;
 }
 
 // ============================================================
-//  ARM VISUALIZATION (Canvas FK)
+//  ARM VISUALIZATION (Canvas FK) — preserved from V1
 // ============================================================
 
 const canvas = document.getElementById('armCanvas');
@@ -980,278 +1494,115 @@ const ctx = canvas.getContext('2d');
 function drawArm() {
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-
   const rawJoints = armState.joints || [0,0,0,0,0,0];
-  // Smooth viz joints — lerp toward target to reduce jitter
   for (let i = 0; i < 6; i++) {
     const diff = rawJoints[i] - vizJoints[i];
-    if (Math.abs(diff) > 0.05) {
-      vizJoints[i] += diff * 0.4;
-    } else {
-      vizJoints[i] = rawJoints[i];
-    }
+    if (Math.abs(diff) > 0.05) vizJoints[i] += diff * 0.4;
+    else vizJoints[i] = rawJoints[i];
   }
   const joints = vizJoints;
   const deg2rad = Math.PI / 180;
-
-  // Grid
-  ctx.strokeStyle = 'rgba(42,74,124,0.12)';
-  ctx.lineWidth = 1;
-  for (let y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-  for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-
-  // FK chain — either 3D projection (v2) or legacy 2D side-view
   const scale = Math.min(W, H) / 900;
   const baseX = W * 0.35, baseY = H * 0.85;
 
-  // Base platform
-  ctx.fillStyle = '#1a2744';
-  ctx.strokeStyle = '#2a4a7c';
-  ctx.lineWidth = 1;
+  // Grid
+  ctx.strokeStyle = 'rgba(42,74,124,0.12)'; ctx.lineWidth = 1;
+  for (let y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+
+  // Base
+  ctx.fillStyle = '#1a2744'; ctx.strokeStyle = '#2a4a7c'; ctx.lineWidth = 1;
   const bw = 60 * scale, bh = 15 * scale;
-  ctx.fillRect(baseX - bw, baseY, bw * 2, bh);
-  ctx.strokeRect(baseX - bw, baseY, bw * 2, bh);
+  ctx.fillRect(baseX - bw, baseY, bw * 2, bh); ctx.strokeRect(baseX - bw, baseY, bw * 2, bh);
 
+  const fkPos = fkPositions(joints);
   let pts;
-
-  // Geometric FK — empirically verified against real D1 arm
-  const fkPos = fkPositions(joints);  // 5 positions: base, shoulder, elbow, wrist, EE
-
   if (USE_3D_PROJECTION && CAM_PARAMS) {
-    // --- 3D FK + Camera Projection (v2) ---
     const projected = fkPos.map(p => projectPoint3D(p, CAM_PARAMS));
     const camW = 1920, camH = 1080;
-    pts = projected.map(p => {
-      if (!p) return { x: baseX, y: baseY };
-      return { x: p[0] * (W / camW), y: p[1] * (H / camH) };
-    });
+    pts = projected.map(p => { if (!p) return { x: baseX, y: baseY }; return { x: p[0] * (W / camW), y: p[1] * (H / camH) }; });
   } else {
-    // --- Orthographic side-view of 3D FK ---
-    // Project onto the arm's plane (rotate by J0 so we always see the arm from the side)
     const j0rad = (joints[0] || 0) * deg2rad;
     const cosJ0 = Math.cos(j0rad), sinJ0 = Math.sin(j0rad);
-    const mToPixel = 700 * scale; // meters to pixels
-    pts = fkPos.map(p => {
-      const radial = p[0] * cosJ0 + p[1] * sinJ0;
-      const height = p[2];
-      return {
-        x: baseX + radial * mToPixel,
-        y: baseY - height * mToPixel
-      };
-    });
+    const mToPixel = 700 * scale;
+    pts = fkPos.map(p => { const radial = p[0] * cosJ0 + p[1] * sinJ0; return { x: baseX + radial * mToPixel, y: baseY - p[2] * mToPixel }; });
   }
 
-  // Draw links (5 pts = 4 segments: base→shoulder→elbow→wrist→EE)
+  // Links
   const linkColors = ['#2a4a7c', '#4a90d9', '#3a7abd', '#2a6aad'];
   const linkWidths = [10, 8, 6, 4];
   ctx.lineCap = 'round';
   for (let i = 0; i < pts.length - 1; i++) {
-    ctx.strokeStyle = linkColors[i] || '#4a90d9';
-    ctx.lineWidth = linkWidths[i] * scale * 1.2;
-    ctx.beginPath();
-    ctx.moveTo(pts[i].x, pts[i].y);
-    ctx.lineTo(pts[i+1].x, pts[i+1].y);
-    ctx.stroke();
+    ctx.strokeStyle = linkColors[i] || '#4a90d9'; ctx.lineWidth = linkWidths[i] * scale * 1.2;
+    ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[i+1].x, pts[i+1].y); ctx.stroke();
   }
 
-  // Draw joints
+  // Joints
   for (let i = 0; i < pts.length; i++) {
     const r = (i === 0 ? 10 : i === pts.length - 1 ? 5 : 7) * scale;
-    ctx.beginPath();
-    ctx.arc(pts[i].x, pts[i].y, r + 3 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(15,52,96,0.3)';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#16213e';
-    ctx.fill();
-    ctx.strokeStyle = '#4a90d9';
-    ctx.lineWidth = 2 * scale;
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, r + 3 * scale, 0, Math.PI * 2); ctx.fillStyle = 'rgba(15,52,96,0.3)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2); ctx.fillStyle = '#16213e'; ctx.fill(); ctx.strokeStyle = '#4a90d9'; ctx.lineWidth = 2 * scale; ctx.stroke();
   }
 
-  // Roll joint rotation indicators
-  const rollColor = '#e8a838';
-  const pitchColor = '#4a90d9';
-
+  const rollColor = '#e8a838', pitchColor = '#4a90d9';
   function drawRotationIndicator(cx, cy, radius, angleDeg, label) {
-    const a = angleDeg * deg2rad;
-    const r = radius * scale;
-    // Background ring
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(232,168,56,0.15)';
-    ctx.lineWidth = 3 * scale;
-    ctx.stroke();
-    // Zero tick
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - r + 2 * scale);
-    ctx.lineTo(cx, cy - r - 3 * scale);
-    ctx.strokeStyle = 'rgba(232,168,56,0.4)';
-    ctx.lineWidth = 1.5 * scale;
-    ctx.stroke();
-    // Filled arc
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0);
-    ctx.closePath();
-    ctx.fillStyle = Math.abs(angleDeg) > 100 ? 'rgba(233,69,96,0.2)' : 'rgba(232,168,56,0.15)';
-    ctx.fill();
-    // Arc stroke
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0);
-    ctx.strokeStyle = Math.abs(angleDeg) > 100 ? '#e94560' : rollColor;
-    ctx.lineWidth = 3.5 * scale;
-    ctx.stroke();
-    // Endpoint dot
-    const ex = cx + Math.cos(-Math.PI / 2 + a) * r;
-    const ey = cy + Math.sin(-Math.PI / 2 + a) * r;
-    ctx.beginPath();
-    ctx.arc(ex, ey, 4 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = Math.abs(angleDeg) > 100 ? '#e94560' : rollColor;
-    ctx.fill();
-    // Label
-    const lx = cx + (r + 6 * scale);
-    const ly = cy + (4 * scale);
-    ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
-    ctx.fillStyle = rollColor;
-    ctx.fillText(`${label} ${angleDeg.toFixed(1)}°`, lx, ly);
-    ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
-    ctx.fillStyle = 'rgba(232,168,56,0.5)';
-    ctx.fillText('roll', lx, ly + 10 * scale);
+    const a = angleDeg * deg2rad, r = radius * scale;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(232,168,56,0.15)'; ctx.lineWidth = 3 * scale; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0); ctx.closePath();
+    ctx.fillStyle = Math.abs(angleDeg) > 100 ? 'rgba(233,69,96,0.2)' : 'rgba(232,168,56,0.15)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + a, a < 0);
+    ctx.strokeStyle = Math.abs(angleDeg) > 100 ? '#e94560' : rollColor; ctx.lineWidth = 3.5 * scale; ctx.stroke();
+    const ex = cx + Math.cos(-Math.PI / 2 + a) * r, ey = cy + Math.sin(-Math.PI / 2 + a) * r;
+    ctx.beginPath(); ctx.arc(ex, ey, 4 * scale, 0, Math.PI * 2); ctx.fillStyle = Math.abs(angleDeg) > 100 ? '#e94560' : rollColor; ctx.fill();
+    ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`; ctx.fillStyle = rollColor;
+    ctx.fillText(`${label} ${angleDeg.toFixed(1)}°`, cx + (r + 6 * scale), cy + (4 * scale));
   }
 
-  // J0 base rotation — top-down mini view in upper-right corner
+  // J0 top-down mini
   const j0Angle = joints[0] || 0;
   const j0cx = W - 50 * scale, j0cy = 50 * scale, j0r = 30 * scale;
-  ctx.beginPath();
-  ctx.arc(j0cx, j0cy, j0r + 2 * scale, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(26,39,68,0.6)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(232,168,56,0.3)';
-  ctx.lineWidth = 1.5 * scale;
-  ctx.stroke();
-  // Compass ticks
-  for (let t = 0; t < 4; t++) {
-    const ta = t * Math.PI / 2;
-    ctx.beginPath();
-    ctx.moveTo(j0cx + Math.cos(ta) * (j0r - 3 * scale), j0cy + Math.sin(ta) * (j0r - 3 * scale));
-    ctx.lineTo(j0cx + Math.cos(ta) * (j0r + 2 * scale), j0cy + Math.sin(ta) * (j0r + 2 * scale));
-    ctx.strokeStyle = 'rgba(232,168,56,0.25)';
-    ctx.lineWidth = 1 * scale;
-    ctx.stroke();
-  }
-  // Direction line
+  ctx.beginPath(); ctx.arc(j0cx, j0cy, j0r + 2 * scale, 0, Math.PI * 2); ctx.fillStyle = 'rgba(26,39,68,0.6)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(232,168,56,0.3)'; ctx.lineWidth = 1.5 * scale; ctx.stroke();
   const j0a = j0Angle * deg2rad;
-  ctx.beginPath();
-  ctx.moveTo(j0cx, j0cy);
-  ctx.arc(j0cx, j0cy, j0r, -Math.PI / 2, -Math.PI / 2 + j0a, j0a < 0);
-  ctx.closePath();
-  ctx.fillStyle = Math.abs(j0Angle) > 100 ? 'rgba(233,69,96,0.2)' : 'rgba(232,168,56,0.15)';
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(j0cx, j0cy);
-  ctx.lineTo(j0cx + Math.sin(j0a) * j0r * 0.85, j0cy - Math.cos(j0a) * j0r * 0.85);
-  ctx.strokeStyle = Math.abs(j0Angle) > 100 ? '#e94560' : rollColor;
-  ctx.lineWidth = 3 * scale;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(j0cx, j0cy, 3 * scale, 0, Math.PI * 2);
-  ctx.fillStyle = rollColor;
-  ctx.fill();
-  // J0 label
-  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = rollColor;
-  ctx.textAlign = 'center';
-  ctx.fillText(`J0 ${j0Angle.toFixed(1)}°`, j0cx, j0cy + j0r + 14 * scale);
-  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = 'rgba(232,168,56,0.5)';
-  ctx.fillText('base rotation (top view)', j0cx, j0cy + j0r + 24 * scale);
-  ctx.textAlign = 'left';
+  ctx.beginPath(); ctx.moveTo(j0cx, j0cy); ctx.arc(j0cx, j0cy, j0r, -Math.PI / 2, -Math.PI / 2 + j0a, j0a < 0); ctx.closePath();
+  ctx.fillStyle = Math.abs(j0Angle) > 100 ? 'rgba(233,69,96,0.2)' : 'rgba(232,168,56,0.15)'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(j0cx, j0cy); ctx.lineTo(j0cx + Math.sin(j0a) * j0r * 0.85, j0cy - Math.cos(j0a) * j0r * 0.85);
+  ctx.strokeStyle = Math.abs(j0Angle) > 100 ? '#e94560' : rollColor; ctx.lineWidth = 3 * scale; ctx.stroke();
+  ctx.beginPath(); ctx.arc(j0cx, j0cy, 3 * scale, 0, Math.PI * 2); ctx.fillStyle = rollColor; ctx.fill();
+  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`; ctx.fillStyle = rollColor; ctx.textAlign = 'center';
+  ctx.fillText(`J0 ${j0Angle.toFixed(1)}°`, j0cx, j0cy + j0r + 14 * scale); ctx.textAlign = 'left';
 
-  // Points: [0]=base, [1]=shoulder, [2]=elbow, [3]=wrist, [4]=EE
-  // Roll indicators at elbow (J3) and wrist (J5)
   drawRotationIndicator(pts[2].x, pts[2].y, 22, joints[3] || 0, 'J3');
   drawRotationIndicator(pts[3].x, pts[3].y, 18, joints[5] || 0, 'J5');
 
-  // Pitch joint labels: J1 at shoulder, J2 at elbow, J4 at wrist
-  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = pitchColor;
+  // Pitch labels
+  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`; ctx.fillStyle = pitchColor;
   ctx.fillText(`J1 ${(joints[1]||0).toFixed(1)}°`, pts[1].x - 55 * scale, pts[1].y - 12 * scale);
-  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = 'rgba(74,144,217,0.5)';
-  ctx.fillText('pitch', pts[1].x - 55 * scale, pts[1].y - 2 * scale);
-
-  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = pitchColor;
   ctx.fillText(`J2 ${(joints[2]||0).toFixed(1)}°`, pts[2].x + 12 * scale, pts[2].y - 12 * scale);
-  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = 'rgba(74,144,217,0.5)';
-  ctx.fillText('pitch', pts[2].x + 12 * scale, pts[2].y - 2 * scale);
-
-  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = pitchColor;
   ctx.fillText(`J4 ${(joints[4]||0).toFixed(1)}°`, pts[3].x + 12 * scale, pts[3].y - 12 * scale);
-  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = 'rgba(74,144,217,0.5)';
-  ctx.fillText('pitch', pts[3].x + 12 * scale, pts[3].y - 2 * scale);
 
-  // Gripper visualization
-  const tip = pts[pts.length - 1];
-  // Compute gripper angle from the last two FK points (end-effector direction)
-  const prevPt = pts[pts.length - 2];
+  // Gripper
+  const tip = pts[pts.length - 1], prevPt = pts[pts.length - 2];
   const gAngle = Math.atan2(tip.y - prevPt.y, tip.x - prevPt.x);
   const gripMM = armState.gripper != null ? armState.gripper : 0;
   const gripRatio = Math.min(gripMM / 65, 1);
-  const gOpen = gripRatio * 12 * scale;
-  const fingerLen = 20 * scale;
-  const fingerWid = 4 * scale;
-  const gR = Math.round(233 - gripRatio * 150);
-  const gG = Math.round(120 + gripRatio * 95);
-  const gB = Math.round(56 + gripRatio * 50);
+  const gOpen = gripRatio * 12 * scale, fingerLen = 20 * scale, fingerWid = 4 * scale;
+  const gR = Math.round(233 - gripRatio * 150), gG = Math.round(120 + gripRatio * 95), gB = Math.round(56 + gripRatio * 50);
   const gripCol = `rgb(${gR},${gG},${gB})`;
-
   for (const side of [-1, 1]) {
-    const perpX = Math.cos(gAngle + Math.PI / 2) * side * gOpen;
-    const perpY = Math.sin(gAngle + Math.PI / 2) * side * gOpen;
-    const fx1 = tip.x + perpX;
-    const fy1 = tip.y + perpY;
-    const fx2 = fx1 + Math.cos(gAngle) * fingerLen;
-    const fy2 = fy1 + Math.sin(gAngle) * fingerLen;
-    ctx.beginPath();
-    ctx.moveTo(fx1, fy1);
-    ctx.lineTo(fx2, fy2);
-    ctx.strokeStyle = gripCol;
-    ctx.lineWidth = fingerWid;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-    const tipNubX = fx2 + Math.cos(gAngle + Math.PI / 2) * (-side) * 3 * scale;
-    const tipNubY = fy2 + Math.sin(gAngle + Math.PI / 2) * (-side) * 3 * scale;
-    ctx.beginPath();
-    ctx.moveTo(fx2, fy2);
-    ctx.lineTo(tipNubX, tipNubY);
-    ctx.strokeStyle = gripCol;
-    ctx.lineWidth = 3 * scale;
-    ctx.stroke();
+    const perpX = Math.cos(gAngle + Math.PI / 2) * side * gOpen, perpY = Math.sin(gAngle + Math.PI / 2) * side * gOpen;
+    const fx1=tip.x+perpX, fy1=tip.y+perpY, fx2=fx1+Math.cos(gAngle)*fingerLen, fy2=fy1+Math.sin(gAngle)*fingerLen;
+    ctx.beginPath(); ctx.moveTo(fx1, fy1); ctx.lineTo(fx2, fy2);
+    ctx.strokeStyle = gripCol; ctx.lineWidth = fingerWid; ctx.lineCap = 'round'; ctx.stroke();
   }
-  // Gripper readout
-  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = gripCol;
+  ctx.font = `bold ${10 * scale}px JetBrains Mono, monospace`; ctx.fillStyle = gripCol;
   ctx.fillText(`Grip ${gripMM.toFixed(1)}mm`, tip.x + 20 * scale, tip.y + 18 * scale);
-  ctx.font = `${7 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = gripRatio > 0.5 ? 'rgba(83,215,105,0.6)' : 'rgba(233,69,96,0.6)';
-  ctx.fillText(gripRatio > 0.7 ? 'open' : gripRatio < 0.15 ? 'closed' : 'partial', tip.x + 20 * scale, tip.y + 28 * scale);
 
   // Title
-  ctx.font = `${10 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = 'rgba(136,146,164,0.5)';
-  ctx.fillText('D1 Arm — DH FK (blue=pitch, gold=roll)', 8, 16 * scale);
-
-  // Telemetry overlay
-  ctx.font = `${8 * scale}px JetBrains Mono, monospace`;
-  ctx.fillStyle = 'rgba(136,146,164,0.4)';
-  const jStr = joints.map(v => v.toFixed(1)).join(', ');
-  ctx.fillText(`src:${jointSource} ws#${wsUpdateCount} [${jStr}]`, 8, H - 8 * scale);
+  ctx.font = `${10 * scale}px JetBrains Mono, monospace`; ctx.fillStyle = 'rgba(136,146,164,0.5)';
+  ctx.fillText('D1 Arm — DH FK', 8, 16 * scale);
+  ctx.font = `${8 * scale}px JetBrains Mono, monospace`; ctx.fillStyle = 'rgba(136,146,164,0.4)';
+  ctx.fillText(`src:${jointSource} ws#${wsUpdateCount} [${joints.map(v=>v.toFixed(1)).join(', ')}]`, 8, H - 8 * scale);
 }
 
 // ============================================================
@@ -1259,20 +1610,14 @@ function drawArm() {
 // ============================================================
 
 function animLoop() {
-  if (vizDirty) {
-    vizDirty = false;
-    updateUI();
-    drawArm();
-  }
+  if (vizDirty) { vizDirty = false; updateUI(); drawArm(); }
   animFrameId = requestAnimationFrame(animLoop);
 }
 
 function resizeCanvas() {
   const cont = canvas.parentElement;
-  const w = cont.clientWidth - 16;
-  const h = cont.clientHeight - 16;
-  canvas.width = Math.max(w, 300);
-  canvas.height = Math.max(h, 250);
+  canvas.width = Math.max(cont.clientWidth - 16, 300);
+  canvas.height = Math.max(cont.clientHeight - 16, 250);
   vizDirty = true;
 }
 window.addEventListener('resize', resizeCanvas);
@@ -1281,55 +1626,28 @@ window.addEventListener('resize', resizeCanvas);
 //  CAMERA STREAMING (MJPEG + WebSocket + Fallback)
 // ============================================================
 
-const CAM_PORT = 8081;
-const CAM_HOST = location.hostname;
-let camMode = 'mjpeg';  // 'mjpeg' or 'ws'
-const camWsConnections = {};  // cam_id -> WebSocket
-const camOverlays = {};       // cam_id -> [{type, ...}]
-let camSnapshotTimers = {};   // cam_id -> setInterval for fallback polling
-let camMjpegErrors = {};      // cam_id -> consecutive error count
+const CAM_PORT = 8081, CAM_HOST = location.hostname;
+let camMode = 'mjpeg';
+const camWsConnections = {}, camOverlays = {};
+let camSnapshotTimers = {}, camMjpegErrors = {};
 
 function getMjpegUrl(camId) { return `http://${CAM_HOST}:${CAM_PORT}/cam/${camId}`; }
 function getSnapUrl(camId) { return `http://${CAM_HOST}:${CAM_PORT}/snap/${camId}`; }
 
 function initCameraStreams() {
-  for (let i = 0; i < 3; i++) {
-    const img = document.getElementById(`camImg${i}`);
-    camMjpegErrors[i] = 0;
-
-    if (camMode === 'mjpeg') {
-      startMjpegStream(i);
-    } else {
-      startWsStream(i);
-    }
-  }
+  for (let i = 0; i < 3; i++) { camMjpegErrors[i] = 0; if (camMode === 'mjpeg') startMjpegStream(i); else startWsStream(i); }
 }
 
 function startMjpegStream(camId) {
-  const img = document.getElementById(`camImg${camId}`);
-  const canvas = document.getElementById(`camCanvas${camId}`);
-  img.style.display = '';
-  canvas.style.display = 'none';
-  stopWsStream(camId);
-  stopSnapshotPolling(camId);
-
+  const img = document.getElementById(`camImg${camId}`), cv = document.getElementById(`camCanvas${camId}`);
+  img.style.display = ''; cv.style.display = 'none';
+  stopWsStream(camId); stopSnapshotPolling(camId);
   img.src = getMjpegUrl(camId);
-  const badge = document.getElementById(`camMode${camId}`);
-  if (badge) badge.textContent = 'MJPEG';
-
-  // Error handler: fall back to snapshot polling if MJPEG fails
+  const badge = document.getElementById(`camMode${camId}`); if (badge) badge.textContent = 'MJPEG';
   img.onerror = () => {
     camMjpegErrors[camId] = (camMjpegErrors[camId] || 0) + 1;
-    if (camMjpegErrors[camId] >= 3) {
-      console.warn(`Camera ${camId} MJPEG failed, falling back to snapshot polling`);
-      if (badge) badge.textContent = 'POLL';
-      startSnapshotPolling(camId);
-    } else {
-      // Retry MJPEG after 2s
-      setTimeout(() => {
-        img.src = getMjpegUrl(camId) + '?retry=' + Date.now();
-      }, 2000);
-    }
+    if (camMjpegErrors[camId] >= 3) { if (badge) badge.textContent = 'POLL'; startSnapshotPolling(camId); }
+    else setTimeout(() => { img.src = getMjpegUrl(camId) + '?retry=' + Date.now(); }, 2000);
   };
   img.onload = () => { camMjpegErrors[camId] = 0; };
 }
@@ -1337,160 +1655,58 @@ function startMjpegStream(camId) {
 function startSnapshotPolling(camId) {
   stopSnapshotPolling(camId);
   const img = document.getElementById(`camImg${camId}`);
-  camSnapshotTimers[camId] = setInterval(() => {
-    img.src = getSnapUrl(camId) + '?t=' + Date.now();
-  }, 200);
+  camSnapshotTimers[camId] = setInterval(() => { img.src = getSnapUrl(camId) + '?t=' + Date.now(); }, 200);
 }
-
-function stopSnapshotPolling(camId) {
-  if (camSnapshotTimers[camId]) {
-    clearInterval(camSnapshotTimers[camId]);
-    delete camSnapshotTimers[camId];
-  }
-}
+function stopSnapshotPolling(camId) { if (camSnapshotTimers[camId]) { clearInterval(camSnapshotTimers[camId]); delete camSnapshotTimers[camId]; } }
 
 function startWsStream(camId) {
-  const img = document.getElementById(`camImg${camId}`);
-  const canvas = document.getElementById(`camCanvas${camId}`);
-  img.style.display = 'none';
-  canvas.style.display = '';
-  stopSnapshotPolling(camId);
-  stopWsStream(camId);
-
-  const ctx = canvas.getContext('2d');
+  const img = document.getElementById(`camImg${camId}`), cv = document.getElementById(`camCanvas${camId}`);
+  img.style.display = 'none'; cv.style.display = '';
+  stopSnapshotPolling(camId); stopWsStream(camId);
+  const cvCtx = cv.getContext('2d');
   const badge = document.getElementById(`camMode${camId}`);
   if (badge) { badge.textContent = 'WS'; badge.style.background = '#0a3d20'; badge.style.color = 'var(--success)'; }
-
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${proto}//${location.host}/ws/cam/${camId}?overlay=true&fps=15`;
-  const ws = new WebSocket(wsUrl);
-  ws.binaryType = 'blob';
-  let rendering = false;
-
-  ws.onmessage = (e) => {
-    if (typeof e.data === 'string') {
-      // JSON overlay data
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'overlays') {
-          camOverlays[camId] = msg.overlays || [];
-        }
-      } catch (_) {}
-      return;
-    }
-    // Binary JPEG frame
-    if (rendering) return;  // Drop frame if still drawing
-    rendering = true;
-    createImageBitmap(e.data).then(bmp => {
-      canvas.width = bmp.width;
-      canvas.height = bmp.height;
-      ctx.drawImage(bmp, 0, 0);
-      // Draw client-side overlays
-      drawCamOverlays(ctx, camId);
-      bmp.close();
-      rendering = false;
-    }).catch(() => { rendering = false; });
+  const wsConn = new WebSocket(`${proto}//${location.host}/ws/cam/${camId}?overlay=true&fps=15`);
+  wsConn.binaryType = 'blob'; let rendering = false;
+  wsConn.onmessage = (e) => {
+    if (typeof e.data === 'string') { try { const msg = JSON.parse(e.data); if (msg.type === 'overlays') camOverlays[camId] = msg.overlays || []; } catch(_){} return; }
+    if (rendering) return; rendering = true;
+    createImageBitmap(e.data).then(bmp => { cv.width = bmp.width; cv.height = bmp.height; cvCtx.drawImage(bmp, 0, 0); drawCamOverlays(cvCtx, camId); bmp.close(); rendering = false; }).catch(() => { rendering = false; });
   };
-
-  ws.onclose = () => {
-    console.warn(`Camera ${camId} WebSocket closed, reconnecting in 2s`);
-    if (badge) { badge.textContent = 'WS ✗'; badge.style.background = '#3d0a0a'; badge.style.color = 'var(--danger)'; }
-    delete camWsConnections[camId];
-    if (camMode === 'ws') {
-      setTimeout(() => startWsStream(camId), 2000);
-    }
-  };
-
-  ws.onerror = () => ws.close();
-  camWsConnections[camId] = ws;
+  wsConn.onclose = () => { if (badge) { badge.textContent = 'WS ✗'; badge.style.background = '#3d0a0a'; badge.style.color = 'var(--danger)'; } delete camWsConnections[camId]; if (camMode === 'ws') setTimeout(() => startWsStream(camId), 2000); };
+  wsConn.onerror = () => wsConn.close();
+  camWsConnections[camId] = wsConn;
 }
+function stopWsStream(camId) { if (camWsConnections[camId]) { try { camWsConnections[camId].close(); } catch(_){} delete camWsConnections[camId]; } }
 
-function stopWsStream(camId) {
-  if (camWsConnections[camId]) {
-    try { camWsConnections[camId].close(); } catch (_) {}
-    delete camWsConnections[camId];
-  }
-}
-
-function drawCamOverlays(ctx, camId) {
+function drawCamOverlays(ctx2, camId) {
   const overlays = camOverlays[camId] || [];
   for (const o of overlays) {
-    ctx.strokeStyle = o.color || '#00ff00';
-    ctx.lineWidth = 1;
-    if (o.type === 'crosshair') {
-      const sz = o.size || 20;
-      ctx.beginPath();
-      ctx.moveTo(o.x - sz, o.y); ctx.lineTo(o.x + sz, o.y);
-      ctx.moveTo(o.x, o.y - sz); ctx.lineTo(o.x, o.y + sz);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(o.x, o.y, sz / 3, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (o.type === 'rect') {
-      ctx.strokeRect(o.x, o.y, o.w, o.h);
-      if (o.label) {
-        ctx.fillStyle = o.color || '#00ff00';
-        ctx.font = '14px monospace';
-        ctx.fillText(o.label, o.x, o.y - 4);
-      }
-    } else if (o.type === 'circle') {
-      ctx.beginPath();
-      ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+    ctx2.strokeStyle = o.color || '#00ff00'; ctx2.lineWidth = 1;
+    if (o.type === 'crosshair') { const sz = o.size || 20; ctx2.beginPath(); ctx2.moveTo(o.x-sz,o.y); ctx2.lineTo(o.x+sz,o.y); ctx2.moveTo(o.x,o.y-sz); ctx2.lineTo(o.x,o.y+sz); ctx2.stroke(); ctx2.beginPath(); ctx2.arc(o.x,o.y,sz/3,0,Math.PI*2); ctx2.stroke(); }
+    else if (o.type === 'rect') { ctx2.strokeRect(o.x,o.y,o.w,o.h); if(o.label){ctx2.fillStyle=o.color||'#00ff00';ctx2.font='14px monospace';ctx2.fillText(o.label,o.x,o.y-4);} }
+    else if (o.type === 'circle') { ctx2.beginPath(); ctx2.arc(o.x,o.y,o.r,0,Math.PI*2); ctx2.stroke(); }
   }
 }
 
 function switchCameraMode(mode) {
   camMode = mode;
-  const info = document.getElementById('camModeInfo');
-  const btn = document.getElementById('btnCamModeToggle');
-  if (mode === 'ws') {
-    info.textContent = 'WebSocket + Canvas (CV overlays enabled)';
-    btn.textContent = '🔄 MJPEG MODE';
-    btn.style.borderColor = 'var(--success)';
-    btn.style.color = 'var(--success)';
-  } else {
-    info.textContent = 'MJPEG streaming (low latency)';
-    btn.textContent = '🔄 WS MODE';
-    btn.style.borderColor = '';
-    btn.style.color = '';
-  }
-  for (let i = 0; i < 3; i++) {
-    if (mode === 'mjpeg') startMjpegStream(i);
-    else startWsStream(i);
-  }
+  const info = document.getElementById('camModeInfo'), btn = document.getElementById('btnCamModeToggle');
+  if (mode === 'ws') { info.textContent = 'WebSocket + Canvas (CV overlays)'; btn.textContent = '🔄 MJPEG MODE'; btn.style.borderColor = 'var(--success)'; btn.style.color = 'var(--success)'; }
+  else { info.textContent = 'MJPEG streaming (low latency)'; btn.textContent = '🔄 WS MODE'; btn.style.borderColor = ''; btn.style.color = ''; }
+  for (let i = 0; i < 3; i++) { if (mode === 'mjpeg') startMjpegStream(i); else startWsStream(i); }
 }
 
-document.getElementById('btnCamModeToggle').addEventListener('click', () => {
-  switchCameraMode(camMode === 'mjpeg' ? 'ws' : 'mjpeg');
-});
-
-// Initialize camera streams on page load
+document.getElementById('btnCamModeToggle').addEventListener('click', () => switchCameraMode(camMode === 'mjpeg' ? 'ws' : 'mjpeg'));
 initCameraStreams();
 
-// Camera toggle (show/hide)
 document.getElementById('btnCamToggle').addEventListener('click', () => {
-  const feeds = document.getElementById('cameraFeeds');
-  const btn = document.getElementById('btnCamToggle');
+  const feeds = document.getElementById('cameraFeeds'), btn = document.getElementById('btnCamToggle');
   const hidden = feeds.classList.toggle('hidden');
   btn.textContent = hidden ? '👁 SHOW' : '👁 HIDE';
-  if (hidden) {
-    // Stop all streams when hidden
-    for (let i = 0; i < 3; i++) {
-      stopWsStream(i);
-      stopSnapshotPolling(i);
-      const img = document.getElementById(`camImg${i}`);
-      img.dataset.src = img.src;
-      img.src = '';
-    }
-  } else {
-    // Restart streams when shown
-    for (let i = 0; i < 3; i++) {
-      if (camMode === 'mjpeg') startMjpegStream(i);
-      else startWsStream(i);
-    }
-  }
+  if (hidden) { for (let i = 0; i < 3; i++) { stopWsStream(i); stopSnapshotPolling(i); const img = document.getElementById(`camImg${i}`); img.dataset.src = img.src; img.src = ''; } }
+  else { for (let i = 0; i < 3; i++) { if (camMode === 'mjpeg') startMjpegStream(i); else startWsStream(i); } }
   setTimeout(resizeCanvas, 50);
 });
 
@@ -1502,145 +1718,79 @@ const PERSPECTIVES = ['overhead', 'side', 'front', 'arm-mounted', 'custom'];
 
 document.getElementById('btnCamSettings').addEventListener('click', () => {
   const panel = document.getElementById('cameraSettings');
-  const visible = panel.style.display !== 'none';
-  panel.style.display = visible ? 'none' : 'block';
-  if (!visible) loadCameraConfig();
+  panel.style.display = panel.style.display !== 'none' ? 'none' : 'block';
+  if (panel.style.display !== 'none') loadCameraConfig();
 });
 
 async function loadCameraConfig() {
   try {
-    const resp = await fetch('/api/cameras/config');
-    const config = await resp.json();
-    const container = document.getElementById('camSettingsRows');
-    container.innerHTML = '';
+    const resp = await fetch('/api/cameras/config'); const config = await resp.json();
+    const container = document.getElementById('camSettingsRows'); container.innerHTML = '';
     for (let i = 0; i < 3; i++) {
       const cfg = config[String(i)] || { label: `Camera ${i}`, perspective: 'custom' };
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:4px;';
-      row.innerHTML = `
-        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);width:30px">C${i}</span>
-        <input type="text" class="cam-cfg-label" data-cam="${i}" value="${cfg.label}"
-          style="flex:1;font-family:var(--mono);font-size:11px;padding:4px 6px;background:#0d1525;border:1px solid var(--card-border);border-radius:3px;color:var(--text)">
-        <select class="cam-cfg-persp" data-cam="${i}"
-          style="font-family:var(--mono);font-size:11px;padding:4px;background:#0d1525;border:1px solid var(--card-border);border-radius:3px;color:var(--text)">
-          ${PERSPECTIVES.map(p => `<option value="${p}" ${p === cfg.perspective ? 'selected' : ''}>${p}</option>`).join('')}
-        </select>`;
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:4px;';
+      row.innerHTML = `<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);width:30px">C${i}</span><input type="text" class="cam-cfg-label" data-cam="${i}" value="${cfg.label}" style="flex:1;font-family:var(--mono);font-size:11px;padding:4px 6px;background:#0d1525;border:1px solid var(--card-border);border-radius:3px;color:var(--text)"><select class="cam-cfg-persp" data-cam="${i}" style="font-family:var(--mono);font-size:11px;padding:4px;background:#0d1525;border:1px solid var(--card-border);border-radius:3px;color:var(--text)">${PERSPECTIVES.map(p => `<option value="${p}" ${p === cfg.perspective ? 'selected' : ''}>${p}</option>`).join('')}</select>`;
       container.appendChild(row);
-      // Update live label
-      const labelEl = document.getElementById(`camLabel${i}`);
-      if (labelEl) labelEl.textContent = cfg.label;
+      const labelEl = document.getElementById(`camLabel${i}`); if (labelEl) labelEl.textContent = cfg.label;
     }
-  } catch (e) { console.warn('Failed to load camera config:', e); }
+  } catch (e) {}
 }
 
 document.getElementById('btnSaveCamConfig').addEventListener('click', async () => {
-  const labels = document.querySelectorAll('.cam-cfg-label');
-  const persps = document.querySelectorAll('.cam-cfg-persp');
+  const labels = document.querySelectorAll('.cam-cfg-label'), persps = document.querySelectorAll('.cam-cfg-persp');
   for (let i = 0; i < labels.length; i++) {
-    const camId = parseInt(labels[i].dataset.cam);
-    const label = labels[i].value.trim() || `Camera ${camId}`;
-    const perspective = persps[i].value;
-    try {
-      await fetch('/api/cameras/config', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ camera_id: camId, label, perspective })
-      });
-      const labelEl = document.getElementById(`camLabel${camId}`);
-      if (labelEl) labelEl.textContent = label;
-    } catch (e) { console.warn(`Failed to save camera ${camId} config:`, e); }
+    const camId = parseInt(labels[i].dataset.cam), label = labels[i].value.trim() || `Camera ${camId}`, perspective = persps[i].value;
+    try { await fetch('/api/cameras/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({camera_id:camId,label,perspective}) }); const labelEl = document.getElementById(`camLabel${camId}`); if (labelEl) labelEl.textContent = label; } catch(e) {}
   }
   document.getElementById('cameraSettings').style.display = 'none';
 });
-
-// Load camera labels on startup
 loadCameraConfig();
 
 // ============================================================
-//  DEBUG TELEMETRY PANEL
+//  DEBUG TELEMETRY
 // ============================================================
 
-let debugOn = false;
-let debugInterval = null;
-let wsLastMsgTs = 0;
-let wsRxIntervalMs = 0;
+let debugOn = false, debugInterval = null, wsLastMsgTs = 0, wsRxIntervalMs = 0;
 
 function hookWsDebug() {
   if (!ws) return;
-  const origHandler = ws.onmessage;
-  ws.onmessage = (e) => {
-    const now = Date.now();
-    if (wsLastMsgTs > 0) wsRxIntervalMs = now - wsLastMsgTs;
-    wsLastMsgTs = now;
-    origHandler(e);
-  };
+  const orig = ws.onmessage;
+  ws.onmessage = (e) => { const now = Date.now(); if (wsLastMsgTs > 0) wsRxIntervalMs = now - wsLastMsgTs; wsLastMsgTs = now; orig(e); };
 }
 
 document.getElementById('btnCalibrateViz').addEventListener('click', async () => {
   const btn = document.getElementById('btnCalibrateViz');
-  if (!confirm('This will move the arm through ~20 poses to calibrate the visualization. The arm must be powered and enabled. Continue?')) return;
-  btn.disabled = true;
-  btn.textContent = '📐 CALIBRATING...';
+  if (!confirm('Move arm through ~20 poses to calibrate viz. Continue?')) return;
+  btn.disabled = true; btn.textContent = '📐 CALIBRATING...';
   try {
-    const resp = await fetch('/api/viz/calibrate', { method: 'POST' });
-    const data = await resp.json();
+    const data = await apiPost('/api/viz/calibrate');
     if (data.ok) {
-      if (data.camera_params) {
-        CAM_PARAMS = data.camera_params.cam1 || data.camera_params.cam0 || null;
-        if (CAM_PARAMS) USE_3D_PROJECTION = true;
-      }
-      alert(`Calibration complete! ${data.n_observations} observations, residual: ${data.residual}`);
-    } else {
-      alert('Calibration failed: ' + (data.error || data.message || 'Unknown error'));
-    }
-  } catch (e) {
-    alert('Calibration error: ' + e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '📐 CALIBRATE VIZ';
-  }
+      if (data.camera_params) { CAM_PARAMS = data.camera_params.cam1 || data.camera_params.cam0 || null; if (CAM_PARAMS) USE_3D_PROJECTION = true; }
+      showResult('vizCalibResult', `Done! ${data.n_observations} obs, residual: ${data.residual}`);
+    } else showResult('vizCalibResult', 'Failed: ' + (data.error || 'unknown'));
+  } catch(e) { showResult('vizCalibResult', 'Error: ' + e.message); }
+  btn.disabled = false; btn.textContent = '📐 CALIBRATE VIZ';
 });
 
 document.getElementById('btnDebug').addEventListener('click', async () => {
   debugOn = !debugOn;
-  const btn = document.getElementById('btnDebug');
-  const panel = document.getElementById('debugPanel');
-  btn.className = 'btn' + (debugOn ? ' on' : '');
+  const btn = document.getElementById('btnDebug'), panel = document.getElementById('debugPanel');
+  btn.className = 'btn' + (debugOn ? ' on' : ''); btn.textContent = debugOn ? 'DISABLE' : 'ENABLE';
   panel.style.display = debugOn ? 'block' : 'none';
   try { await fetch(`/api/debug/${debugOn ? 'enable' : 'disable'}`, { method: 'POST' }); } catch(e) {}
-  if (debugOn) {
-    hookWsDebug();
-    debugInterval = setInterval(pollDebug, 1000);
-    pollDebug();
-  } else {
-    if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
-  }
+  if (debugOn) { hookWsDebug(); debugInterval = setInterval(pollDebug, 1000); pollDebug(); }
+  else { if (debugInterval) { clearInterval(debugInterval); debugInterval = null; } }
 });
 
 async function pollDebug() {
-  const panel = document.getElementById('debugPanel');
-  if (!debugOn || !panel || panel.style.display === 'none') {
-    if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
-    return;
-  }
+  if (!debugOn) return;
   try {
-    const [statsResp, telResp] = await Promise.allSettled([
-      fetch('/api/debug/stats'),
-      fetch('/api/debug/telemetry?limit=30')
-    ]);
-    if (statsResp.status === 'fulfilled' && statsResp.value.ok) {
-      const stats = await statsResp.value.json();
-      updateDebugStats(stats);
-    }
-    if (telResp.status === 'fulfilled' && telResp.value.ok) {
-      const tel = await telResp.value.json();
-      updateDebugPipeline(tel.events || tel);
-      renderDebugEvents(tel.events || tel);
-    }
+    const [statsResp, telResp] = await Promise.allSettled([fetch('/api/debug/stats'), fetch('/api/debug/telemetry?limit=30')]);
+    if (statsResp.status === 'fulfilled' && statsResp.value.ok) updateDebugStats(await statsResp.value.json());
+    if (telResp.status === 'fulfilled' && telResp.value.ok) { const tel = await telResp.value.json(); updateDebugPipeline(tel.events || tel); renderDebugEvents(tel.events || tel); }
   } catch(e) {}
   document.getElementById('dsWsRxInt').textContent = wsRxIntervalMs > 0 ? wsRxIntervalMs + 'ms' : 'N/A';
-  const uiStage = document.querySelector('.pipe-stage[data-stage="UI"]');
-  if (uiStage) { uiStage.className = 'pipe-stage active'; }
+  const uiStage = document.querySelector('.pipe-stage[data-stage="UI"]'); if (uiStage) uiStage.className = 'pipe-stage active';
 }
 
 function updateDebugStats(s) {
@@ -1659,38 +1809,143 @@ function updateDebugStats(s) {
 }
 
 function updateDebugPipeline(events) {
-  const now = Date.now();
-  const recentTypes = new Set();
-  const errorTypes = new Set();
-  if (Array.isArray(events)) {
-    events.forEach(ev => {
-      const age = ev.timestamp ? now - new Date(ev.timestamp).getTime() : 9999;
-      if (age < 3000) {
-        if (ev.event_type === 'ERROR') errorTypes.add('ERROR');
-        else recentTypes.add(ev.event_type);
-      }
-    });
-  }
-  document.querySelectorAll('.pipe-stage').forEach(el => {
-    const stage = el.dataset.stage;
-    if (stage === 'UI') return;
-    if (errorTypes.has(stage)) el.className = 'pipe-stage error';
-    else if (recentTypes.has(stage)) el.className = 'pipe-stage active';
-    else el.className = 'pipe-stage';
-  });
+  const now = Date.now(), recentTypes = new Set(), errorTypes = new Set();
+  if (Array.isArray(events)) events.forEach(ev => { const age = ev.timestamp ? now - new Date(ev.timestamp).getTime() : 9999; if (age < 3000) { if (ev.event_type === 'ERROR') errorTypes.add('ERROR'); else recentTypes.add(ev.event_type); } });
+  document.querySelectorAll('.pipe-stage').forEach(el => { const stage = el.dataset.stage; if (stage === 'UI') return; if (errorTypes.has(stage)) el.className = 'pipe-stage error'; else if (recentTypes.has(stage)) el.className = 'pipe-stage active'; else el.className = 'pipe-stage'; });
 }
 
 function renderDebugEvents(events) {
   const container = document.getElementById('debugEvents');
-  if (!Array.isArray(events) || events.length === 0) { container.innerHTML = '<div style="color:#555">No events</div>'; return; }
+  if (!Array.isArray(events) || !events.length) { container.innerHTML = '<div style="color:#555">No events</div>'; return; }
   container.innerHTML = events.map(ev => {
     const ts = ev.timestamp ? new Date(ev.timestamp).toTimeString().slice(0,8) : '??:??:??';
     const cid = ev.correlation_id ? ev.correlation_id.slice(0,8) : '';
     const payload = ev.payload ? JSON.stringify(ev.payload).slice(0,80) : '';
-    const typeCls = 'de-' + (ev.event_type || 'CMD_SENT');
-    return `<div class="debug-evt"><span class="de-ts">${esc(ts)}</span><span class="de-type ${typeCls}">${esc(ev.event_type||'?')}</span><span class="de-cid">${esc(cid)}</span><span class="de-pay">${esc(payload)}</span></div>`;
+    return `<div class="debug-evt"><span class="de-ts">${esc(ts)}</span><span class="de-type de-${ev.event_type||'CMD_SENT'}">${esc(ev.event_type||'?')}</span><span class="de-cid">${esc(cid)}</span><span class="de-pay">${esc(payload)}</span></div>`;
   }).join('');
   container.scrollTop = container.scrollHeight;
+}
+
+// ============================================================
+//  NEW PANEL API HANDLERS
+// ============================================================
+
+// --- Visual Servo ---
+async function vsStart(mode) {
+  const prefix = mode === 'overhead' ? 'Oh' : 'Ap';
+  const x = parseFloat(document.getElementById(`vs${prefix}X`).value) || 0;
+  const y = parseFloat(document.getElementById(`vs${prefix}Y`).value) || 0;
+  const cam = document.getElementById(`vs${prefix}Cam`).value;
+  const data = await apiPost(`/api/servo/${mode}/start`, { target_x: x, target_y: y, camera_id: parseInt(cam) });
+  showResult(`vs${mode === 'overhead' ? 'Overhead' : 'Approach'}Result`, data);
+  vsStatus(mode);
+}
+async function vsStop(mode) { const data = await apiPost(`/api/servo/${mode}/stop`); showResult(`vs${mode === 'overhead' ? 'Overhead' : 'Approach'}Result`, data); vsStatus(mode); }
+async function vsStatus(mode) {
+  const data = await apiCall(`/api/servo/${mode}/status`);
+  const el = document.getElementById(`vs${mode === 'overhead' ? 'Overhead' : 'Approach'}Status`);
+  const running = data.running || data.active;
+  el.textContent = running ? 'RUNNING' : 'STOPPED';
+  el.className = 'status-indicator ' + (running ? 'running' : 'stopped');
+}
+
+// --- Multi-view Pick ---
+async function mvpStart() {
+  const target = document.getElementById('mvpTarget').value.trim();
+  const data = await apiPost('/api/pick/start', target ? { target } : {});
+  showResult('mvpResult', data); mvpRefresh();
+}
+async function mvpStop() { const data = await apiPost('/api/pick/stop'); showResult('mvpResult', data); mvpRefresh(); }
+async function mvpRefresh() {
+  const data = await apiCall('/api/pick/status');
+  const el = document.getElementById('mvpStatus');
+  el.textContent = data.status || data.phase || 'IDLE';
+  el.className = 'status-indicator ' + (data.active ? 'running' : 'stopped');
+  // Update phase chips
+  const phases = ['detect','plan','approach','servo','grasp','retreat'];
+  const currentIdx = phases.indexOf(data.phase);
+  document.querySelectorAll('#mvpPhases .phase-chip').forEach((chip, i) => {
+    chip.className = 'phase-chip' + (i < currentIdx ? ' done' : i === currentIdx ? ' active' : '');
+  });
+}
+
+// --- Pick Planner ---
+async function ppDetect() { const cam = document.getElementById('ppDetectCam').value; showResult('ppDetectResult', await apiPost('/api/pick-planner/detect', {camera_id:parseInt(cam)})); }
+async function ppPlan() { const target = document.getElementById('ppTarget').value; showResult('ppPlanResult', await apiPost('/api/pick-planner/plan', {target})); }
+async function ppFromPos() { showResult('ppPlanResult', await apiPost('/api/pick-planner/from-position')); }
+async function ppCalibrate() { showResult('ppCalibResult', await apiPost('/api/pick-planner/calibrate')); }
+
+// --- VLA ---
+async function vlaRefreshStatus() { const data = await apiCall('/api/vla/status'); const el = document.getElementById('vlaStatus'); el.textContent = data.status || 'UNKNOWN'; el.className = 'status-indicator ' + (data.ready ? 'running' : 'stopped'); }
+async function vlaAct() { const prompt = document.getElementById('vlaPrompt').value; const cam = document.getElementById('vlaCam').value; showResult('vlaActResult', await apiPost('/api/vla/act', {prompt, camera_id:parseInt(cam)})); }
+async function vlaDemoStart() { const task = document.getElementById('vlaDemoTask').value; showResult('vlaDemoResult', await apiPost('/api/vla/demo/collect', {task})); }
+async function vlaDemoStop() { showResult('vlaDemoResult', await apiPost('/api/vla/demo/stop')); }
+async function vlaDemoList() { showResult('vlaDemoResult', await apiCall('/api/vla/demo/list')); }
+
+// --- Bifocal ---
+async function bifocalToggle(on) { const data = await apiPost('/api/bifocal/toggle', {enabled:on}); const el = document.getElementById('bifocalStatus'); el.textContent = on ? 'ON' : 'OFF'; el.className = 'status-indicator ' + (on ? 'running' : 'stopped'); }
+async function bifocalCalibrate() { showResult('bifocalResult', await apiPost('/api/bifocal/calibrate')); }
+async function bifocalPreview() { showResult('bifocalResult', await apiCall('/api/bifocal/preview')); }
+
+// --- 3D Scan ---
+async function scan3dStart() { showResult('scan3dResult', await apiPost('/api/scan3d/start')); scan3dRefresh(); }
+async function scan3dStop() { showResult('scan3dResult', await apiPost('/api/scan3d/stop')); scan3dRefresh(); }
+async function scan3dRefresh() { const data = await apiCall('/api/scan3d/status'); const el = document.getElementById('scan3dStatus'); el.textContent = data.status || 'IDLE'; el.className = 'status-indicator ' + (data.scanning ? 'running' : 'stopped'); }
+async function scan3dList() { showResult('scan3dListResult', await apiCall('/api/scan3d/list')); }
+
+// --- Calibration Dashboard ---
+async function calibStartRun(type) { showResult('calibRunResult', await apiPost(`/api/calibration/${type}/start`)); }
+async function calibStopRun() { showResult('calibRunResult', await apiPost('/api/calibration/abort')); }
+async function calibListResults() { showResult('calibResultsBox', await apiCall('/api/calibration/results')); }
+async function calibViewReport() { showResult('calibResultsBox', await apiCall('/api/calibration/report/latest/json')); }
+async function calibViewFrames() { const sid = document.getElementById('calibFrameSession').value; showResult('calibResultsBox', await apiCall(`/api/calibration/frames/${sid}`)); }
+async function calibViewExtrinsics() { showResult('calibExtrinsicsResult', await apiCall('/api/calibration/extrinsics')); }
+
+// --- Diagnostics ---
+async function diagFeedback() { showResult('diagFeedbackResult', await apiCall('/api/debug/feedback')); }
+async function diagSmoother() { showResult('diagSmootherResult', await apiCall('/api/debug/smoother')); }
+async function diagGpu() { const data = await apiCall('/api/gpu/status'); showResult('diagGpuResult', data); showResult('settingsGpuResult', data); }
+
+// --- Collision History ---
+async function collisionHistoryLoad() { showResult('collisionHistoryResult', await apiCall('/api/collisions/history')); }
+async function collisionHistoryClear() { showResult('collisionHistoryResult', await apiPost('/api/collisions/clear')); }
+
+// --- Object Locator ---
+async function locateObject() {
+  const target = document.getElementById('locateTarget').value;
+  const cam = document.getElementById('locateCam').value;
+  const data = await apiPost('/api/locate', { target, camera_id: parseInt(cam) });
+  showResult('locateResult', data);
+  if (data.ok && data.image_url) { const img = document.getElementById('locatePreview'); img.src = data.image_url; img.style.display = 'block'; }
+}
+
+// --- Scene Analysis ---
+async function sceneAnalyze() {
+  const cam = document.getElementById('sceneCam').value;
+  const prompt = document.getElementById('scenePrompt').value;
+  showResult('sceneResult', await apiPost('/api/vision/analyze', { camera_id: parseInt(cam), prompt }));
+}
+
+// --- Claw Prediction ---
+async function clawPredToggle(on) { const data = await apiPost('/api/claw-prediction/toggle', {enabled:on}); const el = document.getElementById('clawPredStatus'); el.textContent = on ? 'ON' : 'OFF'; el.className = 'status-indicator ' + (on ? 'running' : 'stopped'); }
+async function clawPredSaveHSV() {
+  const body = { h_low: +document.getElementById('cpHL').value, h_high: +document.getElementById('cpHH').value, s_low: +document.getElementById('cpSL').value, s_high: +document.getElementById('cpSH').value, v_low: +document.getElementById('cpVL').value, v_high: +document.getElementById('cpVH').value };
+  await apiPost('/api/claw-prediction/hsv', body);
+}
+async function clawPredGetROI() { showResult('cpRoiResult', await apiCall('/api/claw-prediction/roi')); }
+
+// --- Settings ---
+async function simToggle() {
+  const msg = armState.sim_mode ? 'Switch to LIVE mode?' : 'Switch to SIM mode?';
+  if (!confirm(msg)) return;
+  const data = await apiPost('/api/sim/toggle');
+  if (data.ok) { armState.sim_mode = data.sim_mode; updateUI(); }
+  simRefresh();
+}
+async function simRefresh() {
+  const data = await apiCall('/api/sim/status');
+  const el = document.getElementById('simStatus');
+  el.textContent = data.sim_mode ? 'SIMULATOR' : 'LIVE'; el.className = 'status-indicator ' + (data.sim_mode ? 'running' : 'stopped');
 }
 
 // ============================================================
@@ -1700,200 +1955,53 @@ function renderDebugEvents(events) {
 connectWS();
 setTimeout(() => { resizeCanvas(); animLoop(); }, 50);
 
-// SIM/LIVE toggle
-document.getElementById('simBadge').addEventListener('click', async () => {
-  const badge = document.getElementById('simBadge');
-  const wasSim = armState.sim_mode;
-  const msg = wasSim
-    ? 'Switch to LIVE mode? This will attempt to connect to the physical arm via DDS.'
-    : 'Switch to SIM mode? This will disconnect from the physical arm.';
-  if (!confirm(msg)) return;
-  badge.style.opacity = '0.5';
-  try {
-    const resp = await fetch('/api/sim/toggle', { method: 'POST' });
-    const data = await resp.json();
-    if (data.ok) {
-      armState.sim_mode = data.sim_mode;
-      updateUI();
-    } else {
-      alert('Toggle failed: ' + (data.error || 'unknown error'));
-    }
-  } catch (e) {
-    alert('Toggle failed: ' + e.message);
-  }
-  badge.style.opacity = '1';
-});
+// SIM badge click
+document.getElementById('simBadge').addEventListener('click', simToggle);
 
-// Auto-connect ASCII video if ASCII tab is active on load
-setTimeout(() => { if (window._activeTab === 'ascii' && typeof asciiConnect === 'function') asciiConnect(); }, 500);
-
-// === Collision Alert ===
+// Collision Alert
 function showCollisionAlert(data) {
   const el = document.getElementById('collisionAlert');
-  document.getElementById('collisionInfo').textContent =
-    `Joint ${data.joint} commanded to ${data.commanded}° but stuck at ${data.actual}° (error: ${data.error}°)`;
+  document.getElementById('collisionInfo').textContent = `Joint ${data.joint} commanded to ${data.commanded}° but stuck at ${data.actual}°`;
   document.getElementById('collisionAnalysis').textContent = data.analysis || '';
-  const imgContainer = document.getElementById('collisionImages');
-  imgContainer.innerHTML = '';
-  if (data.images) {
-    data.images.forEach(src => {
-      const img = document.createElement('img');
-      img.src = src;
-      img.alt = 'Collision snapshot';
-      imgContainer.appendChild(img);
-    });
-  }
+  const imgContainer = document.getElementById('collisionImages'); imgContainer.innerHTML = '';
+  if (data.images) data.images.forEach(src => { const img = document.createElement('img'); img.src = src; imgContainer.appendChild(img); });
   el.classList.add('visible');
 }
-function dismissCollision() {
-  document.getElementById('collisionAlert').classList.remove('visible');
-}
+function dismissCollision() { document.getElementById('collisionAlert').classList.remove('visible'); }
 
-// ============================================================
-//  TAB SWITCHING
-// ============================================================
-
-window._activeTab = 'control';
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const prevTab = window._activeTab;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    btn.classList.add('active');
-    const tab = btn.dataset.tab;
-    window._activeTab = tab;
-    const tabMap = { control: 'tabControl', ascii: 'tabAscii', factory: 'tabFactory', realworld: 'tabRealworld' };
-    document.getElementById(tabMap[tab] || 'tabControl').classList.add('active');
-
-    // Disconnect previous tab
-    if (prevTab === 'ascii' && typeof asciiDisconnect === 'function') asciiDisconnect();
-    if (prevTab === 'factory' && typeof fw_deactivate === 'function') fw_deactivate();
-    if (prevTab === 'realworld' && typeof rw_deactivate === 'function') rw_deactivate();
-
-    // Connect new tab after DOM settles
-    setTimeout(() => {
-      if (tab === 'control') resizeCanvas();
-      if (tab === 'ascii' && typeof asciiConnect === 'function') asciiConnect();
-      if (tab === 'factory' && typeof fw_activate === 'function') fw_activate();
-      if (tab === 'realworld' && typeof rw_activate === 'function') rw_activate();
-    }, 100);
-  });
-});
-
-// ASCII Video engine loaded from ascii-video.js
-
-// --- Calibration Status Fetcher (for Control tab) ---
+// Calibration status poller
 (function(){
-  const calibCams = document.getElementById('calibCams');
-  const calibLoaded = document.getElementById('calibLoaded');
-  const calibQuality = document.getElementById('calibQuality');
   let calibInterval = null;
-
   function fetchCalibStatus(){
     fetch('/api/arm3d/status').then(r=>r.json()).then(d=>{
-      if(calibCams) calibCams.textContent = 'Cameras: '+(d.cameras_connected!=null?d.cameras_connected:'--');
-      if(calibLoaded) calibLoaded.textContent = 'Calibration: '+(d.calibration_loaded?'✅ Loaded':'❌ Not loaded');
-      if(calibQuality) calibQuality.textContent = 'Tracking: '+(d.tracking_quality||d.source||'--');
-    }).catch(()=>{
-      if(calibCams) calibCams.textContent = 'Cameras: N/A';
-      if(calibLoaded) calibLoaded.textContent = 'Calibration: N/A';
-      if(calibQuality) calibQuality.textContent = 'Tracking: N/A';
-    });
+      const cc=document.getElementById('calibCams'),cl=document.getElementById('calibLoaded'),cq=document.getElementById('calibQuality');
+      if(cc) cc.textContent='Cameras: '+(d.cameras_connected!=null?d.cameras_connected:'--');
+      if(cl) cl.textContent='Calibration: '+(d.calibration_loaded?'✅ Loaded':'❌ Not loaded');
+      if(cq) cq.textContent='Tracking: '+(d.tracking_quality||d.source||'--');
+    }).catch(()=>{});
   }
-
-  // Poll every 5 seconds when control tab is visible
-  const observer = new MutationObserver(()=>{
-    const ctrl = document.getElementById('tabControl');
-    if(ctrl && ctrl.classList.contains('active')){
-      if(!calibInterval){fetchCalibStatus();calibInterval=setInterval(fetchCalibStatus,5000);}
-    } else {
-      if(calibInterval){clearInterval(calibInterval);calibInterval=null;}
-    }
-  });
-  const tabCtrl = document.getElementById('tabControl');
-  if(tabCtrl) observer.observe(tabCtrl,{attributes:true,attributeFilter:['class']});
-  // Initial fetch
+  // Poll when control panel visible
+  setInterval(()=>{ if(_activePanel==='control'){fetchCalibStatus();} }, 5000);
   fetchCalibStatus();
 })();
 
-// ============================================================
-//  LLM/CV CALIBRATION UI
-// ============================================================
+// LLM/CV Calibration UI
 (function(){
-  const btnStart = document.getElementById('btnStartCalib');
-  const btnStop = document.getElementById('btnStopCalib');
-  const progress = document.getElementById('calibProgress');
-  const calibCur = document.getElementById('calibCurrent');
-  const calibTot = document.getElementById('calibTotal');
-  const progressBar = document.getElementById('calibProgressBar');
-  const resultsDiv = document.getElementById('calibResults');
-  let pollTimer = null;
-
-  if(btnStart) btnStart.addEventListener('click', async ()=>{
-    if(!confirm('Start LLM/CV calibration comparison? The arm will move through ~20 poses.')) return;
-    btnStart.disabled = true; btnStop.disabled = false;
-    progress.style.display = 'block'; resultsDiv.style.display = 'none';
-    try {
-      const r = await fetch('/api/calibration/start', {method:'POST'});
-      const d = await r.json();
-      if(d.ok) { startPolling(d.session_id); }
-      else { alert('Failed: '+(d.error||'unknown')); btnStart.disabled=false; btnStop.disabled=true; }
-    } catch(e) { alert('Error: '+e); btnStart.disabled=false; btnStop.disabled=true; }
+  const btnStart=document.getElementById('btnStartCalib'),btnStop=document.getElementById('btnStopCalib'),progress=document.getElementById('calibProgress'),calibCur=document.getElementById('calibCurrent'),calibTot=document.getElementById('calibTotal'),progressBar=document.getElementById('calibProgressBar'),resultsDiv=document.getElementById('calibResults');
+  let pollTimer=null;
+  if(btnStart) btnStart.addEventListener('click',async()=>{
+    if(!confirm('Start LLM/CV calibration? The arm will move through ~20 poses.')) return;
+    btnStart.disabled=true;btnStop.disabled=false;progress.style.display='block';resultsDiv.style.display='none';
+    try{const d=await apiPost('/api/calibration/start');if(d.ok)startPolling(d.session_id);else{alert('Failed: '+(d.error||''));btnStart.disabled=false;btnStop.disabled=true;}}catch(e){alert('Error: '+e);btnStart.disabled=false;btnStop.disabled=true;}
   });
-
-  if(btnStop) btnStop.addEventListener('click', async ()=>{
-    await fetch('/api/calibration/abort', {method:'POST'});
-    stopPolling(); btnStart.disabled=false; btnStop.disabled=true;
-  });
-
-  function startPolling(sessionId){
-    pollTimer = setInterval(async ()=>{
-      try {
-        const r = await fetch('/api/calibration/status');
-        const d = await r.json();
-        calibCur.textContent = d.current_pose || 0;
-        calibTot.textContent = d.total_poses || 20;
-        const pct = d.total_poses ? ((d.current_pose||0)/d.total_poses*100) : 0;
-        progressBar.style.width = pct+'%';
-        if(d.status === 'complete' || d.status === 'failed'){
-          stopPolling(); btnStart.disabled=false; btnStop.disabled=true;
-          if(d.status === 'complete' && sessionId) showResults(sessionId);
-          else if(d.status === 'failed') { resultsDiv.style.display='block'; resultsDiv.textContent='Calibration failed: '+(d.error||''); }
-        }
-      } catch(e){}
-    }, 1000);
-  }
-
-  function stopPolling(){ if(pollTimer){clearInterval(pollTimer);pollTimer=null;} }
-
-  async function showResults(sessionId){
-    try {
-      const r = await fetch('/api/calibration/report/'+sessionId+'/json');
-      const d = await r.json();
-      resultsDiv.style.display = 'block';
-      let txt = `Recommendation: ${d.recommendation||'?'}\n`;
-      txt += `Poses: ${d.total_poses}, Cost: $${(d.total_llm_cost_usd||0).toFixed(4)}\n`;
-      if(d.joints) d.joints.forEach(j=>{
-        txt += `${j.name}: CV ${(j.cv_detection_rate*100).toFixed(0)}% LLM ${(j.llm_detection_rate*100).toFixed(0)}%\n`;
-      });
-      resultsDiv.textContent = txt;
-    } catch(e){ resultsDiv.style.display='block'; resultsDiv.textContent='Could not load report'; }
-  }
+  if(btnStop) btnStop.addEventListener('click',async()=>{await fetch('/api/calibration/abort',{method:'POST'});stopPolling();btnStart.disabled=false;btnStop.disabled=true;});
+  function startPolling(sid){pollTimer=setInterval(async()=>{try{const d=await apiCall('/api/calibration/status');calibCur.textContent=d.current_pose||0;calibTot.textContent=d.total_poses||20;progressBar.style.width=((d.current_pose||0)/(d.total_poses||20)*100)+'%';if(d.status==='complete'||d.status==='failed'){stopPolling();btnStart.disabled=false;btnStop.disabled=true;if(d.status==='complete'&&sid)showCalibResults(sid);}}catch(e){}},1000);}
+  function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
+  async function showCalibResults(sid){try{const d=await apiCall('/api/calibration/report/'+sid+'/json');resultsDiv.style.display='block';let txt=`Recommendation: ${d.recommendation||'?'}\nPoses: ${d.total_poses}`;if(d.joints)d.joints.forEach(j=>{txt+=`\n${j.name}: CV ${(j.cv_detection_rate*100).toFixed(0)}% LLM ${(j.llm_detection_rate*100).toFixed(0)}%`;});resultsDiv.textContent=txt;}catch(e){resultsDiv.style.display='block';resultsDiv.textContent='Could not load report';}}
 })();
 
-// ============================================================
-//  PERFORMANCE MONITORING
-// ============================================================
-(function() {
-  const loadTime = performance.now();
-  window.addEventListener('load', () => {
-    console.log(`[perf] Page loaded in ${(performance.now()).toFixed(0)}ms`);
-    setInterval(() => {
-      const wsCount = typeof WSManager !== 'undefined' ? WSManager.activeCount : '?';
-      console.log(`[perf] Active WebSockets: ${wsCount} | Tab: ${window._activeTab || 'control'}`);
-    }, 10000);
-  });
-})();
+// Performance monitoring
+(function(){window.addEventListener('load',()=>{console.log(`[perf] Page loaded in ${performance.now().toFixed(0)}ms`);});})();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
