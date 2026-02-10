@@ -3,6 +3,14 @@
 Uses 4-point (or more) homography to map between overhead camera pixel
 coordinates and workspace XY coordinates in mm from arm base.
 
+This is SPECIFIC to the overhead camera (cam0, /dev/video0) which looks
+straight down at the workspace. It uses a 2D homography (no Z component)
+since the overhead view projects the workspace as a flat plane.
+
+For side camera (cam2) height estimation, see side_height_estimator.py.
+For arm-mounted camera (cam1), see hand_eye_calibrator.py and camera_model.py.
+For full 3D extrinsics (any camera), see camera_model.py.
+
 Calibration data stored in data/overhead_calibration.json.
 """
 

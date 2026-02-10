@@ -414,7 +414,7 @@ async def lifespan(app: FastAPI):
     try:
         from src.vision.camera_model import CameraModel
 
-        for cam_id in [0, 1]:
+        for cam_id in [0, 1, 2]:
             cm = CameraModel(cam_id)
             if cm.load():
                 camera_models[cam_id] = cm

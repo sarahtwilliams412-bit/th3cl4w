@@ -1,5 +1,8 @@
 {
-  "cam0_front": {
+  "cam0_overhead": {
+    "device": "/dev/video0",
+    "model": "Logitech BRIO 4K",
+    "role": "overhead",
     "image_size": [1920, 1080],
     "camera_matrix": {
       "fx": 1101.5,
@@ -18,9 +21,36 @@
     "horizontal_fov_deg": 82.1,
     "vertical_fov_deg": 52.2,
     "confidence": "high",
-    "notes": "Logitech BRIO 4K at 1080p, zoom=100 confirmed via v4l2 ioctl. 90° diagonal FOV → f=1101.5px. Distortion estimated (BRIO typical barrel)."
+    "notes": "Logitech BRIO 4K at 1080p, zoom=100 (widest). 90° diagonal FOV → f=1101.5px."
   },
-  "cam1_overhead": {
+  "cam1_arm": {
+    "device": "/dev/video4",
+    "model": "Logitech MX Brio",
+    "role": "arm-mounted",
+    "image_size": [1920, 1080],
+    "camera_matrix": {
+      "fx": 1078.5,
+      "fy": 1078.5,
+      "cx": 960.0,
+      "cy": 540.0
+    },
+    "distortion_coefficients": {
+      "k1": -0.14,
+      "k2": 0.05,
+      "p1": 0.0,
+      "p2": 0.0,
+      "k3": 0.0
+    },
+    "estimated_fov_diagonal_deg": 91.5,
+    "horizontal_fov_deg": 83.4,
+    "vertical_fov_deg": 53.0,
+    "confidence": "medium",
+    "notes": "Logitech MX Brio at 1080p. FOV spec: 91.5° diagonal (slightly wider than BRIO). f = diag/2 / tan(91.5/2°) = 1078.5px. Verify with v4l2-ctl -d /dev/video4 --get-ctrl=zoom_absolute. Arm-mounted — extrinsics change with arm pose (hand-eye calibration needed)."
+  },
+  "cam2_side": {
+    "device": "/dev/video6",
+    "model": "Logitech BRIO 4K",
+    "role": "side-view",
     "image_size": [1920, 1080],
     "camera_matrix": {
       "fx": 1101.5,
@@ -39,13 +69,19 @@
     "horizontal_fov_deg": 82.1,
     "vertical_fov_deg": 52.2,
     "confidence": "high",
-    "notes": "Logitech BRIO 4K at 1080p, zoom=100 confirmed via v4l2 ioctl. 90° diagonal FOV → f=1101.5px. Distortion estimated (BRIO typical barrel)."
+    "notes": "Logitech BRIO 4K at 1080p, zoom=100 (widest). Same model as cam0. 90° diagonal FOV → f=1101.5px."
+  },
+  "camera_index": {
+    "0": "cam0_overhead",
+    "1": "cam1_arm",
+    "2": "cam2_side"
   },
   "method": "v4l2_zoom_query_plus_fov_calculation",
-  "date": "2026-02-08",
+  "date": "2026-02-09",
   "v4l2_readings": {
     "cam0_video0": {"zoom": 100, "focus": 10, "pan": 0, "tilt": 0},
-    "cam1_video4": {"zoom": 100, "focus": 10, "pan": 0, "tilt": 0}
+    "cam1_video4": {"zoom": 100, "focus": 10, "pan": 0, "tilt": 0, "note": "MX Brio — verify zoom setting"},
+    "cam2_video6": {"zoom": 100, "focus": 10, "pan": 0, "tilt": 0}
   },
-  "notes": "Both BRIOs at zoom=100 (widest). f = (sqrt(1920²+1080²)/2) / tan(45°) = 1101.5px. Distortion coefficients still estimated — checkerboard calibration would refine k1/k2."
+  "notes": "3-camera setup: cam0=overhead (BRIO), cam1=arm-mounted (MX Brio), cam2=side (BRIO). MX Brio has 91.5° diagonal FOV vs BRIO's 90° — slightly different focal length."
 }
