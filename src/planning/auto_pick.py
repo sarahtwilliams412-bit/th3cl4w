@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 import httpx
 
+from src.control.arm_operations import ArmOps
 from src.telemetry.pick_episode import PickEpisodeRecorder
 
 logger = logging.getLogger("th3cl4w.planning.auto_pick")
@@ -83,6 +84,7 @@ class AutoPick:
     ):
         self.server_url = server_url
         self.cam_server_url = cam_server_url
+        self.ops = ArmOps(server_url)
         self.state = AutoPickState()
         self._stop_requested = False
         self._running = False
@@ -397,77 +399,49 @@ class AutoPick:
         return [round(j0, 1), round(j1, 1), round(j2, 1), round(j3, 1), round(j4, 1), round(j5, 1)]
 
     async def _execute_pick(self, target_joints: list[float], gripper_mm: float = 32.5):
-        """Execute the pick sequence step by step."""
+        """Execute the pick sequence using ArmOps primitives."""
         # Phase 1: Open gripper wide
         self.state.phase = AutoPickPhase.APPROACHING
         self._check_stop()
         self._log("Opening gripper...")
         self.episode_recorder.start_phase("open_gripper")
-        await self._set_gripper(60.0)
+        await self.ops._set_gripper(60.0)
         await asyncio.sleep(0.5)
         self.episode_recorder.end_phase(success=True)
 
-        # Phase 2: Move to approach position (above target, higher)
-        self._log("Moving to approach position...")
+        # Phase 2: Approach from above (hover + lower)
+        self._log("Approaching from above...")
         self._check_stop()
         self.episode_recorder.start_phase("approach")
-        approach = list(target_joints)
-        approach[1] = target_joints[1] - 15  # shoulder back (less forward lean = higher)
-        approach[4] = 70.0  # wrist partially tilted down
-        await self._move_to(approach)
-        await asyncio.sleep(1.5)
+        result = await self.ops.approach_from_above(target_joints)
+        if not result.success:
+            self.episode_recorder.end_phase(success=False)
+            raise RuntimeError(f"Approach failed: {result.error}")
         self.episode_recorder.end_phase(success=True)
 
-        # Phase 3: Lower to grab position
-        self.state.phase = AutoPickPhase.LOWERING
-        self._check_stop()
-        self._log("Lowering to grab position...")
-        self.episode_recorder.start_phase("lower")
-        await self._move_to(target_joints)
-        await asyncio.sleep(1.5)
-        self.episode_recorder.end_phase(success=True)
-
-        # Phase 4: Close gripper
+        # Phase 3: Grip
         self.state.phase = AutoPickPhase.GRIPPING
         self._check_stop()
         self._log(f"Closing gripper to {gripper_mm}mm...")
         self.episode_recorder.start_phase("grip")
-        await self._set_gripper(gripper_mm)
-        await asyncio.sleep(1.0)
+        grip_ok = await self.ops.grip_and_verify(gripper_mm)
+        if not grip_ok:
+            self.episode_recorder.end_phase(success=False)
+            await self.ops.retreat_home()
+            raise RuntimeError("Grip failed")
         self.episode_recorder.end_phase(success=True)
 
-        # Phase 5: Lift
+        # Phase 4: Lift
         self.state.phase = AutoPickPhase.LIFTING
         self._check_stop()
         self._log("Lifting...")
         self.episode_recorder.start_phase("lift")
-        lift = list(target_joints)
-        lift[1] = target_joints[1] - 20  # shoulder back up
-        await self._move_to(lift)
-        await asyncio.sleep(1.5)
+        lift_result = await self.ops.lift_from_pick(target_joints)
+        if not lift_result.success:
+            self.episode_recorder.end_phase(success=False)
+            await self.ops.retreat_home()
+            raise RuntimeError(f"Lift failed: {lift_result.error}")
         self.episode_recorder.end_phase(success=True)
-
-    async def _move_to(self, joints: list[float]):
-        """Send individual joint commands with small delays."""
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            for i, angle in enumerate(joints):
-                resp = await client.post(
-                    f"{self.server_url}/api/command/set-joint",
-                    json={"id": i, "angle": angle},
-                )
-                if resp.status_code != 200:
-                    logger.warning("set-joint %d failed: %s", i, resp.text)
-                await asyncio.sleep(0.05)
-
-    async def _set_gripper(self, position_mm: float):
-        """Send gripper command."""
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(
-                f"{self.server_url}/api/command/set-gripper",
-                json={"position": position_mm},
-            )
-            if resp.status_code != 200:
-                logger.warning("set-gripper failed: %s", resp.text)
 
     async def _verify_grip(self) -> bool:
         """Simple grip verification via arm camera.

@@ -989,8 +989,22 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <div id="apLog" style="font-family:var(--mono);font-size:10px;max-height:200px;overflow-y:auto;color:var(--text-dim);white-space:pre-wrap;"></div>
       </div>
       <div class="panel-card" style="grid-column:1/-1;">
-        <h3>📊 Pick History</h3>
-        <div id="autopickHistory" style="max-height:200px;overflow-y:auto;font-size:11px;color:var(--text-dim);font-family:var(--mono);"></div>
+        <h3>📊 Episode History</h3>
+        <table id="autopickEpisodeTable" style="width:100%;border-collapse:collapse;font-size:11px;color:var(--text-dim);">
+          <thead><tr style="border-bottom:2px solid var(--card-border);text-align:left;">
+            <th style="padding:4px 6px;">Time</th><th style="padding:4px 6px;">Target</th><th style="padding:4px 6px;">Mode</th><th style="padding:4px 6px;">Result</th><th style="padding:4px 6px;">Duration</th><th style="padding:4px 6px;"></th>
+          </tr></thead>
+          <tbody id="autopickHistoryBody"></tbody>
+        </table>
+        <div id="autopickHistory" style="display:none;"></div>
+        <div id="autopickEpisodeDetail" style="display:none;margin-top:10px;padding:10px;background:var(--bg);border:1px solid var(--card-border);border-radius:6px;font-size:11px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <b>Episode Detail</b>
+            <button class="btn" onclick="document.getElementById('autopickEpisodeDetail').style.display='none'" style="font-size:10px;padding:2px 8px;">✕ Close</button>
+          </div>
+          <div id="autopickPhaseBreakdown" style="margin-bottom:8px;"></div>
+          <div id="autopickJointComparison" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);"></div>
+        </div>
         <button class="btn" onclick="loadPickHistory()" style="margin-top:6px;">Refresh</button>
       </div>
     </div>
