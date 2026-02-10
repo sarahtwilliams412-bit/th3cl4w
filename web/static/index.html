@@ -779,8 +779,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <div class="panel-card">
         <h3>Detect Objects</h3>
         <div class="form-row">
-          <label>Camera</label>
-          <select id="ppDetectCam"><option value="1">Camera 1</option><option value="0">Camera 0</option><option value="2">Camera 2</option></select>
+          <label>Target</label>
+          <input type="text" id="ppDetectTarget" placeholder="redbull" value="redbull">
         </div>
         <div class="btn-row" style="margin-top:6px;">
           <button class="btn primary" onclick="ppDetect()">🔍 DETECT</button>
@@ -790,7 +790,13 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <div class="panel-card">
         <h3>Plan Pick</h3>
         <div class="form-row">
-          <label>Target</label><input type="text" id="ppTarget" placeholder="Object name or ID">
+          <label>Target</label><input type="text" id="ppTarget" placeholder="redbull" value="redbull">
+        </div>
+        <div class="form-row" style="margin-top:4px;">
+          <label>Pos (mm)</label>
+          <input type="number" id="ppPosX" placeholder="X" style="width:60px;">
+          <input type="number" id="ppPosY" placeholder="Y" style="width:60px;">
+          <input type="number" id="ppPosZ" placeholder="Z" style="width:60px;">
         </div>
         <div class="btn-row" style="margin-top:6px;">
           <button class="btn primary" onclick="ppPlan()">📋 PLAN</button>
@@ -2489,10 +2495,10 @@ async function mvpRefresh() {
 }
 
 // --- Pick Planner ---
-async function ppDetect() { const cam = document.getElementById('ppDetectCam').value; showResult('ppDetectResult', await apiPost('/api/pick-planner/detect', {camera_id:parseInt(cam)})); }
-async function ppPlan() { const target = document.getElementById('ppTarget').value; showResult('ppPlanResult', await apiPost('/api/pick-planner/plan', {target})); }
-async function ppFromPos() { showResult('ppPlanResult', await apiPost('/api/pick-planner/from-position')); }
-async function ppCalibrate() { showResult('ppCalibResult', await apiPost('/api/pick-planner/calibrate')); }
+async function ppDetect() { const target = document.getElementById('ppDetectTarget').value || 'redbull'; showResult('ppDetectResult', await apiPost('/api/pick/detect', {target})); }
+async function ppPlan() { const target = document.getElementById('ppTarget').value || 'redbull'; showResult('ppPlanResult', await apiPost('/api/pick/plan', {target})); }
+async function ppFromPos() { const x = parseFloat(document.getElementById('ppPosX').value); const y = parseFloat(document.getElementById('ppPosY').value); const z = parseFloat(document.getElementById('ppPosZ').value); const label = document.getElementById('ppTarget').value || 'redbull'; if (isNaN(x)||isNaN(y)||isNaN(z)) { showResult('ppPlanResult','Enter valid X, Y, Z positions in mm'); return; } showResult('ppPlanResult', await apiPost('/api/pick/from-position', {x_mm:x, y_mm:y, z_mm:z, label})); }
+async function ppCalibrate() { showResult('ppCalibResult', await apiPost('/api/pick/calibrate-camera-arm')); }
 
 // --- VLA ---
 async function vlaRefreshStatus() { const data = await apiCall('/api/vla/status'); const el = document.getElementById('vlaStatus'); el.textContent = data.status || 'UNKNOWN'; el.className = 'status-indicator ' + (data.ready ? 'running' : 'stopped'); }
