@@ -5925,14 +5925,20 @@ def _get_auto_pick() -> Any:
     return _auto_pick
 
 
+class PlaceTarget(BaseModel):
+    x_mm: float
+    y_mm: float
+
+
 class AutoPickRequest(BaseModel):
     target: str = Field(default="redbull", description="Object to pick: redbull, blue, green, any")
     mode: str = Field(default="auto", description="Pick mode: auto, physical, simulation")
+    place_target: Optional[PlaceTarget] = Field(default=None, description="If provided, place object here after pick")
 
 
 @app.post("/api/autopick/start")
 async def autopick_start(req: AutoPickRequest):
-    """Start autonomous pick pipeline."""
+    """Start autonomous pick pipeline, optionally followed by place."""
     ap = _get_auto_pick()
     if ap is None:
         return JSONResponse({"ok": False, "error": "Auto pick module not available"}, status_code=501)
@@ -5941,7 +5947,22 @@ async def autopick_start(req: AutoPickRequest):
     try:
         await ap.start(req.target, mode=req.mode)
         action_log.add("AUTO_PICK", f"Started pick for '{req.target}' (mode={req.mode})", "info")
-        return {"ok": True, "phase": ap.state.phase.value, "target": req.target, "mode": req.mode}
+
+        # If place_target provided, chain place after pick completes
+        if req.place_target is not None:
+            place_ap = _get_auto_place()
+            if place_ap is not None:
+                async def _chain_place(pick_task, px, py):
+                    try:
+                        pick_result = await pick_task
+                        if pick_result and pick_result.success:
+                            await place_ap.start(px, py)
+                    except Exception as e:
+                        logger.error("Chain place failed: %s", e)
+                asyncio.create_task(_chain_place(ap._task, req.place_target.x_mm, req.place_target.y_mm))
+
+        return {"ok": True, "phase": ap.state.phase.value, "target": req.target, "mode": req.mode,
+                "place_target": {"x_mm": req.place_target.x_mm, "y_mm": req.place_target.y_mm} if req.place_target else None}
     except Exception as e:
         action_log.add("AUTO_PICK", f"Failed to start: {e}", "error")
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -5993,6 +6014,71 @@ async def autopick_history(limit: int = 20):
         return {"ok": True, "episodes": recorder.load_episodes(limit=limit)}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
+# Auto Place — autonomous place pipeline
+# ---------------------------------------------------------------------------
+
+try:
+    from src.planning.auto_place import AutoPlace, AutoPlacePhase
+
+    _HAS_AUTO_PLACE = True
+except ImportError:
+    _HAS_AUTO_PLACE = False
+
+_auto_place: Optional[Any] = None
+
+
+def _get_auto_place() -> Any:
+    global _auto_place
+    if _auto_place is None and _HAS_AUTO_PLACE:
+        _auto_place = AutoPlace()
+    return _auto_place
+
+
+class AutoPlaceRequest(BaseModel):
+    x_mm: float = Field(..., description="Place target X in mm")
+    y_mm: float = Field(..., description="Place target Y in mm")
+
+
+@app.post("/api/autoplace/start")
+async def autoplace_start(req: AutoPlaceRequest):
+    """Start autonomous place pipeline (assumes object already gripped)."""
+    ap = _get_auto_place()
+    if ap is None:
+        return JSONResponse({"ok": False, "error": "Auto place module not available"}, status_code=501)
+    if ap.running:
+        return JSONResponse({"ok": False, "error": "Place already in progress"}, status_code=409)
+    try:
+        await ap.start(req.x_mm, req.y_mm)
+        action_log.add("AUTO_PLACE", f"Started place at ({req.x_mm:.1f}, {req.y_mm:.1f}) mm", "info")
+        return {"ok": True, "phase": ap.state.phase.value, "target_xy_mm": [req.x_mm, req.y_mm]}
+    except Exception as e:
+        action_log.add("AUTO_PLACE", f"Failed to start: {e}", "error")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/autoplace/status")
+async def autoplace_status():
+    """Get current auto place status."""
+    ap = _get_auto_place()
+    if ap is None:
+        return {"available": False, "error": "Auto place module not available"}
+    status = ap.get_status()
+    status["available"] = True
+    return status
+
+
+@app.post("/api/autoplace/stop")
+async def autoplace_stop():
+    """Stop the auto place sequence."""
+    ap = _get_auto_place()
+    if ap is None:
+        return JSONResponse({"ok": False, "error": "Auto place module not available"}, status_code=501)
+    ap.stop()
+    action_log.add("AUTO_PLACE", "Stop requested", "warning")
+    return {"ok": True, "phase": ap.state.phase.value}
 
 
 # ---------------------------------------------------------------------------

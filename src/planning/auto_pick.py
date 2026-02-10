@@ -19,6 +19,7 @@ import httpx
 
 from src.control.arm_operations import ArmOps
 from src.telemetry.pick_episode import PickEpisodeRecorder
+from src.telemetry.pick_recorder import PickVideoRecorder
 
 logger = logging.getLogger("th3cl4w.planning.auto_pick")
 
@@ -90,6 +91,7 @@ class AutoPick:
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self.episode_recorder = PickEpisodeRecorder()
+        self.video_recorder = PickVideoRecorder()
         self._current_mode: Optional[str] = None
 
     @property
@@ -178,6 +180,12 @@ class AutoPick:
 
         episode = self.episode_recorder.start(mode=actual_mode, target=target)
 
+        # Start video recording (best-effort)
+        try:
+            self.video_recorder.start(episode.episode_id)
+        except Exception as e:
+            logger.warning("Failed to start video recording: %s", e)
+
         try:
             # 1. DETECT
             self.state.phase = AutoPickPhase.DETECTING
@@ -264,6 +272,11 @@ class AutoPick:
             self.episode_recorder.record_result(success=False, failure_reason=str(e))
             raise
         finally:
+            # Stop video recording (best-effort)
+            try:
+                await self.video_recorder.stop()
+            except Exception as e:
+                logger.warning("Failed to stop video recording: %s", e)
             self.episode_recorder.finish()
 
     async def _detect(self, target: str) -> tuple[float, float]:
