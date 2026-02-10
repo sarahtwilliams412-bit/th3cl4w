@@ -8,6 +8,12 @@ from typing import Any
 
 import numpy as np
 
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 _FPS_WINDOW_S = 10.0
 _STALL_THRESHOLD_S = 2.0
 

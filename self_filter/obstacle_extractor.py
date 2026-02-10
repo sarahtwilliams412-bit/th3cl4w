@@ -11,6 +11,12 @@ import numpy as np
 from scipy.ndimage import distance_transform_edt
 
 
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class ObstacleExtractor:
     """Extract obstacle grid by subtracting arm volume.
 

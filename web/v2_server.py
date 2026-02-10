@@ -25,6 +25,15 @@ CAM_SERVER = "http://localhost:8082"  # camera server (if separate)
 
 app = FastAPI(title="th3cl4w-v2-proxy")
 
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info("%s %s", request.method, request.url.path)
+    response = await call_next(request)
+    logger.info("%s %s -> %d", request.method, request.url.path, response.status_code)
+    return response
+
+
 # Shared httpx client
 _client: httpx.AsyncClient | None = None
 

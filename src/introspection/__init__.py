@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 """
 Introspection subsystem for th3cl4w.
 
@@ -19,8 +23,8 @@ Quick start:
     # ... arm executes task ...
     report = manager.end_task()
 
-    print(report.narrative)  # detailed self-feedback
-    print(report.verdict)    # "success", "partial", or "failure"
+    logger.info(report.narrative)  # detailed self-feedback
+    logger.info(report.verdict)    # "success", "partial", or "failure"
 """
 
 from src.introspection.manager import IntrospectionManager, IntrospectionReport

@@ -468,6 +468,16 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def request_logging_middleware(request, call_next):
+    """Log all HTTP requests at INFO level."""
+    t0 = time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = (time.monotonic() - t0) * 1000
+    logger.info("%s %s -> %d (%.1fms)", request.method, request.url.path, response.status_code, elapsed_ms)
+    return response
+
+
+@app.middleware("http")
 async def telemetry_middleware(request, call_next):
     """Log all /api/ requests to telemetry."""
     if _HAS_TELEMETRY and request.url.path.startswith("/api/"):
@@ -1058,11 +1068,15 @@ async def cmd_set_joint(req: SetJointRequest):
         return JSONResponse(resp_data, status_code=400)
 
     # Safe reach check: rough torque proxy using current targets
+    from src.config.pick_config import get_pick_config as _get_pick_config
+    _safety_cfg = _get_pick_config()
     current_joints = list(armState_joints())
     proposed = list(current_joints)
     proposed[req.id] = req.angle
-    torque_proxy = abs(proposed[1]) + abs(proposed[2]) * 0.7
-    if torque_proxy > 100:
+    _j2_factor = _safety_cfg.get("safety", "torque_j2_factor")
+    _torque_limit = _safety_cfg.get("safety", "torque_proxy_limit")
+    torque_proxy = abs(proposed[1]) + abs(proposed[2]) * _j2_factor
+    if torque_proxy > _torque_limit:
         action_log.add(
             "SET_JOINT",
             f"REJECTED — torque proxy {torque_proxy:.1f} > 100 (J1={proposed[1]:.1f}° J2={proposed[2]:.1f}°)",
@@ -1095,11 +1109,13 @@ async def cmd_set_joint(req: SetJointRequest):
 
 
 async def _check_stall(joint_id: int, target_angle: float, cid: str | None):
-    """After 3s, check if joint reached within 5° of target. Log warning if stalled."""
-    await asyncio.sleep(3.0)
+    """After delay, check if joint reached within threshold of target. Log warning if stalled."""
+    from src.config.pick_config import get_pick_config as _get_pick_config
+    _scfg = _get_pick_config()
+    await asyncio.sleep(_scfg.get("safety", "stall_check_delay_s"))
     state = get_arm_state()
     actual = state["joints"][joint_id]
-    if abs(actual - target_angle) > 5.0:
+    if abs(actual - target_angle) > _scfg.get("safety", "stall_threshold_deg"):
         msg = f"J{joint_id} stalled at {actual:.1f}° (target {target_angle:.1f}°)"
         action_log.add("STALL", msg, "warning")
         logger.warning(msg)
@@ -5010,6 +5026,138 @@ tools_dir = Path(__file__).parent.parent / "tools"
 if tools_dir.is_dir():
     app.mount("/tools", StaticFiles(directory=str(tools_dir), html=True), name="tools")
 app.mount("/ui", StaticFiles(directory=str(static_dir), html=True), name="static")
+
+
+# ── Intrinsic Calibration (Auto-Calibrator) ────────────────────────────────
+
+_auto_calibrator = None
+_auto_calib_task: Optional[asyncio.Task] = None
+
+
+def _get_auto_calibrator(**kwargs):
+    global _auto_calibrator
+    if _auto_calibrator is None:
+        from src.calibration.auto_calibrator import AutoCalibrator
+        _auto_calibrator = AutoCalibrator(**kwargs)
+    else:
+        # Update params if provided
+        for k, v in kwargs.items():
+            if hasattr(_auto_calibrator, k):
+                setattr(_auto_calibrator, k, v)
+    return _auto_calibrator
+
+
+@app.post("/api/calibration/intrinsics/start")
+async def intrinsics_start(req: dict = {}):
+    """Start intrinsic calibration for a single camera."""
+    global _auto_calib_task
+    cam_id = req.get("camera_id", 0)
+    board_w = req.get("board_width", 8)
+    board_h = req.get("board_height", 5)
+    square_mm = req.get("square_mm", 19.0)
+    num_frames = req.get("num_frames", 10)
+
+    cal = _get_auto_calibrator(
+        board_size=(board_w, board_h),
+        square_size_mm=square_mm,
+        num_frames=num_frames,
+    )
+
+    if _auto_calib_task and not _auto_calib_task.done():
+        return JSONResponse({"error": "Calibration already in progress"}, status_code=409)
+
+    async def _run():
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, cal.calibrate_camera, cam_id)
+
+    _auto_calib_task = asyncio.create_task(_run())
+    return {"status": "started", "camera_id": cam_id}
+
+
+@app.get("/api/calibration/intrinsics/status")
+async def intrinsics_status():
+    """Get current intrinsic calibration progress."""
+    cal = _get_auto_calibrator()
+    return cal.progress.to_dict()
+
+
+@app.get("/api/calibration/intrinsics/result/{cam_id}")
+async def intrinsics_result(cam_id: int):
+    """Get latest calibration result for a camera."""
+    from src.calibration.auto_calibrator import CALIBRATION_RESULTS_DIR
+    cam_file = CALIBRATION_RESULTS_DIR / f"cam{cam_id}_checkerboard_calibration.json"
+    if not cam_file.exists():
+        return JSONResponse({"error": f"No calibration for cam{cam_id}"}, status_code=404)
+    return json.loads(cam_file.read_text())
+
+
+@app.post("/api/calibration/intrinsics/all")
+async def intrinsics_all(req: dict = {}):
+    """Calibrate all cameras sequentially."""
+    global _auto_calib_task
+    board_w = req.get("board_width", 8)
+    board_h = req.get("board_height", 5)
+    square_mm = req.get("square_mm", 19.0)
+    num_frames = req.get("num_frames", 10)
+    camera_ids = req.get("camera_ids", [0, 1, 2])
+
+    cal = _get_auto_calibrator(
+        board_size=(board_w, board_h),
+        square_size_mm=square_mm,
+        num_frames=num_frames,
+    )
+
+    if _auto_calib_task and not _auto_calib_task.done():
+        return JSONResponse({"error": "Calibration already in progress"}, status_code=409)
+
+    async def _run():
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, cal.calibrate_all, camera_ids)
+
+    _auto_calib_task = asyncio.create_task(_run())
+    return {"status": "started", "camera_ids": camera_ids}
+
+
+@app.post("/api/calibration/intrinsics/validate/{cam_id}")
+async def intrinsics_validate(cam_id: int):
+    """Validate existing calibration with a fresh frame."""
+    cal = _get_auto_calibrator()
+    import asyncio
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, cal.validate, cam_id)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Pick Config API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/config/pick")
+async def get_pick_config_api():
+    """Return full pick config."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+    return JSONResponse({"config": cfg.get_all(), "defaults": cfg.get_defaults(), "diff": cfg.diff()})
+
+
+@app.post("/api/config/pick")
+async def update_pick_config_api(req: dict):
+    """Update pick config values (deep merge)."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+    cfg.update(req)
+    return JSONResponse({"ok": True, "config": cfg.get_all()})
+
+
+@app.post("/api/config/pick/reset")
+async def reset_pick_config_api():
+    """Reset pick config to defaults."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+    cfg.reset()
+    return JSONResponse({"ok": True, "config": cfg.get_all()})
 
 
 @app.get("/")

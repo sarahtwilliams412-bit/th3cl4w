@@ -15,26 +15,30 @@ from typing import Optional
 import cv2
 import numpy as np
 
+from src.config.pick_config import get_pick_config as _get_pick_config
+
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 CALIBRATION_FILE = DATA_DIR / "side_calibration.json"
 
-# Default HSV ranges for object detection in side view
-# Red Bull can: red + blue/silver
+
+def _side_hsv(key):
+    """Load HSV ranges from config as numpy tuples."""
+    cfg = _get_pick_config().get("side_height", key)
+    if isinstance(cfg, dict):
+        return (np.array(cfg["lower"]), np.array(cfg["upper"]))
+    return [(np.array(r["lower"]), np.array(r["upper"])) for r in cfg]
+
+
+# Legacy module-level aliases
 REDBULL_HSV_RANGES = [
-    # Red (two ranges for hue wrap)
     (np.array([0, 100, 80]), np.array([10, 255, 255])),
     (np.array([160, 100, 80]), np.array([180, 255, 255])),
 ]
-
-# Gripper/arm: dark segments or neon tape
 GRIPPER_HSV_RANGES = [
-    # Dark arm segments (low saturation, low value)
     (np.array([0, 0, 0]), np.array([180, 80, 60])),
 ]
-
-# Neon green tape markers (if present)
 NEON_TAPE_HSV = (np.array([35, 100, 100]), np.array([85, 255, 255]))
 
 
@@ -179,21 +183,24 @@ class SideHeightEstimator:
 
     def _detect_redbull(self, hsv: np.ndarray) -> np.ndarray:
         """Detect Red Bull can in HSV image (red regions)."""
+        ranges = _side_hsv("redbull_hsv_ranges")
         mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
-        for lower, upper in REDBULL_HSV_RANGES:
+        for lower, upper in ranges:
             mask |= cv2.inRange(hsv, lower, upper)
         return mask
 
     def _detect_gripper(self, hsv: np.ndarray) -> np.ndarray:
         """Detect gripper/arm in HSV image (dark segments)."""
+        ranges = _side_hsv("gripper_hsv_ranges")
         mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
-        for lower, upper in GRIPPER_HSV_RANGES:
+        for lower, upper in ranges:
             mask |= cv2.inRange(hsv, lower, upper)
         return mask
 
     def _detect_neon_tape(self, hsv: np.ndarray) -> np.ndarray:
         """Detect neon tape markers on gripper."""
-        return cv2.inRange(hsv, NEON_TAPE_HSV[0], NEON_TAPE_HSV[1])
+        neon = _side_hsv("neon_tape_hsv")
+        return cv2.inRange(hsv, neon[0], neon[1])
 
     def estimate_height(
         self, frame: np.ndarray, target: str = "gripper"

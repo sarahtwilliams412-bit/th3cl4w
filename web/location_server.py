@@ -96,6 +96,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="th3cl4w Location Server", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info("%s %s", request.method, request.url.path)
+    response = await call_next(request)
+    logger.info("%s %s -> %d", request.method, request.url.path, response.status_code)
+    return response
+
+
 # --- REST endpoints ---
 
 @app.get("/api/location/objects")

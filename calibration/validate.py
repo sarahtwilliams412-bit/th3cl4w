@@ -200,26 +200,26 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     if zmq is None:
-        print("ERROR: pyzmq required")
+        logger.info("ERROR: pyzmq required")
         sys.exit(1)
 
     cal = load_calibration()
 
-    print("=== Calibration Validation ===")
-    print("Place a known-size object at a measured position.")
+    logger.info("=== Calibration Validation ===")
+    logger.info("Place a known-size object at a measured position.")
     print()
 
     # Get known object parameters from user
-    print("Enter known object position (x_mm y_mm z_mm):")
+    logger.info("Enter known object position (x_mm y_mm z_mm):")
     pos_input = input("> ").strip().split()
     known_pos = [float(v) for v in pos_input]
 
-    print("Enter known object size (width_mm depth_mm height_mm):")
+    logger.info("Enter known object size (width_mm depth_mm height_mm):")
     size_input = input("> ").strip().split()
     known_size = [float(v) for v in size_input]
 
     zmq_source = cal.get("zmq_frame_source", "tcp://localhost:5555")
-    print(f"\nCapturing frame from {zmq_source}...")
+    logger.info(f"\nCapturing frame from {zmq_source}...")
 
     ctx = zmq.Context()
     sock = ctx.socket(zmq.SUB)
@@ -230,7 +230,7 @@ def main() -> None:
     try:
         msg = sock.recv()
     except zmq.error.Again:
-        print("ERROR: No frames received (timeout)")
+        logger.info("ERROR: No frames received (timeout)")
         sys.exit(1)
     finally:
         sock.close()
@@ -244,10 +244,10 @@ def main() -> None:
 
     result = validate_object(cal, top, prof, known_pos, known_size)
 
-    print(f"\n=== Validation Results ===")
-    print(f"  Status: {'PASS' if result['passed'] else 'FAIL'}")
+    logger.info(f"\n=== Validation Results ===")
+    logger.info(f"  Status: {'PASS' if result['passed'] else 'FAIL'}")
     for key, val in result["details"].items():
-        print(f"  {key}: {val}")
+        logger.info(f"  {key}: {val}")
 
 
 if __name__ == "__main__":

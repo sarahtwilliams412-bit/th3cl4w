@@ -8,6 +8,12 @@ Designed to accept frames from CameraThread.get_raw_frame() or any BGR image.
 
 import numpy as np
 
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 try:
     import cv2
 except ImportError:

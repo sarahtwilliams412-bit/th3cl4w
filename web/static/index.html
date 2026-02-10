@@ -802,6 +802,41 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <p style="font-size:11px;color:#888;margin:4px 0;">Old (PnP/checkerboard) vs New (ChArUco/hand-eye) side-by-side.</p>
         <button class="btn" onclick="calibCompare()">📊 COMPARE</button>
         <div class="result-box" id="calibCompareResult" style="margin-top:8px;display:none;"></div>
+      <div class="panel-card" style="grid-column: 1 / -1;">
+        <h3>📷 Intrinsic Calibration (Checkerboard)</h3>
+        <div class="form-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+          <div>
+            <label>Camera</label>
+            <select id="icalCamId" style="width:100px;">
+              <option value="0">cam0 — overhead</option>
+              <option value="1">cam1 — arm</option>
+              <option value="2">cam2 — side</option>
+            </select>
+          </div>
+          <div>
+            <label>Board W×H</label>
+            <div style="display:flex;gap:4px;">
+              <input type="number" id="icalBoardW" value="8" min="3" max="20" style="width:50px;">
+              <span style="line-height:28px;">×</span>
+              <input type="number" id="icalBoardH" value="5" min="3" max="20" style="width:50px;">
+            </div>
+          </div>
+          <div>
+            <label>Square (mm)</label>
+            <input type="number" id="icalSquareMm" value="19" min="1" max="100" step="0.1" style="width:60px;">
+          </div>
+          <div>
+            <label>Frames</label>
+            <input type="number" id="icalNumFrames" value="10" min="3" max="50" style="width:60px;">
+          </div>
+          <button class="btn primary" onclick="icalStart()">▶ CALIBRATE</button>
+          <button class="btn primary" onclick="icalStartAll()">▶ ALL CAMS</button>
+          <button class="btn" onclick="icalValidate()">✓ VALIDATE</button>
+        </div>
+        <div style="margin-top:8px;">
+          <div class="status-indicator stopped" id="icalStatus">IDLE</div>
+        </div>
+        <div class="result-box" id="icalResult" style="margin-top:8px;display:none;"></div>
       </div>
     </div>
   </div>
@@ -1054,6 +1089,17 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           <a href="/map3d.html" class="btn" target="_blank" style="text-decoration:none">🗺️ Map 3D</a>
         </div>
       </div>
+    </div>
+
+    <!-- Pick Config Section -->
+    <div class="panel-header" style="margin-top:16px">🎯 Pick Task Configuration</div>
+    <div style="margin-bottom:8px">
+      <button class="btn primary" onclick="pickCfgLoad()">📥 Load Config</button>
+      <button class="btn" onclick="pickCfgSave()">💾 Save</button>
+      <button class="btn" onclick="pickCfgReset()" style="background:#c0392b;color:#fff">↺ Reset Defaults</button>
+    </div>
+    <div id="pickCfgContainer" style="display:none">
+      <div id="pickCfgSections"></div>
     </div>
   </div>
 </div>
@@ -1953,6 +1999,74 @@ async function charucoPoll() {
 }
 async function calibCompare() {
   showResult('calibCompareResult', await apiCall('/api/calibration/compare'));
+// --- Intrinsic Calibration ---
+let _icalPollTimer = null;
+function _icalParams() {
+  return {
+    camera_id: parseInt(document.getElementById('icalCamId').value),
+    board_width: parseInt(document.getElementById('icalBoardW').value),
+    board_height: parseInt(document.getElementById('icalBoardH').value),
+    square_mm: parseFloat(document.getElementById('icalSquareMm').value),
+    num_frames: parseInt(document.getElementById('icalNumFrames').value),
+  };
+}
+function _icalPoll() {
+  if (_icalPollTimer) clearInterval(_icalPollTimer);
+  _icalPollTimer = setInterval(async () => {
+    const st = await apiCall('/api/calibration/intrinsics/status');
+    const el = document.getElementById('icalStatus');
+    const rb = document.getElementById('icalResult');
+    el.textContent = `${st.state.toUpperCase()} — cam${st.camera_id} | frames: ${st.frames_captured}/${st.frames_total} | corners: ${st.corners_found}`;
+    el.className = 'status-indicator ' + (st.state === 'done' ? 'active' : st.state === 'error' ? 'danger' : 'running');
+    if (st.state === 'done' || st.state === 'error') {
+      clearInterval(_icalPollTimer);
+      _icalPollTimer = null;
+      if (st.state === 'done' && st.result) {
+        const r = st.result;
+        const cm = r.camera_matrix;
+        const fov = r.fov_deg;
+        const rmsClass = r.rms_reprojection_px < 0.5 ? '🟢' : r.rms_reprojection_px < 1.0 ? '🟡' : '🔴';
+        const fxfyRatio = cm.fx / cm.fy;
+        const ratioClass = Math.abs(fxfyRatio - 1) < 0.05 ? '🟢' : Math.abs(fxfyRatio - 1) < 0.10 ? '🟡' : '🔴';
+        let html = `<b>cam${r.camera || st.camera_id}</b> ${rmsClass} RMS: ${r.rms_reprojection_px}px<br>`;
+        html += `fx=${cm.fx} fy=${cm.fy} cx=${cm.cx} cy=${cm.cy} ${ratioClass} ratio=${fxfyRatio.toFixed(3)}<br>`;
+        html += `FOV: H=${fov.horizontal}° V=${fov.vertical}° D=${fov.diagonal}°<br>`;
+        html += `Frames: ${r.num_detected}/${r.num_frames} detected`;
+        if (r.warnings && r.warnings.length) html += '<br>⚠️ ' + r.warnings.join('<br>⚠️ ');
+        rb.innerHTML = html;
+        rb.style.display = 'block';
+      } else if (st.state === 'error') {
+        rb.innerHTML = `<span style="color:var(--danger)">❌ ${st.error_message}</span>`;
+        rb.style.display = 'block';
+      }
+    }
+  }, 500);
+}
+async function icalStart() {
+  const r = await apiPost('/api/calibration/intrinsics/start', _icalParams());
+  if (r.error) { showResult('icalResult', r); return; }
+  document.getElementById('icalStatus').textContent = 'STARTING...';
+  _icalPoll();
+}
+async function icalStartAll() {
+  const p = _icalParams();
+  delete p.camera_id;
+  const r = await apiPost('/api/calibration/intrinsics/all', p);
+  if (r.error) { showResult('icalResult', r); return; }
+  document.getElementById('icalStatus').textContent = 'STARTING ALL...';
+  _icalPoll();
+}
+async function icalValidate() {
+  const camId = document.getElementById('icalCamId').value;
+  const r = await apiPost(`/api/calibration/intrinsics/validate/${camId}`);
+  const rb = document.getElementById('icalResult');
+  if (r.valid) {
+    const q = r.quality === 'good' ? '🟢' : r.quality === 'fair' ? '🟡' : '🔴';
+    rb.innerHTML = `${q} Validation: ${r.quality} — reproj: ${r.mean_reprojection_px}px, ${r.corners_detected} corners`;
+  } else {
+    rb.innerHTML = `🔴 Validation failed: ${r.error}`;
+  }
+  rb.style.display = 'block';
 }
 
 // --- Diagnostics ---
@@ -2056,6 +2170,196 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
 
 // Performance monitoring
 (function(){window.addEventListener('load',()=>{console.log(`[perf] Page loaded in ${performance.now().toFixed(0)}ms`);});})();
+
+// ============================================================
+//  PICK CONFIG UI
+// ============================================================
+let _pickCfg = null, _pickDefaults = null;
+
+const PICK_CFG_LABELS = {
+  detection: '🔍 Detection',
+  reach: '🦾 Arm Reach',
+  pick: '📦 Multi-view Pick',
+  servo: '🎯 Visual Servo',
+  gripper: '🤏 Gripper',
+  safety: '🛡️ Safety',
+  tracker: '📡 Tracker',
+  side_height: '📐 Side Height',
+  arm_camera: '📷 Arm Camera',
+  contact: '👆 Contact Detection',
+};
+
+async function pickCfgLoad() {
+  try {
+    const r = await fetch('/api/config/pick');
+    const d = await r.json();
+    _pickCfg = d.config;
+    _pickDefaults = d.defaults;
+    const diff = d.diff || {};
+    renderPickCfg(_pickCfg, _pickDefaults, diff);
+    document.getElementById('pickCfgContainer').style.display = '';
+  } catch(e) { alert('Failed to load pick config: ' + e); }
+}
+
+function renderPickCfg(cfg, defaults, diff) {
+  const container = document.getElementById('pickCfgSections');
+  container.innerHTML = '';
+  for (const [section, values] of Object.entries(cfg)) {
+    const card = document.createElement('div');
+    card.className = 'panel-card';
+    card.style.marginBottom = '12px';
+    const title = PICK_CFG_LABELS[section] || section;
+    card.innerHTML = `<h3 style="margin:0 0 8px">${title}</h3>`;
+    const defSection = defaults[section] || {};
+    const diffSection = diff[section] || {};
+    renderCfgFields(card, section, '', values, defSection, diffSection);
+    container.appendChild(card);
+  }
+}
+
+function renderCfgFields(parent, section, prefix, obj, defObj, diffObj) {
+  for (const [key, val] of Object.entries(obj)) {
+    const fullKey = prefix ? prefix + '.' + key : key;
+    const defVal = defObj ? defObj[key] : undefined;
+    const isDiff = diffObj && key in diffObj;
+
+    if (val !== null && typeof val === 'object' && !Array.isArray(val) && !('lower' in val && 'upper' in val)) {
+      // Nested object (not HSV range) — recurse
+      const sub = document.createElement('div');
+      sub.style.cssText = 'margin-left:12px;border-left:2px solid var(--card-border);padding-left:8px;margin-bottom:4px';
+      sub.innerHTML = `<div style="font-weight:600;font-size:11px;color:var(--text-muted);margin-bottom:4px">${key}</div>`;
+      renderCfgFields(sub, section, fullKey, val, defVal || {}, diffObj && typeof diffObj[key] === 'object' ? diffObj[key] : {});
+      parent.appendChild(sub);
+    } else if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object' && 'lower' in val[0]) {
+      // HSV range array
+      const row = document.createElement('div');
+      row.style.cssText = 'margin-bottom:6px';
+      row.innerHTML = `<label style="font-size:11px;display:block;margin-bottom:2px;${isDiff?'color:#e67e22;font-weight:600':''}">${key} (HSV ranges)</label>`;
+      val.forEach((range, i) => {
+        const rDiv = document.createElement('div');
+        rDiv.style.cssText = 'display:flex;gap:4px;align-items:center;margin-bottom:2px;font-size:10px';
+        rDiv.innerHTML = `
+          <span>L:</span>
+          <input type="text" data-section="${section}" data-path="${fullKey}[${i}].lower" value="${JSON.stringify(range.lower)}" style="width:100px;font-size:10px;padding:2px 4px" class="pick-cfg-input">
+          <span>U:</span>
+          <input type="text" data-section="${section}" data-path="${fullKey}[${i}].upper" value="${JSON.stringify(range.upper)}" style="width:100px;font-size:10px;padding:2px 4px" class="pick-cfg-input">
+          <span class="hsv-preview" style="width:20px;height:16px;border:1px solid #666;display:inline-block"></span>`;
+        row.appendChild(rDiv);
+        // Update preview
+        setTimeout(() => updateHsvPreview(rDiv), 0);
+      });
+      parent.appendChild(row);
+    } else if (typeof val === 'object' && val !== null && 'lower' in val && 'upper' in val) {
+      // Single HSV range
+      const row = document.createElement('div');
+      row.style.cssText = 'margin-bottom:6px;font-size:10px';
+      row.innerHTML = `
+        <label style="font-size:11px;${isDiff?'color:#e67e22;font-weight:600':''}">${key}</label>
+        <div style="display:flex;gap:4px;align-items:center">
+          <span>L:</span>
+          <input type="text" data-section="${section}" data-path="${fullKey}.lower" value="${JSON.stringify(val.lower)}" style="width:100px;font-size:10px;padding:2px 4px" class="pick-cfg-input">
+          <span>U:</span>
+          <input type="text" data-section="${section}" data-path="${fullKey}.upper" value="${JSON.stringify(val.upper)}" style="width:100px;font-size:10px;padding:2px 4px" class="pick-cfg-input">
+        </div>`;
+      parent.appendChild(row);
+    } else if (typeof val === 'number') {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px';
+      const step = Number.isInteger(val) ? 1 : 0.1;
+      row.innerHTML = `
+        <label style="flex:1;font-size:11px;${isDiff?'color:#e67e22;font-weight:600':''}" title="Default: ${defVal}">${key}</label>
+        <input type="number" step="${step}" data-section="${section}" data-path="${fullKey}" value="${val}" style="width:80px;font-size:11px;padding:2px 4px" class="pick-cfg-input">`;
+      parent.appendChild(row);
+    } else if (Array.isArray(val)) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px';
+      row.innerHTML = `
+        <label style="flex:1;font-size:11px;${isDiff?'color:#e67e22;font-weight:600':''}">${key}</label>
+        <input type="text" data-section="${section}" data-path="${fullKey}" value="${JSON.stringify(val)}" style="width:120px;font-size:10px;padding:2px 4px" class="pick-cfg-input">`;
+      parent.appendChild(row);
+    }
+  }
+}
+
+function updateHsvPreview(container) {
+  const inputs = container.querySelectorAll('input');
+  const preview = container.querySelector('.hsv-preview');
+  if (!preview || inputs.length < 2) return;
+  try {
+    const lower = JSON.parse(inputs[0].value);
+    const h = lower[0] * 2; // OpenCV H is 0-180, CSS uses 0-360
+    const s = lower[1] / 255 * 100;
+    const l = lower[2] / 255 * 50 + 25;
+    preview.style.background = `hsl(${h}, ${s}%, ${l}%)`;
+  } catch(e) {}
+}
+
+async function pickCfgSave() {
+  if (!_pickCfg) { alert('Load config first'); return; }
+  const inputs = document.querySelectorAll('.pick-cfg-input');
+  const update = {};
+
+  inputs.forEach(inp => {
+    const section = inp.dataset.section;
+    const path = inp.dataset.path;
+    if (!section || !path) return;
+    let val;
+    try {
+      val = inp.type === 'number' ? parseFloat(inp.value) : JSON.parse(inp.value);
+    } catch(e) {
+      val = inp.value;
+    }
+    setNestedValue(update, section, path, val);
+  });
+
+  try {
+    const r = await fetch('/api/config/pick', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(update)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      _pickCfg = d.config;
+      alert('Pick config saved!');
+      pickCfgLoad(); // Reload to show diff
+    } else {
+      alert('Save failed');
+    }
+  } catch(e) { alert('Save error: ' + e); }
+}
+
+function setNestedValue(obj, section, path, value) {
+  if (!obj[section]) obj[section] = {};
+  // Handle array index paths like "redbull_hsv_ranges[0].lower"
+  const arrMatch = path.match(/^(.+)\[(\d+)\]\.(.+)$/);
+  if (arrMatch) {
+    const [, arrKey, idx, field] = arrMatch;
+    if (!obj[section][arrKey]) obj[section][arrKey] = [];
+    const i = parseInt(idx);
+    if (!obj[section][arrKey][i]) obj[section][arrKey][i] = {};
+    obj[section][arrKey][i][field] = value;
+    return;
+  }
+  // Handle dotted paths like "neon_tape_hsv.lower"
+  const dotMatch = path.match(/^(.+)\.(.+)$/);
+  if (dotMatch) {
+    const [, parent, field] = dotMatch;
+    if (!obj[section][parent]) obj[section][parent] = {};
+    obj[section][parent][field] = value;
+    return;
+  }
+  obj[section][path] = value;
+}
+
+async function pickCfgReset() {
+  if (!confirm('Reset ALL pick config values to defaults?')) return;
+  try {
+    const r = await fetch('/api/config/pick/reset', {method: 'POST'});
+    const d = await r.json();
+    if (d.ok) { _pickCfg = d.config; pickCfgLoad(); alert('Config reset to defaults'); }
+  } catch(e) { alert('Reset error: ' + e); }
+}
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>

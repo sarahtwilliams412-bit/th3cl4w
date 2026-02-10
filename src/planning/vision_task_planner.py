@@ -571,12 +571,13 @@ class VisionTaskPlanner:
                 np.clip(place_pose[0], JOINT_LIMITS_DEG[0, 0], JOINT_LIMITS_DEG[0, 1])
             )
 
+        cfg = _get_pick_config()
         return self.task_planner.pick_and_place(
             current_pose,
             pick_pose,
             place_pose,
-            gripper_open_mm=60.0,
-            gripper_close_mm=5.0,
+            gripper_open_mm=cfg.get("gripper", "pick_open_mm"),
+            gripper_close_mm=cfg.get("gripper", "pick_close_mm"),
             speed_factor=0.6,
         )
 

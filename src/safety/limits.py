@@ -14,6 +14,12 @@ import math
 import numpy as np
 
 # Number of joints (6 arm + 1 gripper in the DDS layer)
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 NUM_ARM_JOINTS = 6
 NUM_JOINTS = 7  # 6 arm + 1 gripper (matches d1_connection.NUM_JOINTS)
 

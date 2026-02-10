@@ -9,6 +9,12 @@ from dataclasses import dataclass
 import numpy as np
 
 
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class ReachStatus(Enum):
     REACHABLE = "reachable"
     OUT_OF_RANGE = "out_of_range"

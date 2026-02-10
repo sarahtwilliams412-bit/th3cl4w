@@ -10,22 +10,22 @@
         1080
       ],
       "camera_matrix": {
-        "fx": 1101.5,
-        "fy": 1101.5,
-        "cx": 960.0,
-        "cy": 540.0
+        "fx": 1401.18,
+        "fy": 1381.24,
+        "cx": 1007.16,
+        "cy": 568.13
       },
       "distortion_coefficients": {
-        "k1": -0.15,
-        "k2": 0.06,
-        "p1": 0.0,
-        "p2": 0.0,
-        "k3": 0.0
+        "k1": 0.480481,
+        "k2": -0.379178,
+        "p1": -0.002917,
+        "p2": -0.050334,
+        "k3": -2.209344
       },
-      "fov_diagonal_deg": 90,
-      "fov_horizontal_deg": 82.1,
-      "fov_vertical_deg": 52.2,
-      "confidence": "medium",
+      "fov_diagonal_deg": 76.7,
+      "fov_horizontal_deg": 68.8,
+      "fov_vertical_deg": 42.7,
+      "confidence": "high",
       "v4l2": {
         "focus_absolute": 10,
         "focus_auto": 1,
@@ -37,7 +37,9 @@
         "pan_absolute": 0,
         "tilt_absolute": 0
       },
-      "notes": "Logitech BRIO at widest FOV setting (90\u00b0 diagonal). No zoom control available via V4L2. Distortion coefficients estimated \u2014 k1=-0.15 typical for BRIO barrel distortion. Needs checkerboard calibration for sub-10px accuracy."
+      "notes": "Checkerboard calibrated (8x5 corners, 19mm squares, 10 frames). FOV is 78\u00b0 NOT 90\u00b0 \u2014 BRIO is in middle FOV mode. Reprojection: 0.085px.",
+      "calibration_method": "checkerboard_19mm_10frames",
+      "rms_reprojection_px": 0.085
     },
     "cam1": {
       "label": "arm-mounted",
@@ -49,22 +51,22 @@
         1080
       ],
       "camera_matrix": {
-        "fx": 1101.5,
-        "fy": 1101.5,
-        "cx": 960.0,
-        "cy": 540.0
+        "fx": 1392.78,
+        "fy": 1522.99,
+        "cx": 951.5,
+        "cy": 537.27
       },
       "distortion_coefficients": {
-        "k1": -0.12,
-        "k2": 0.04,
-        "p1": 0.0,
-        "p2": 0.0,
-        "k3": 0.0
+        "k1": -0.512183,
+        "k2": 12.24195,
+        "p1": -0.112183,
+        "p2": -0.017852,
+        "k3": -60.974612
       },
-      "fov_diagonal_deg": 90,
-      "fov_horizontal_deg": 82.1,
-      "fov_vertical_deg": 52.2,
-      "confidence": "medium",
+      "fov_diagonal_deg": 74.2,
+      "fov_horizontal_deg": 69.2,
+      "fov_vertical_deg": 39.0,
+      "confidence": "medium-high",
       "mounting": "arm-mounted (moves with end-effector)",
       "hand_eye_transform": null,
       "v4l2": {
@@ -78,7 +80,9 @@
         "pan_absolute": 0,
         "tilt_absolute": 0
       },
-      "notes": "MX Brio has Sony Starvis 2 sensor, different lens than BRIO. 90\u00b0 diagonal FOV (spec). Slightly different distortion profile \u2014 k1=-0.12 estimated (less barrel distortion than BRIO due to newer lens design). Higher sharpness observed (1837 vs 250 Laplacian variance). Hand-eye calibration needed for arm-to-camera transform."
+      "notes": "Checkerboard calibrated. MX Brio at ~74\u00b0 FOV. fx/fy differ (1393 vs 1523) \u2014 slight astigmatism or board was at steep angle. k2/k3 are large \u2014 board was in a small region of frame, distortion model may be overfit. Would benefit from more diverse board positions.",
+      "calibration_method": "checkerboard_19mm_10frames",
+      "rms_reprojection_px": 0.2225
     },
     "cam2": {
       "label": "side",
@@ -90,22 +94,22 @@
         1080
       ],
       "camera_matrix": {
-        "fx": 1101.5,
-        "fy": 1101.5,
-        "cx": 960.0,
-        "cy": 540.0
+        "fx": 1046.82,
+        "fy": 1053.92,
+        "cx": 953.89,
+        "cy": 479.56
       },
       "distortion_coefficients": {
-        "k1": -0.15,
-        "k2": 0.06,
-        "p1": 0.0,
-        "p2": 0.0,
-        "k3": 0.0
+        "k1": 0.161641,
+        "k2": -1.002811,
+        "p1": -0.012806,
+        "p2": 0.001346,
+        "k3": -0.362128
       },
-      "fov_diagonal_deg": 90,
-      "fov_horizontal_deg": 82.1,
-      "fov_vertical_deg": 52.2,
-      "confidence": "medium",
+      "fov_diagonal_deg": 92.7,
+      "fov_horizontal_deg": 85.0,
+      "fov_vertical_deg": 54.3,
+      "confidence": "high",
       "v4l2": {
         "focus_absolute": 0,
         "focus_auto": 1,
@@ -117,7 +121,9 @@
         "pan_absolute": 0,
         "tilt_absolute": 0
       },
-      "notes": "Same model as cam0 (Logitech BRIO 4K). Longer exposure (625 vs 312) suggests dimmer viewing angle or darker scene. Focus at 0 with autofocus \u2014 likely focused at infinity/far. Same distortion profile as cam0."
+      "notes": "Checkerboard calibrated. FOV is 93\u00b0 (widest setting) \u2014 different from cam0 overhead (78\u00b0). Same BRIO model, different zoom.",
+      "calibration_method": "checkerboard_19mm_10frames",
+      "rms_reprojection_px": 0.0901
     }
   },
   "frame_analysis": {

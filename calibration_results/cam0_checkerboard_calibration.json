@@ -1,0 +1,37 @@
+{
+  "camera": "cam0_overhead",
+  "model": "Logitech BRIO 4K",
+  "device": "/dev/video0",
+  "method": "checkerboard_calibration",
+  "board_size": [
+    8,
+    5
+  ],
+  "square_size_mm": 19.0,
+  "num_frames": 10,
+  "rms_reprojection_px": 0.085,
+  "camera_matrix": {
+    "fx": 1401.18,
+    "fy": 1381.24,
+    "cx": 1007.16,
+    "cy": 568.13
+  },
+  "distortion": {
+    "k1": 0.480481,
+    "k2": -0.379178,
+    "p1": -0.002917,
+    "p2": -0.050334,
+    "k3": -2.209344
+  },
+  "fov_deg": {
+    "horizontal": 68.8,
+    "vertical": 42.7,
+    "diagonal": 76.7
+  },
+  "image_size": [
+    1920,
+    1080
+  ],
+  "date": "2026-02-09",
+  "note": "Physical checkerboard calibration, 19mm squares"
+}

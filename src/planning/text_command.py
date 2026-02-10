@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from src.config.pick_config import get_pick_config as _get_pick_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -240,16 +242,18 @@ def _parse_gripper(text: str) -> Optional[ParsedCommand]:
     if re.search(r"\b(?:half|halfway|middle|50%?)\b", text) and re.search(
         r"\b(?:gripper|claw|open|close|grip|hand)\b", text
     ):
+        half = _get_pick_config().get("gripper", "max_mm") / 2.0
         return ParsedCommand(
             command_type=CommandType.SET_GRIPPER,
-            gripper_mm=32.5,
-            description="Set gripper to halfway (32.5mm)",
+            gripper_mm=half,
+            description=f"Set gripper to halfway ({half}mm)",
         )
 
     # "set gripper to 30", "gripper 30mm" — check before generic open/close
     m = re.search(r"(?:gripper|claw|grip)\s*(?:to|=|at)?\s*(\d+(?:\.\d+)?)\s*(?:mm)?", text)
     if m:
-        pos = max(0.0, min(65.0, float(m.group(1))))
+        cfg = _get_pick_config()
+        pos = max(cfg.get("gripper", "min_mm"), min(cfg.get("gripper", "max_mm"), float(m.group(1))))
         return ParsedCommand(
             command_type=CommandType.SET_GRIPPER,
             gripper_mm=pos,
@@ -262,10 +266,11 @@ def _parse_gripper(text: str) -> Optional[ParsedCommand]:
         or re.search(r"\b(?:gripper|claw|grip|hand)\b.*\b(?:open|release)\b", text)
         or text in ("open", "release", "let go", "drop")
     ):
+        open_mm = _get_pick_config().get("gripper", "open_mm")
         return ParsedCommand(
             command_type=CommandType.SET_GRIPPER,
-            gripper_mm=65.0,
-            description="Open gripper fully (65mm)",
+            gripper_mm=open_mm,
+            description=f"Open gripper fully ({open_mm}mm)",
         )
 
     # "close gripper", "grip", "grab", "clamp"
@@ -280,16 +285,18 @@ def _parse_gripper(text: str) -> Optional[ParsedCommand]:
         # Check for partial close: "close to 30mm"
         m = re.search(r"(?:to|at)\s+(\d+(?:\.\d+)?)\s*(?:mm|millimeter)?", text)
         if m:
-            pos = max(0.0, min(65.0, float(m.group(1))))
+            cfg = _get_pick_config()
+            pos = max(cfg.get("gripper", "min_mm"), min(cfg.get("gripper", "max_mm"), float(m.group(1))))
             return ParsedCommand(
                 command_type=CommandType.SET_GRIPPER,
                 gripper_mm=pos,
                 description=f"Set gripper to {pos}mm",
             )
+        close_mm = _get_pick_config().get("gripper", "close_mm")
         return ParsedCommand(
             command_type=CommandType.SET_GRIPPER,
-            gripper_mm=0.0,
-            description="Close gripper fully (0mm)",
+            gripper_mm=close_mm,
+            description=f"Close gripper fully ({close_mm}mm)",
         )
 
     return None
