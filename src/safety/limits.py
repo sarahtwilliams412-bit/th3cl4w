@@ -34,10 +34,10 @@ NUM_JOINTS = 7  # 6 arm + 1 gripper (matches d1_connection.NUM_JOINTS)
 JOINT_LIMITS_DEG = np.array(
     [
         [-135.0, 135.0],  # J0 — base yaw
-        [-90.0, 90.0],  # J1 — shoulder pitch (±85° hw, widened from ±80°)
-        [-90.0, 90.0],  # J2 — elbow pitch   (±85° hw, widened from ±80°)
+        [-80.0, 80.0],  # J1 — shoulder pitch (±85° hw - 5° margin)
+        [-80.0, 80.0],  # J2 — elbow pitch   (±85° hw - 5° margin)
         [-135.0, 135.0],  # J3 — elbow roll
-        [-90.0, 90.0],  # J4 — wrist pitch   (±85° hw, widened from ±80°)
+        [-80.0, 80.0],  # J4 — wrist pitch   (±85° hw - 5° margin)
         [-135.0, 135.0],  # J5 — wrist roll
     ]
 )

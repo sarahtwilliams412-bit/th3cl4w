@@ -183,8 +183,13 @@ class SafetyMonitor:
         self._estop = False
 
     # -- Feedback Freshness --------------------------------------------------
-    # Removed: duplicate of CommandSmoother._tick feedback freshness check.
-    # Single source of truth is in CommandSmoother._tick.
+
+    def is_feedback_fresh(self, state: D1State) -> bool:
+        """Check if feedback is fresh (within FEEDBACK_MAX_AGE_S)."""
+        import time
+
+        age_s = time.time() - state.timestamp
+        return age_s <= FEEDBACK_MAX_AGE_S
 
     # -- Command Validation --------------------------------------------------
 
@@ -289,7 +294,20 @@ class SafetyMonitor:
                         )
                     )
 
-        # Torque limits removed — position mode only, firmware handles overcurrent
+        # Torque limits
+        if cmd.joint_torques is not None:
+            for i in range(NUM_JOINTS):
+                val = float(cmd.joint_torques[i])
+                if abs(val) > lim.torque_max[i]:
+                    violations.append(
+                        SafetyViolation(
+                            violation_type=ViolationType.TORQUE_LIMIT,
+                            joint_index=i,
+                            message=f"Joint {i} torque {val:.4f} Nm exceeds limit ±{lim.torque_max[i]:.4f} Nm",
+                            actual_value=val,
+                            limit_value=float(lim.torque_max[i]),
+                        )
+                    )
 
         # Gripper bounds
         if cmd.gripper_position is not None:
@@ -379,8 +397,19 @@ class SafetyMonitor:
                     )
                 )
 
-        # Torque monitoring removed — position mode only, firmware handles overcurrent
-        # Workspace radius check removed — rough FK was unreliable, caused false positives
+        # Torque monitoring
+        for i in range(NUM_JOINTS):
+            val = float(state.joint_torques[i])
+            if abs(val) > lim.torque_max[i]:
+                violations.append(
+                    SafetyViolation(
+                        violation_type=ViolationType.TORQUE_LIMIT,
+                        joint_index=i,
+                        message=f"Joint {i} torque {val:.4f} Nm exceeds limit ±{lim.torque_max[i]:.4f} Nm",
+                        actual_value=val,
+                        limit_value=float(lim.torque_max[i]),
+                    )
+                )
 
         return violations
 

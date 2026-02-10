@@ -56,16 +56,19 @@ def _mock_response(text=MOCK_GEMINI_JSON):
 
 def _make_detector(**kwargs):
     """Create LLMJointDetector with mocked genai."""
-    with patch("src.vision.llm_detector.genai") as mock_genai:
-        mock_model_instance = MagicMock()
-        mock_genai.GenerativeModel.return_value = mock_model_instance
-        mock_genai.GenerationConfig = MagicMock()
+    with (
+        patch("src.vision.llm_detector.genai") as mock_genai,
+        patch("src.vision.llm_detector.genai_types") as mock_genai_types,
+    ):
+        mock_client = MagicMock()
+        mock_genai.Client.return_value = mock_client
+        mock_genai_types.GenerateContentConfig = MagicMock()
 
         from src.vision.llm_detector import LLMJointDetector
 
         detector = LLMJointDetector(api_key="test-key", **kwargs)
-        detector.model = mock_model_instance
-        return detector, mock_model_instance
+        # Return models mock — tests set generate_content behavior on this
+        return detector, mock_client.models
 
 
 # ---------------------------------------------------------------------------
