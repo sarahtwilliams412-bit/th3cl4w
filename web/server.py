@@ -6701,17 +6701,14 @@ class VirtualGripRequest(BaseModel):
     joints_deg: Optional[List[float]] = None
     gripper_width_mm: Optional[float] = None
     detected_objects: Optional[List[Dict[str, Any]]] = None
-    grip_distance_mm: float = 50.0
-    grip_width_mm: float = 30.0
 
 
 @app.post("/api/virtual-grip/check")
 async def virtual_grip_check(req: VirtualGripRequest = VirtualGripRequest()):
-    """Check virtual grip using current arm state and detected objects."""
+    """Check if current arm position would grip any detected object (sim mode)."""
     if _virtual_grip_detector is None:
         return JSONResponse({"error": "Virtual grip module not available"}, status_code=501)
 
-    # Use provided joints or read current
     joints = req.joints_deg
     if joints is None:
         joints = _get_current_joints().tolist()
@@ -6724,18 +6721,15 @@ async def virtual_grip_check(req: VirtualGripRequest = VirtualGripRequest()):
 
     objects = req.detected_objects if req.detected_objects is not None else []
 
-    result = _virtual_grip_detector.check_grip(
-        joints, gripper_w, objects,
-        grip_distance_mm=req.grip_distance_mm,
-        grip_width_mm=req.grip_width_mm,
-    )
+    result = _virtual_grip_detector.check_grip(joints, gripper_w, objects)
     return {
+        "ok": True,
         "gripped": result.gripped,
         "object_label": result.object_label,
         "distance_mm": result.distance_mm,
         "gripper_width_mm": result.gripper_width_mm,
         "object_width_mm": result.object_width_mm,
-        "position": result.position,
+        "gripper_position_mm": result.gripper_position_mm,
         "message": result.message,
     }
 

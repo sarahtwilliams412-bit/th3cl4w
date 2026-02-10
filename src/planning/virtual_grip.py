@@ -1,166 +1,169 @@
-"""
-Virtual Grip Detector — Geometric FK + proximity-based grip detection for sim mode.
+"""Virtual Grip Detection — geometric grip verification for simulation mode.
 
-Uses simplified geometric forward kinematics (not full DH) to compute the
-gripper tip position from joint angles, then checks proximity to detected objects.
+Computes gripper position via FK and checks proximity + gripper width
+against detected objects to determine if a "grip" would succeed.
+
+FK ported from arm3d.js forwardKinematics() — uses rotation matrices
+with the same link lengths and joint conventions as the 3D simulator.
 """
 
 from __future__ import annotations
-
+import logging
 import math
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Optional
+
+import numpy as np
+
+logger = logging.getLogger("th3cl4w.planning.virtual_grip")
 
 
 @dataclass
 class GripCheckResult:
-    """Result of a virtual grip check."""
     gripped: bool
-    object_label: Optional[str] = None
+    object_label: str = ""
     distance_mm: float = float("inf")
     gripper_width_mm: float = 0.0
     object_width_mm: float = 0.0
-    position: Dict[str, float] = field(default_factory=dict)
+    gripper_position_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
     message: str = ""
 
 
+def _ry(a: float) -> np.ndarray:
+    """Y-axis rotation matrix (3x3)."""
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+
+def _rz(a: float) -> np.ndarray:
+    """Z-axis rotation matrix (3x3)."""
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+
 class VirtualGripDetector:
-    """Compute gripper position via geometric FK and check proximity to objects.
+    """Determines if sim gripper has 'gripped' a detected object.
 
-    D1 arm link lengths (mm):
-        d0 = 121.5   base height
-        L1 = 208.5   upper arm
-        L2 = 208.5   forearm
-        L3 = 113.0   wrist-to-gripper tip
-
-    Joint mapping (6-DOF):
-        J0 = base yaw (rotation about Z)
-        J1 = shoulder pitch (+=forward, 0=vertical up)
-        J2 = elbow pitch
-        J3 = wrist roll (ignored for position)
-        J4 = wrist pitch
-        J5 = gripper (ignored for position)
+    Uses the geometric FK from arm3d.js (ported to Python) to compute
+    the gripper's 3D position from joint angles, then checks proximity
+    to detected objects.
     """
 
-    D0 = 121.5   # base height mm
-    L1 = 208.5   # upper arm mm
-    L2 = 208.5   # forearm mm
-    L3 = 113.0   # wrist-to-tip mm
+    # Link lengths in mm (matching arm3d.js D1_LINKS)
+    D0 = 121.5   # base to shoulder
+    L1 = 208.5   # shoulder to elbow
+    L2 = 208.5   # elbow to wrist
+    L3 = 113.0   # wrist to end-effector
 
-    # Default thresholds
-    GRIP_DISTANCE_MM = 50.0   # max distance to consider gripping
-    GRIP_WIDTH_MM = 30.0      # gripper must be narrower than this to grip
+    def __init__(
+        self,
+        grip_distance_threshold_mm: float = 60.0,
+        grip_width_margin_mm: float = 10.0,
+    ):
+        self.distance_threshold = grip_distance_threshold_mm
+        self.width_margin = grip_width_margin_mm
 
-    def compute_gripper_position(self, joints_deg: List[float]) -> Dict[str, float]:
-        """Compute gripper tip XYZ in mm from joint angles in degrees.
+    def compute_gripper_position(self, joints_deg: list[float]) -> np.ndarray:
+        """Compute gripper XYZ position from joint angles using geometric FK.
 
-        Coordinate frame: X=forward, Y=left, Z=up. Origin at base.
+        Exact port of arm3d.js forwardKinematics(). Computes in Z-up frame.
 
-        The arm hangs vertical at home (all zeros) with tip at Z = d0+L1+L2+L3.
-        J1 pitches forward from vertical: angle 0 = straight up, 90 = horizontal forward.
-        J2 is elbow relative to upper arm. J4 is wrist pitch relative to forearm.
+        Joint conventions (matching JS):
+          J0 = base yaw (Rz)
+          J1 = shoulder pitch (Ry)
+          J2 = elbow pitch (Ry with +PI/2 offset)
+          J3 = forearm roll (Rz)
+          J4 = wrist pitch (Ry)
+          J5 = gripper roll (unused for position)
+
+        Returns position in mm as np.array([x, y, z]) in Z-up frame.
         """
-        j0 = math.radians(joints_deg[0])  # base yaw
-        j1 = math.radians(joints_deg[1])  # shoulder pitch from vertical
-        j2 = math.radians(joints_deg[2])  # elbow pitch
-        j4 = math.radians(joints_deg[4])  # wrist pitch
+        j = [math.radians(a) for a in joints_deg[:6]]
 
-        # Cumulative pitch angle from vertical
-        # Each joint adds to the tilt from vertical
-        pitch1 = j1                    # after shoulder
-        pitch2 = pitch1 + j2          # after elbow
-        pitch3 = pitch2 + j4          # after wrist
+        shoulder = np.array([0.0, 0.0, self.D0])
 
-        # Compute in the vertical plane (r = radial from base axis, z = height)
-        # Start at base height
-        z = self.D0
-        r = 0.0
+        R = _rz(j[0]) @ _ry(j[1])
+        elbow = shoulder + R @ np.array([0.0, 0.0, self.L1])
 
-        # Upper arm: L1 along pitch1 from vertical
-        r += self.L1 * math.sin(pitch1)
-        z += self.L1 * math.cos(pitch1)
+        R = R @ _ry(math.pi / 2 + j[2])
+        wrist = elbow + R @ np.array([0.0, 0.0, self.L2])
 
-        # Forearm: L2 along pitch2 from vertical
-        r += self.L2 * math.sin(pitch2)
-        z += self.L2 * math.cos(pitch2)
+        R = R @ _rz(j[3])
+        R = R @ _ry(j[4])
+        ee = wrist + R @ np.array([0.0, 0.0, self.L3])
 
-        # Wrist-to-tip: L3 along pitch3 from vertical
-        r += self.L3 * math.sin(pitch3)
-        z += self.L3 * math.cos(pitch3)
-
-        # Project radial distance onto X/Y using base yaw
-        x = r * math.cos(j0)
-        y = r * math.sin(j0)
-
-        return {"x": round(x, 2), "y": round(y, 2), "z": round(z, 2)}
+        return ee
 
     def check_grip(
         self,
-        joints_deg: List[float],
+        joints_deg: list[float],
         gripper_width_mm: float,
-        detected_objects: List[Dict[str, Any]],
-        grip_distance_mm: float = GRIP_DISTANCE_MM,
-        grip_width_mm: float = GRIP_WIDTH_MM,
+        detected_objects: list[dict],
     ) -> GripCheckResult:
-        """Check if gripper is gripping any detected object.
+        """Check if the gripper would successfully grip any detected object.
 
-        Parameters
-        ----------
-        joints_deg : list of 6 floats
-            Current joint angles in degrees.
-        gripper_width_mm : float
-            Current gripper opening width in mm.
-        detected_objects : list of dicts
-            Each must have 'label' and 'position' with x,y,z in mm.
-            Optionally 'width_mm' for object size.
-        grip_distance_mm : float
-            Max distance to consider gripping.
-        grip_width_mm : float
-            Gripper must be narrower than this to count as closed.
+        Args:
+            joints_deg: Current 6 joint angles in degrees
+            gripper_width_mm: Current gripper opening in mm
+            detected_objects: List of dicts with at least:
+                - "label": str
+                - "position_mm": [x, y, z] or just [x, y] (z assumed 0)
+                - "width_mm": float (object width for grip check)
+
+        Returns:
+            GripCheckResult with grip status and details.
         """
-        pos = self.compute_gripper_position(joints_deg)
+        gripper_pos = self.compute_gripper_position(joints_deg)
 
-        if not detected_objects:
+        best_match = None
+        best_dist = float("inf")
+
+        for obj in detected_objects:
+            label = obj.get("label", "unknown")
+            pos = obj.get("position_mm", [0, 0, 0])
+            obj_width = obj.get("width_mm", 66.0)  # default Red Bull can
+
+            # Ensure 3D
+            if len(pos) < 3:
+                pos = list(pos) + [0.0]
+            obj_pos = np.array(pos[:3], dtype=float)
+
+            dist = float(np.linalg.norm(gripper_pos - obj_pos))
+
+            if dist < best_dist:
+                best_dist = dist
+                best_match = (label, obj_width, dist)
+
+        if best_match is None:
             return GripCheckResult(
                 gripped=False,
-                position=pos,
+                gripper_position_mm=tuple(gripper_pos),
                 gripper_width_mm=gripper_width_mm,
                 message="No objects detected",
             )
 
-        # Find closest object
-        closest_label = None
-        closest_dist = float("inf")
-        closest_obj_width = 0.0
+        label, obj_width, dist = best_match
 
-        for obj in detected_objects:
-            obj_pos = obj.get("position", {})
-            dx = pos["x"] - obj_pos.get("x", 0)
-            dy = pos["y"] - obj_pos.get("y", 0)
-            dz = pos["z"] - obj_pos.get("z", 0)
-            dist = math.sqrt(dx * dx + dy * dy + dz * dz)
-            if dist < closest_dist:
-                closest_dist = dist
-                closest_label = obj.get("label", "unknown")
-                closest_obj_width = obj.get("width_mm", 30.0)
-
-        gripper_closed = gripper_width_mm < grip_width_mm
-        close_enough = closest_dist <= grip_distance_mm
-        gripped = gripper_closed and close_enough
-
-        if gripped:
-            msg = f"Gripping '{closest_label}' at {closest_dist:.1f}mm"
-        elif not close_enough:
-            msg = f"Too far from '{closest_label}': {closest_dist:.1f}mm > {grip_distance_mm}mm"
-        else:
-            msg = f"Gripper too wide ({gripper_width_mm:.1f}mm) to grip '{closest_label}'"
+        close_enough = dist < self.distance_threshold
+        grip_tight = gripper_width_mm < (obj_width + self.width_margin)
+        gripped = close_enough and grip_tight
 
         return GripCheckResult(
             gripped=gripped,
-            object_label=closest_label,
-            distance_mm=round(closest_dist, 2),
+            object_label=label,
+            distance_mm=dist,
             gripper_width_mm=gripper_width_mm,
-            object_width_mm=closest_obj_width,
-            position=pos,
-            message=msg,
+            object_width_mm=obj_width,
+            gripper_position_mm=tuple(gripper_pos),
+            message=f"{'Gripped' if gripped else 'Missed'} {label} at {dist:.1f}mm"
+            + (
+                f" (gripper too wide: {gripper_width_mm:.1f}>{obj_width + self.width_margin:.1f}mm)"
+                if not grip_tight
+                else ""
+            )
+            + (
+                f" (too far: {dist:.1f}>{self.distance_threshold:.1f}mm)"
+                if not close_enough
+                else ""
+            ),
         )
