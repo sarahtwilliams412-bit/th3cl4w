@@ -177,6 +177,8 @@ parser.add_argument("--simulate", action="store_true", help="Run with simulated 
 parser.add_argument("--interface", default="eno1", help="Network interface for DDS (default: eno1)")
 parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
 parser.add_argument("--port", type=int, default=8080, help="Bind port (default: 8080)")
+parser.add_argument("--debug", action="store_true", help="Enable DEBUG-level logging to logs/web.log")
+parser.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
 
 # Only parse if running as main (not under test)
 if "pytest" not in sys.modules:
@@ -184,7 +186,8 @@ if "pytest" not in sys.modules:
 else:
     args = parser.parse_args(["--simulate"])
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+from src.utils.logging_config import setup_logging
+setup_logging(server_name="web", debug=args.debug, log_dir=args.log_dir)
 logger = logging.getLogger("th3cl4w.web")
 
 # ---------------------------------------------------------------------------

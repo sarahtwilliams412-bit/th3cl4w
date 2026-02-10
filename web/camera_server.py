@@ -42,7 +42,7 @@ try:
 except ImportError:
     _HAS_SCANNER = False
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# Logging configured in main() via setup_logging(); fall back for import-time usage
 logger = logging.getLogger("th3cl4w.camera")
 
 # ---------------------------------------------------------------------------
@@ -428,7 +428,12 @@ def main():
     parser.add_argument(
         "--no-scan", action="store_true", help="Disable startup environment scanning"
     )
+    parser.add_argument("--debug", action="store_true", help="Enable DEBUG-level logging to logs/camera.log")
+    parser.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
     args = parser.parse_args()
+
+    from src.utils.logging_config import setup_logging
+    setup_logging(server_name="camera", debug=args.debug, log_dir=args.log_dir)
 
     # Start camera threads
     cameras[0] = CameraThread(args.cam0, args.width, args.height, args.fps, args.jpeg_quality)
