@@ -388,6 +388,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <div class="nav-item" data-panel="multiview-pick" onclick="showPanel(this)"><span class="nav-icon">🤏</span> <span class="nav-label">Multi-view Pick</span></div>
       <div class="nav-item" data-panel="pick-planner" onclick="showPanel(this)"><span class="nav-icon">📐</span> <span class="nav-label">Pick Planner</span></div>
       <div class="nav-item" data-panel="vla" onclick="showPanel(this)"><span class="nav-icon">🧠</span> <span class="nav-label">VLA Agent</span></div>
+      <div class="nav-item" data-panel="auto-pick" onclick="showPanel(this)"><span class="nav-icon">🤖</span> <span class="nav-label">Auto Pick</span></div>
     </div>
   </div>
 
@@ -933,6 +934,45 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           <button class="btn" onclick="vlaDemoList()">📋 LIST</button>
         </div>
         <div class="result-box" id="vlaDemoResult" style="margin-top:8px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PANEL: Auto Pick                                              -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-auto-pick">
+  <div class="panel-body">
+    <div class="panel-header">🤖 Autonomous Pick</div>
+    <div class="panel-grid">
+      <div class="panel-card">
+        <h3>Pick Control</h3>
+        <div class="form-row" style="margin-bottom:8px;">
+          <label>Target</label>
+          <select id="apTarget" style="flex:2;background:var(--bg);color:var(--text);border:1px solid var(--card-border);padding:4px 8px;border-radius:4px;">
+            <option value="redbull">🥫 Red Bull</option>
+            <option value="red">🔴 Red Object</option>
+            <option value="blue">🔵 Blue Object</option>
+            <option value="green">🟢 Green Object</option>
+            <option value="any">🎯 Any Object</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary" id="apStartBtn" onclick="apStart()" style="font-size:16px;padding:10px 24px;">🤖 AUTO PICK</button>
+          <button class="btn danger" id="apStopBtn" onclick="apStop()" style="display:none;">⛔ STOP</button>
+        </div>
+      </div>
+      <div class="panel-card">
+        <h3>Status</h3>
+        <div id="apPhase" style="font-size:18px;font-weight:bold;color:var(--text-dim);margin-bottom:8px;">IDLE</div>
+        <div id="apElapsed" style="font-size:11px;color:var(--text-dim);margin-bottom:4px;"></div>
+        <div id="apTarget_xy" style="font-size:11px;color:var(--text-dim);margin-bottom:4px;"></div>
+        <div id="apJoints" style="font-size:11px;color:var(--text-dim);font-family:var(--mono);"></div>
+      </div>
+      <div class="panel-card" style="grid-column:1/-1;">
+        <h3>Pick Log</h3>
+        <div id="apLog" style="font-family:var(--mono);font-size:10px;max-height:200px;overflow-y:auto;color:var(--text-dim);white-space:pre-wrap;"></div>
       </div>
     </div>
   </div>
@@ -2845,6 +2885,47 @@ function vlaPreviewCams() {
 async function vlaDemoStart() { const task = document.getElementById('vlaDemoTask').value; showResult('vlaDemoResult', await apiPost('/api/vla/collect', {action:'start', task})); }
 async function vlaDemoStop() { showResult('vlaDemoResult', await apiPost('/api/vla/collect', {action:'stop', success:true})); }
 async function vlaDemoList() { showResult('vlaDemoResult', await apiCall('/api/vla/demos')); }
+
+// --- Auto Pick ---
+let _apPollTimer = null;
+async function apStart() {
+  const target = document.getElementById('apTarget').value;
+  const res = await apiPost('/api/autopick/start', { target });
+  if (res && res.ok) {
+    document.getElementById('apStartBtn').style.display = 'none';
+    document.getElementById('apStopBtn').style.display = '';
+    apPollStatus();
+  } else {
+    document.getElementById('apPhase').textContent = 'ERROR: ' + (res?.error || 'Failed');
+  }
+}
+async function apStop() {
+  await apiPost('/api/autopick/stop');
+}
+async function apPollStatus() {
+  clearTimeout(_apPollTimer);
+  try {
+    const s = await apiCall('/api/autopick/status');
+    if (!s) return;
+    const phase = (s.phase || 'idle').toUpperCase();
+    const phaseEl = document.getElementById('apPhase');
+    phaseEl.textContent = phase;
+    phaseEl.style.color = phase === 'DONE' ? 'var(--success)' : phase === 'FAILED' ? 'var(--danger)' : phase === 'IDLE' ? 'var(--text-dim)' : 'var(--info)';
+    document.getElementById('apElapsed').textContent = s.elapsed_s ? `Elapsed: ${s.elapsed_s}s` : '';
+    if (s.target_xy_mm && (s.target_xy_mm[0] || s.target_xy_mm[1])) {
+      document.getElementById('apTarget_xy').textContent = `Target: (${s.target_xy_mm[0].toFixed(1)}, ${s.target_xy_mm[1].toFixed(1)}) mm`;
+    }
+    if (s.planned_joints && s.planned_joints.length) {
+      document.getElementById('apJoints').textContent = `Joints: [${s.planned_joints.map(j=>j.toFixed(1)).join(', ')}]`;
+    }
+    const logEl = document.getElementById('apLog');
+    if (s.log && s.log.length) { logEl.textContent = s.log.join('\n'); logEl.scrollTop = logEl.scrollHeight; }
+    const running = s.running;
+    document.getElementById('apStartBtn').style.display = running ? 'none' : '';
+    document.getElementById('apStopBtn').style.display = running ? '' : 'none';
+    if (running) { _apPollTimer = setTimeout(apPollStatus, 500); }
+  } catch(e) { console.error('apPollStatus error', e); }
+}
 
 // --- Workspace Calibration ---
 let wsCalibStreaming = false;

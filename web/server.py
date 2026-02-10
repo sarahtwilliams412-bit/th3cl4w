@@ -5786,6 +5786,85 @@ async def get_side_calibration():
 
 
 # ---------------------------------------------------------------------------
+# Auto Pick — autonomous pick pipeline
+# ---------------------------------------------------------------------------
+
+try:
+    from src.planning.auto_pick import AutoPick, AutoPickPhase
+
+    _HAS_AUTO_PICK = True
+except ImportError:
+    _HAS_AUTO_PICK = False
+
+_auto_pick: Optional[Any] = None
+
+
+def _get_auto_pick() -> Any:
+    global _auto_pick
+    if _auto_pick is None and _HAS_AUTO_PICK:
+        _auto_pick = AutoPick()
+    return _auto_pick
+
+
+class AutoPickRequest(BaseModel):
+    target: str = Field(default="redbull", description="Object to pick: redbull, blue, green, any")
+
+
+@app.post("/api/autopick/start")
+async def autopick_start(req: AutoPickRequest):
+    """Start autonomous pick pipeline."""
+    ap = _get_auto_pick()
+    if ap is None:
+        return JSONResponse({"ok": False, "error": "Auto pick module not available"}, status_code=501)
+    if ap.running:
+        return JSONResponse({"ok": False, "error": "Pick already in progress"}, status_code=409)
+    try:
+        await ap.start(req.target)
+        action_log.add("AUTO_PICK", f"Started pick for '{req.target}'", "info")
+        return {"ok": True, "phase": ap.state.phase.value, "target": req.target}
+    except Exception as e:
+        action_log.add("AUTO_PICK", f"Failed to start: {e}", "error")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/autopick/status")
+async def autopick_status():
+    """Get current auto pick status."""
+    ap = _get_auto_pick()
+    if ap is None:
+        return {"available": False, "error": "Auto pick module not available"}
+    status = ap.get_status()
+    status["available"] = True
+    return status
+
+
+@app.post("/api/autopick/stop")
+async def autopick_stop():
+    """Emergency stop the auto pick sequence."""
+    ap = _get_auto_pick()
+    if ap is None:
+        return JSONResponse({"ok": False, "error": "Auto pick module not available"}, status_code=501)
+    ap.stop()
+    action_log.add("AUTO_PICK", "Stop requested", "warning")
+    return {"ok": True, "phase": ap.state.phase.value}
+
+
+@app.post("/api/autopick/plan")
+async def autopick_plan(req: Request):
+    """Compute joint angles for a given position (dry run, no movement).
+    Body: {"x_mm": float, "y_mm": float, "z_mm": float (optional)}
+    """
+    if not _HAS_AUTO_PICK:
+        return JSONResponse({"ok": False, "error": "Auto pick module not available"}, status_code=501)
+    body = await req.json()
+    x = float(body.get("x_mm", 0))
+    y = float(body.get("y_mm", 0))
+    z = float(body.get("z_mm", 0))
+    joints = AutoPick.plan_joints(x, y, z)
+    return {"ok": True, "joints": joints, "target_mm": {"x": x, "y": y, "z": z}}
+
+
+# ---------------------------------------------------------------------------
 # Static files — versioned UIs all pointing to the same server
 # /v1/ → V1 stable base, /v2/ → V2 Cartesian controls, / → V1 (default)
 # ---------------------------------------------------------------------------
