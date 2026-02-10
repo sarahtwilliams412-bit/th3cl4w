@@ -79,6 +79,9 @@ class ObjectTracker:
     3. stop() — cancels everything
     """
 
+    # Minimum interval between frame grabs per camera (seconds)
+    FRAME_RATE_LIMIT_S = 2.0
+
     def __init__(self, world_model: LocationWorldModel):
         self.world_model = world_model
         self.detector = UnifiedDetector()
@@ -86,6 +89,7 @@ class ObjectTracker:
         self._tasks: list[asyncio.Task] = []
         self._camera_status: dict[int, bool] = {i: False for i in CAMERA_IDS}
         self._last_deep_scan = 0.0
+        self._last_grab: dict[int, float] = {}  # cam_id -> monotonic timestamp
         self._http_client: Optional[httpx.AsyncClient] = None
 
     @property
@@ -191,15 +195,29 @@ class ObjectTracker:
     # ------------------------------------------------------------------
 
     async def _grab_frame(self, cam_id: int) -> tuple[Optional[np.ndarray], Optional[bytes]]:
-        """Grab a frame from the camera server. Returns (decoded_frame, raw_jpeg)."""
+        """Grab a frame from the camera server. Returns (decoded_frame, raw_jpeg).
+
+        Rate-limited to at most 1 frame per camera per FRAME_RATE_LIMIT_S seconds.
+        Uses /latest/ endpoint to avoid triggering new captures on the camera server.
+        """
         if self._http_client is None:
             return None, None
 
+        # Rate limit: skip if we grabbed this camera too recently
+        now = time.monotonic()
+        last = self._last_grab.get(cam_id, 0.0)
+        if now - last < self.FRAME_RATE_LIMIT_S:
+            return None, None
+
         try:
-            resp = await self._http_client.get(f"{CAMERA_SERVER}/snap/{cam_id}")
+            resp = await self._http_client.get(f"{CAMERA_SERVER}/latest/{cam_id}")
+            if resp.status_code != 200:
+                # Fall back to /snap/ if /latest/ not available
+                resp = await self._http_client.get(f"{CAMERA_SERVER}/snap/{cam_id}")
             if resp.status_code != 200:
                 return None, None
 
+            self._last_grab[cam_id] = now
             jpeg_bytes = resp.content
             arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
             frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
