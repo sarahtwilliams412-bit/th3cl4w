@@ -2804,7 +2804,7 @@ async def pick_status():
         return {"available": False, "error": "Visual pick module not available"}
     status = pick_executor.get_status()
     status["available"] = True
-    status["calibrated"] = arm_tracker.calibrator.is_calibrated if arm_tracker else False
+    status["calibrated"] = getattr(getattr(arm_tracker, 'calibrator', None), 'is_calibrated', False) if arm_tracker else False
     return status
 
 
