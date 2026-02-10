@@ -667,6 +667,30 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         Objects: <span id="simObjCount">0</span> total, <span id="simObjReachable" style="color:var(--success)">0</span> reachable
       </div>
       <div id="simObjList" style="font-family:var(--mono);font-size:9px;color:var(--text-dim);max-height:120px;overflow-y:auto;padding:2px 0"></div>
+
+      <details style="margin-top:8px;">
+        <summary class="section-title" style="cursor:pointer;user-select:none;">▶ Detection Config</summary>
+        <div id="detConfigPanel" style="margin-top:6px;font-size:10px;">
+          <div style="margin-bottom:6px;font-weight:600;color:var(--text-dim)">HSV Color Ranges</div>
+          <div id="detConfigColors"></div>
+          <div style="margin-top:6px;font-weight:600;color:var(--text-dim)">Detection Params</div>
+          <div class="form-row"><label style="min-width:100px">Min Area</label><input type="number" id="detCfgMinArea" value="800" style="width:70px"></div>
+          <div class="form-row"><label style="min-width:100px">Max Area</label><input type="number" id="detCfgMaxArea" value="200000" style="width:70px"></div>
+          <div class="form-row"><label style="min-width:100px">Max Objects</label><input type="number" id="detCfgMaxObj" value="20" style="width:70px"></div>
+          <div style="margin-top:6px;font-weight:600;color:var(--text-dim)">Workspace Bounds (mm)</div>
+          <div class="form-row"><label style="min-width:50px">X min</label><input type="number" id="detCfgXMin" value="-400" style="width:60px"><label style="min-width:40px;text-align:right">max</label><input type="number" id="detCfgXMax" value="400" style="width:60px"></div>
+          <div class="form-row"><label style="min-width:50px">Y min</label><input type="number" id="detCfgYMin" value="-400" style="width:60px"><label style="min-width:40px;text-align:right">max</label><input type="number" id="detCfgYMax" value="400" style="width:60px"></div>
+          <div style="margin-top:6px;font-weight:600;color:var(--text-dim)">Table Dimensions (mm)</div>
+          <div class="form-row"><label style="min-width:50px">Width</label><input type="number" id="detCfgTableW" value="800" style="width:70px"><label style="min-width:40px;text-align:right">Depth</label><input type="number" id="detCfgTableD" value="800" style="width:70px"></div>
+          <div style="margin-top:6px;font-weight:600;color:var(--text-dim)">Height Estimation</div>
+          <div class="form-row"><label style="min-width:100px">Table Y frac</label><input type="number" id="detCfgTableYF" value="0.85" step="0.01" style="width:60px"></div>
+          <div class="form-row"><label style="min-width:100px">Max height</label><input type="number" id="detCfgMaxH" value="300" style="width:60px"></div>
+          <div class="sim-btn-row" style="margin-top:8px;">
+            <button class="btn primary" id="detCfgSave" style="font-size:9px">Save Config</button>
+            <button class="btn" id="detCfgLoad" style="font-size:9px">Load Current</button>
+          </div>
+        </div>
+      </details>
     </div>
     <div style="flex:1"></div>
     <div class="sim-execute-bar">
@@ -965,6 +989,39 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <div class="panel-card">
       <h3>Detected Objects</h3>
       <div class="result-box" id="objPanelList" style="max-height:200px;">No objects detected</div>
+    </div>
+
+    <!-- Scan & Review Workflow -->
+    <div class="panel-card" style="margin-top:10px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <h3 style="margin:0;">Scan & Review</h3>
+        <button class="btn primary" id="btnScanTable" style="font-size:12px;padding:8px 16px;font-weight:700;letter-spacing:1px">🔍 SCAN TABLE</button>
+        <button class="btn" id="btnAcceptDetections" style="display:none">✓ Accept & Update</button>
+      </div>
+    </div>
+
+    <!-- Review Panel (hidden until scan) -->
+    <div id="scanReviewPanel" style="display:none;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div class="panel-card">
+          <h3>Overhead (Annotated)</h3>
+          <img id="scanOverheadImg" style="width:100%;background:#0a0f1a;border-radius:4px;" alt="Overhead">
+        </div>
+        <div class="panel-card">
+          <h3>Side Camera</h3>
+          <img id="scanSideImg" style="width:100%;background:#0a0f1a;border-radius:4px;" alt="Side">
+        </div>
+      </div>
+      <div class="panel-card">
+        <h3>Detected Objects</h3>
+        <div id="scanObjectTable" style="font-family:var(--mono);font-size:11px;max-height:250px;overflow-y:auto;"></div>
+      </div>
+    </div>
+
+    <!-- Detection Log -->
+    <div class="panel-card" style="margin-top:10px;">
+      <h3>Detection Log</h3>
+      <div id="detectionLog" style="font-family:var(--mono);font-size:10px;max-height:120px;overflow-y:auto;color:var(--text-dim);line-height:1.6;">No scans yet</div>
     </div>
 
     <!-- Simulator Integration -->
@@ -1941,6 +1998,75 @@ async function cmd(action) {
   } catch(e) { logLocal(action.toUpperCase(), `✗ Network error: ${e.message}`, 'error'); }
 }
 
+// =====================================================
+//  BUTTON FEEDBACK HELPER
+// =====================================================
+async function btnFetch(btn, url, options = {}) {
+  if (!btn || btn.disabled) return null;
+  const origText = btn.textContent;
+  const origBg = btn.style.background;
+  const origBorder = btn.style.borderColor;
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const resp = await fetch(url, { method: 'POST', ...options });
+    const data = options.raw ? resp : await resp.json();
+    const ok = options.raw ? resp.ok : (data && data.ok !== false);
+    // Flash green on success
+    btn.style.background = 'rgba(83,215,105,0.25)';
+    btn.style.borderColor = 'var(--success)';
+    btn.textContent = origText;
+    setTimeout(() => { btn.style.background = origBg; btn.style.borderColor = origBorder; }, 500);
+    btn.disabled = false;
+    return data;
+  } catch (e) {
+    // Flash red on error
+    btn.style.background = 'rgba(233,69,96,0.25)';
+    btn.style.borderColor = 'var(--danger)';
+    btn.textContent = origText;
+    setTimeout(() => { btn.style.background = origBg; btn.style.borderColor = origBorder; }, 800);
+    btn.disabled = false;
+    console.error('btnFetch error:', e);
+    return null;
+  }
+}
+
+// Wrap cmd() with button feedback
+async function cmdBtn(btn, action) {
+  if (!btn) return;
+  const origText = btn.textContent;
+  const origBg = btn.style.background;
+  const origBorder = btn.style.borderColor;
+  btn.disabled = true;
+  btn.textContent = '...';
+  logLocal(action.toUpperCase(), `Sending POST /api/command/${action}`, 'info');
+  try {
+    const resp = await fetch(`/api/command/${action}`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      logLocal(action.toUpperCase(), '✓ Success', 'info');
+      btn.style.background = 'rgba(83,215,105,0.25)';
+      btn.style.borderColor = 'var(--success)';
+    } else {
+      logLocal(action.toUpperCase(), `✗ Failed: ${data.error || 'unknown'}`, 'error');
+      btn.style.background = 'rgba(233,69,96,0.25)';
+      btn.style.borderColor = 'var(--danger)';
+    }
+    if (data.state) { armState = { ...armState, ...data.state }; vizDirty = true; }
+    updateUI();
+    btn.textContent = origText;
+    setTimeout(() => { btn.style.background = origBg; btn.style.borderColor = origBorder; }, 500);
+    btn.disabled = false;
+  } catch(e) {
+    logLocal(action.toUpperCase(), `✗ Network error: ${e.message}`, 'error');
+    btn.style.background = 'rgba(233,69,96,0.25)';
+    btn.style.borderColor = 'var(--danger)';
+    btn.textContent = origText;
+    setTimeout(() => { btn.style.background = origBg; btn.style.borderColor = origBorder; }, 800);
+    btn.disabled = false;
+  }
+}
+
 async function sendJoint(id, angle) {
   if (!armSynced) return;
   logLocal('SET_JOINT', `J${id} -> ${angle.toFixed(1)}°`, 'info');
@@ -1973,23 +2099,23 @@ async function runTask(name, body={}) {
 
 // =====================================================//  BUTTON WIRING
 // =====================================================
-document.getElementById('btnPowerOn').addEventListener('click', () => cmd('power-on'));
-document.getElementById('btnPowerOff').addEventListener('click', () => cmd('power-off'));
-document.getElementById('btnEnable').addEventListener('click', () => cmd('enable'));
-document.getElementById('btnDisable').addEventListener('click', () => cmd('disable'));
-document.getElementById('btnTaskHome').addEventListener('click', () => runTask('home'));
-document.getElementById('btnTaskReady').addEventListener('click', () => runTask('ready'));
-document.getElementById('btnTaskWave').addEventListener('click', () => runTask('wave'));
-document.getElementById('btnTaskStop').addEventListener('click', () => runTask('stop'));
-document.getElementById('btnResetEnable').addEventListener('click', () => cmd('reset-enable'));
-document.getElementById('btnHardResetEnable').addEventListener('click', () => {
+document.getElementById('btnPowerOn').addEventListener('click', function() { cmdBtn(this, 'power-on'); });
+document.getElementById('btnPowerOff').addEventListener('click', function() { cmdBtn(this, 'power-off'); });
+document.getElementById('btnEnable').addEventListener('click', function() { cmdBtn(this, 'enable'); });
+document.getElementById('btnDisable').addEventListener('click', function() { cmdBtn(this, 'disable'); });
+document.getElementById('btnTaskHome').addEventListener('click', function() { btnFetch(this, '/api/task/home'); });
+document.getElementById('btnTaskReady').addEventListener('click', function() { btnFetch(this, '/api/task/ready'); });
+document.getElementById('btnTaskWave').addEventListener('click', function() { btnFetch(this, '/api/task/wave'); });
+document.getElementById('btnTaskStop').addEventListener('click', function() { btnFetch(this, '/api/task/stop'); });
+document.getElementById('btnResetEnable').addEventListener('click', function() { cmdBtn(this, 'reset-enable'); });
+document.getElementById('btnHardResetEnable').addEventListener('click', function() {
   if (confirm('⚠ HARD RESET will send all joints to 0° simultaneously.\nOnly use when arm is already near home position!\n\nContinue?')) {
-    cmd('hard-reset-enable');
+    cmdBtn(this, 'hard-reset-enable');
   }
 });
-document.getElementById('btnEnableHere').addEventListener('click', () => cmd('enable-here'));
-document.getElementById('btnSafeHome').addEventListener('click', () => cmd('safe-home'));
-document.getElementById('btnEstop').addEventListener('click', () => cmd('stop'));
+document.getElementById('btnEnableHere').addEventListener('click', function() { cmdBtn(this, 'enable-here'); });
+document.getElementById('btnSafeHome').addEventListener('click', function() { cmdBtn(this, 'safe-home'); });
+document.getElementById('btnEstop').addEventListener('click', function() { cmdBtn(this, 'stop'); });
 
 document.getElementById('btnRawSend').addEventListener('click', async () => {
   const raw = document.getElementById('rawInput').value.trim();

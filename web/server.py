@@ -2741,6 +2741,96 @@ async def objects_clear():
     return {"ok": True}
 
 
+@app.get("/api/objects/config")
+async def objects_config_get():
+    """Return current object detection configuration."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+    return {"ok": True, "config": object_detector.get_config()}
+
+
+@app.post("/api/objects/config")
+async def objects_config_set(request: Request):
+    """Update object detection configuration."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+    try:
+        body = await request.json()
+        object_detector.set_config(body)
+        action_log.add("OBJECTS", "Detection config updated", "info")
+        return {"ok": True, "config": object_detector.get_config()}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+@app.post("/api/objects/scan")
+async def objects_scan():
+    """Full scan pipeline: overhead detect → side heights → Gemini labeling.
+
+    Returns detection results plus base64-encoded annotated images.
+    """
+    import base64
+
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+
+    # Auto-enable if needed
+    if not object_detector.enabled:
+        object_detector.enable()
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp_overhead = await client.get("http://localhost:8081/snap/0")
+            resp_side = None
+            try:
+                resp_side = await client.get("http://localhost:8081/snap/2")
+            except Exception:
+                pass
+
+        if resp_overhead.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
+
+        overhead_frame = cv2.imdecode(np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR)
+        if overhead_frame is None:
+            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
+
+        side_frame = None
+        if resp_side is not None and resp_side.status_code == 200:
+            side_frame = cv2.imdecode(np.frombuffer(resp_side.content, np.uint8), cv2.IMREAD_COLOR)
+
+        # Run full detection pipeline (includes height estimation + LLM labeling)
+        result = object_detector.detect_from_overhead(overhead_frame, side_frame)
+
+        # Generate annotated overhead image
+        annotated_overhead = object_detector.annotate_frame(overhead_frame)
+        _, oh_buf = cv2.imencode('.jpg', annotated_overhead, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        overhead_b64 = base64.b64encode(oh_buf.tobytes()).decode('ascii')
+
+        # Side image as-is (with raw frame for review)
+        side_b64 = None
+        if side_frame is not None:
+            _, side_buf = cv2.imencode('.jpg', side_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            side_b64 = base64.b64encode(side_buf.tobytes()).decode('ascii')
+
+        objects = [o.to_dict() for o in object_detector.get_objects()]
+
+        action_log.add("OBJECTS", f"Full scan: {len(objects)} objects detected", "info")
+
+        return {
+            "ok": True,
+            **result,
+            "objects": objects,
+            "overhead_image": overhead_b64,
+            "side_image": side_b64,
+            "timestamp": time.time(),
+        }
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 # ---------------------------------------------------------------------------
 # Visual Pick endpoints — dual-camera object detection + autonomous grasp
 # ---------------------------------------------------------------------------

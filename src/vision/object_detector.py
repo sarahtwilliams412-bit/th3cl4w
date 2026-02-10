@@ -758,6 +758,78 @@ class ObjectDetector:
 
         return annotated
 
+    def get_config(self) -> dict:
+        """Return current detection configuration as a JSON-serializable dict."""
+        color_ranges = {}
+        for key, cr in _COLOR_RANGES.items():
+            color_ranges[key] = {
+                "lower": cr["lower"].tolist(),
+                "upper": cr["upper"].tolist(),
+            }
+        return {
+            "color_ranges": color_ranges,
+            "min_contour_area": self._min_contour_area,
+            "max_contour_area": _MAX_CONTOUR_AREA,
+            "workspace_bounds": {
+                "x_min": _WS_MIN[0], "y_min": _WS_MIN[1],
+                "x_max": _WS_MAX[0], "y_max": _WS_MAX[1],
+            },
+            "table_dimensions": {
+                "width_mm": _TABLE_WIDTH_MM,
+                "depth_mm": _TABLE_DEPTH_MM,
+            },
+            "height_estimation": {
+                "table_y_fraction": _FRONT_CAM_TABLE_Y_FRAC,
+                "max_height_mm": _FRONT_CAM_MAX_HEIGHT_MM,
+            },
+            "labeler_enabled": self._labeler is not None,
+            "confidence_threshold": 0.0,
+            "max_objects": self._max_objects,
+        }
+
+    def set_config(self, config: dict):
+        """Update detection configuration in-place from a dict."""
+        global _COLOR_RANGES, _WS_MIN, _WS_MAX, _TABLE_WIDTH_MM, _TABLE_DEPTH_MM
+        global _MIN_CONTOUR_AREA, _MAX_CONTOUR_AREA
+        global _FRONT_CAM_TABLE_Y_FRAC, _FRONT_CAM_MAX_HEIGHT_MM
+
+        if "color_ranges" in config:
+            for key, cr in config["color_ranges"].items():
+                if key in _COLOR_RANGES:
+                    _COLOR_RANGES[key] = {
+                        "lower": np.array(cr["lower"], dtype=np.uint8),
+                        "upper": np.array(cr["upper"], dtype=np.uint8),
+                    }
+
+        if "min_contour_area" in config:
+            self._min_contour_area = int(config["min_contour_area"])
+            _MIN_CONTOUR_AREA = self._min_contour_area
+        if "max_contour_area" in config:
+            _MAX_CONTOUR_AREA = int(config["max_contour_area"])
+
+        if "workspace_bounds" in config:
+            wb = config["workspace_bounds"]
+            _WS_MIN = (float(wb.get("x_min", _WS_MIN[0])), float(wb.get("y_min", _WS_MIN[1])))
+            _WS_MAX = (float(wb.get("x_max", _WS_MAX[0])), float(wb.get("y_max", _WS_MAX[1])))
+
+        if "table_dimensions" in config:
+            td = config["table_dimensions"]
+            _TABLE_WIDTH_MM = float(td.get("width_mm", _TABLE_WIDTH_MM))
+            _TABLE_DEPTH_MM = float(td.get("depth_mm", _TABLE_DEPTH_MM))
+
+        if "height_estimation" in config:
+            he = config["height_estimation"]
+            _FRONT_CAM_TABLE_Y_FRAC = float(he.get("table_y_fraction", _FRONT_CAM_TABLE_Y_FRAC))
+            _FRONT_CAM_MAX_HEIGHT_MM = float(he.get("max_height_mm", _FRONT_CAM_MAX_HEIGHT_MM))
+
+        if "max_objects" in config:
+            self._max_objects = int(config["max_objects"])
+
+        # Reset scale so it recalculates with new table dimensions
+        self._scale = None
+
+        logger.info("Object detector config updated")
+
     def clear(self):
         """Clear all detected objects."""
         with self._lock:
