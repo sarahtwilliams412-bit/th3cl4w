@@ -88,9 +88,9 @@ class PoseCapture:
     pose_index: int
     commanded_angles: tuple
     actual_angles: list[float]
-    cam0_jpeg: bytes = field(repr=False)  # overhead
-    cam1_jpeg: bytes = field(repr=False)  # arm-mounted
-    cam2_jpeg: bytes = field(repr=False)  # side
+    cam0_jpeg: bytes = field(default=b"", repr=False)  # overhead
+    cam1_jpeg: bytes = field(default=b"", repr=False)  # arm-mounted
+    cam2_jpeg: bytes = field(default=b"", repr=False)  # side
     timestamp: float = 0.0
     comparison: Optional[Any] = None
 
@@ -123,7 +123,7 @@ class CalibrationRunner:
         arm_port: int = 8080,
         cam_host: str = "localhost",
         cam_port: int = 8081,
-        settle_time: float = 2.0,
+        settle_time: float = 2.5,
     ):
         self.arm_base = f"http://{arm_host}:{arm_port}"
         self.cam_base = f"http://{cam_host}:{cam_port}"

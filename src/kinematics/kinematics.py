@@ -75,10 +75,22 @@ def _dh_transform(dh: DHParameters, theta: float, out: np.ndarray | None = None)
     ca, sa = math.cos(dh.alpha), math.sin(dh.alpha)
     if out is None:
         out = np.empty((4, 4))
-    out[0, 0] = ct;  out[0, 1] = -st * ca; out[0, 2] = st * sa;  out[0, 3] = dh.a * ct
-    out[1, 0] = st;  out[1, 1] = ct * ca;  out[1, 2] = -ct * sa; out[1, 3] = dh.a * st
-    out[2, 0] = 0.0; out[2, 1] = sa;       out[2, 2] = ca;       out[2, 3] = dh.d
-    out[3, 0] = 0.0; out[3, 1] = 0.0;      out[3, 2] = 0.0;      out[3, 3] = 1.0
+    out[0, 0] = ct
+    out[0, 1] = -st * ca
+    out[0, 2] = st * sa
+    out[0, 3] = dh.a * ct
+    out[1, 0] = st
+    out[1, 1] = ct * ca
+    out[1, 2] = -ct * sa
+    out[1, 3] = dh.a * st
+    out[2, 0] = 0.0
+    out[2, 1] = sa
+    out[2, 2] = ca
+    out[2, 3] = dh.d
+    out[3, 0] = 0.0
+    out[3, 1] = 0.0
+    out[3, 2] = 0.0
+    out[3, 3] = 1.0
     return out
 
 

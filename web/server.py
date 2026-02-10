@@ -5621,6 +5621,106 @@ async def joint_mapping_current():
 
 
 # ---------------------------------------------------------------------------
+# Calibration Health / Status Overview
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/calibration/health")
+async def calibration_health():
+    """Return a unified calibration health status for all subsystems.
+
+    Checks intrinsics (per camera), joint mapping, and extrinsics.
+    Returns an overall score and per-subsystem status.
+    """
+    from src.calibration.auto_calibrator import CALIBRATION_RESULTS_DIR
+    from src.calibration.extrinsics_solver import load_extrinsics
+
+    result = {
+        "intrinsics": {},
+        "joint_mapping": {"ok": False, "status": "not_calibrated"},
+        "extrinsics": {"ok": False, "status": "not_calibrated"},
+        "score": 0,
+        "total": 5,  # cam0 + cam1 + cam2 + joint_mapping + extrinsics
+        "summary": "",
+    }
+
+    # --- Intrinsics per camera ---
+    for cam_id in [0, 1, 2]:
+        cam_file = CALIBRATION_RESULTS_DIR / f"cam{cam_id}_checkerboard_calibration.json"
+        cam_name = ["overhead", "arm", "side"][cam_id]
+        if cam_file.exists():
+            try:
+                data = json.loads(cam_file.read_text())
+                rms = data.get("rms_reprojection_px", 999)
+                if rms < 1.0:
+                    quality = "good"
+                elif rms < 2.0:
+                    quality = "fair"
+                else:
+                    quality = "poor"
+                result["intrinsics"][f"cam{cam_id}"] = {
+                    "ok": rms < 2.0,
+                    "name": cam_name,
+                    "status": quality,
+                    "rms": round(rms, 3),
+                }
+                if rms < 2.0:
+                    result["score"] += 1
+            except Exception:
+                result["intrinsics"][f"cam{cam_id}"] = {
+                    "ok": False,
+                    "name": cam_name,
+                    "status": "error",
+                    "rms": None,
+                }
+        else:
+            result["intrinsics"][f"cam{cam_id}"] = {
+                "ok": False,
+                "name": cam_name,
+                "status": "not_calibrated",
+                "rms": None,
+            }
+
+    # --- Joint mapping ---
+    try:
+        mapper = get_joint_mapper()
+        info = mapper.get_mapping_info()
+        if info.get("calibrated"):
+            result["joint_mapping"] = {"ok": True, "status": "calibrated"}
+            result["score"] += 1
+        else:
+            result["joint_mapping"] = {"ok": False, "status": "default_mapping"}
+    except Exception:
+        result["joint_mapping"] = {"ok": False, "status": "error"}
+
+    # --- Extrinsics ---
+    try:
+        extrinsics_path = str(
+            Path(__file__).parent.parent / "calibration_results" / "camera_extrinsics.json"
+        )
+        data = load_extrinsics(extrinsics_path)
+        if data is not None:
+            result["extrinsics"] = {"ok": True, "status": "calibrated"}
+            result["score"] += 1
+        else:
+            result["extrinsics"] = {"ok": False, "status": "not_calibrated"}
+    except Exception:
+        result["extrinsics"] = {"ok": False, "status": "error"}
+
+    # --- Summary ---
+    s = result["score"]
+    t = result["total"]
+    if s == t:
+        result["summary"] = "Fully calibrated"
+    elif s == 0:
+        result["summary"] = "Not calibrated"
+    else:
+        result["summary"] = f"Partially calibrated ({s}/{t})"
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Pick Config API
 # ---------------------------------------------------------------------------
 

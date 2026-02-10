@@ -571,7 +571,9 @@ class VisionTaskPlanner:
                 np.clip(place_pose[0], JOINT_LIMITS_DEG[0, 0], JOINT_LIMITS_DEG[0, 1])
             )
 
-        cfg = _get_pick_config()
+        from src.config.pick_config import get_pick_config
+
+        cfg = get_pick_config()
         return self.task_planner.pick_and_place(
             current_pose,
             pick_pose,
