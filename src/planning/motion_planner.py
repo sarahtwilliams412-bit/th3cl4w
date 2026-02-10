@@ -4,6 +4,14 @@ Motion Planner for Unitree D1 Robotic Arm
 Waypoint-based planning, joint-space and Cartesian-space interpolation,
 collision-free trajectory generation, and speed/acceleration enforcement.
 
+Supports two trajectory profiles:
+- Legacy cubic Hermite (3s²-2s³): backward compatible
+- Minimum-jerk (10s³-15s⁴+6s⁵): recommended for human-like motion
+
+The minimum-jerk profile produces bell-shaped velocity curves matching
+human reaching movements, with zero velocity AND acceleration at endpoints
+(unlike cubic which only ensures zero velocity).
+
 All angles are in DEGREES. Gripper in mm (0-65).
 """
 
@@ -17,6 +25,7 @@ from typing import Optional
 import numpy as np
 
 from src.kinematics.kinematics import D1Kinematics
+from src.control.smooth_trajectory import minimum_jerk_scalar, fitts_law_duration
 from src.safety.limits import (
     NUM_ARM_JOINTS,
     NUM_JOINTS,
@@ -87,7 +96,14 @@ class Trajectory:
 
 
 class MotionPlanner:
-    """Plans trajectories for the D1 arm in joint and Cartesian space."""
+    """Plans trajectories for the D1 arm in joint and Cartesian space.
+
+    Supports two trajectory profile modes:
+    - "minimum_jerk" (default): 10s³-15s⁴+6s⁵, bell-shaped velocity,
+      zero acceleration at endpoints. Produces human-like motion.
+    - "cubic_hermite": 3s²-2s³, legacy profile. Simpler but has
+      nonzero acceleration at endpoints (can cause jerk spikes).
+    """
 
     def __init__(
         self,
@@ -95,6 +111,8 @@ class MotionPlanner:
         max_joint_speed: np.ndarray | None = None,
         max_joint_accel: np.ndarray | None = None,
         dt: float = 0.01,
+        profile: str = "minimum_jerk",
+        use_fitts_law: bool = True,
     ):
         self.kinematics = kinematics or D1Kinematics()
         self.max_joint_speed = (
@@ -108,6 +126,8 @@ class MotionPlanner:
             else DEFAULT_MAX_JOINT_ACCEL.copy()
         )
         self.dt = dt
+        self.profile = profile
+        self.use_fitts_law = use_fitts_law
 
     # ------------------------------------------------------------------
     # Validation
@@ -140,7 +160,17 @@ class MotionPlanner:
         gripper_start: float = 0.0,
         gripper_end: float = 0.0,
     ) -> Trajectory:
-        """Linear interpolation in joint space with trapezoidal velocity profile.
+        """Interpolation in joint space with smooth velocity profile.
+
+        Uses minimum-jerk profile (default) or cubic Hermite (legacy).
+
+        The minimum-jerk profile (10s³-15s⁴+6s⁵) produces bell-shaped
+        velocity curves with zero acceleration at endpoints, matching
+        human reaching movements. The cubic Hermite (3s²-2s³) has
+        nonzero acceleration at endpoints.
+
+        Duration is computed from joint speed/accel limits (trapezoidal
+        estimate) or via Fitts' Law if use_fitts_law is True.
 
         Parameters
         ----------
@@ -179,6 +209,15 @@ class MotionPlanner:
                 durations.append(2.0 * math.sqrt(d / max_accel[i]))
 
         total_time = max(durations) if durations else 0.0
+
+        # Optionally use Fitts' Law for more human-like timing
+        if self.use_fitts_law and total_time > 0:
+            max_displacement_rad = np.radians(np.max(np.abs(delta)))
+            fitts_time = fitts_law_duration(max_displacement_rad) / speed_factor
+            # Use the longer of trapezoidal and Fitts' Law estimates
+            # (Fitts' Law ensures natural feel; trapezoidal ensures safety)
+            total_time = max(total_time, fitts_time)
+
         if total_time < self.dt:
             # Start == end (or very close)
             pt = TrajectoryPoint(
@@ -195,11 +234,20 @@ class MotionPlanner:
         points: list[TrajectoryPoint] = []
 
         for t in times:
-            s = t / total_time  # normalized position 0..1
-            # Use smooth s-curve (cubic hermite: 3s²-2s³)
-            s_smooth = 3 * s**2 - 2 * s**3
-            ds = (6 * s - 6 * s**2) / total_time
-            dds = (6 - 12 * s) / (total_time**2)
+            s = t / total_time  # normalized time 0..1
+
+            if self.profile == "minimum_jerk":
+                # Minimum-jerk: 10s³-15s⁴+6s⁵
+                # Bell-shaped velocity, zero acceleration at endpoints
+                profile = minimum_jerk_scalar(s)
+                s_smooth = profile.s
+                ds = profile.ds / total_time
+                dds = profile.dds / (total_time**2)
+            else:
+                # Legacy cubic Hermite: 3s²-2s³
+                s_smooth = 3 * s**2 - 2 * s**3
+                ds = (6 * s - 6 * s**2) / total_time
+                dds = (6 - 12 * s) / (total_time**2)
 
             pos = start + delta * s_smooth
             vel = delta * ds
