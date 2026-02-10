@@ -444,6 +444,169 @@ function createAxes(size = 0.1) {
   return new THREE.AxesHelper(size);
 }
 
+/**
+ * Camera3D — Visual camera frustum for 3D scene
+ */
+const CAMERA_COLORS = { 0: 0x00ffff, 1: 0xff4444, 2: 0x44ff44 };
+
+class Camera3D {
+  /**
+   * @param {object} config - { id, label, position, rotation, fov, perspective }
+   *   position/rotation in Z-up arm frame
+   */
+  constructor(config) {
+    this.id = config.id;
+    this.label = config.label || `Cam ${config.id}`;
+    this.perspective = config.perspective || 'custom';
+    this.isArmMounted = this.perspective === 'arm-mounted';
+    this.color = CAMERA_COLORS[config.id] || 0xffffff;
+
+    this.group = new THREE.Group();
+    this.group.name = `Camera3D_${this.id}`;
+
+    // Store config coords (Z-up)
+    this.configPos = config.position || { x: 0, y: 0, z: 0 };
+    this.configRot = config.rotation || { rx: 0, ry: 0, rz: 0 };
+    this.fov = config.fov || 60;
+
+    this._buildFrustum();
+    this._buildLabel();
+    this._applyTransform();
+  }
+
+  _buildFrustum() {
+    const size = 0.03;
+    const depth = 0.05;
+    const halfFov = (this.fov / 2) * Math.PI / 180;
+    const farW = depth * Math.tan(halfFov);
+    const farH = farW * 0.75; // 4:3 aspect
+
+    // Frustum wireframe: apex at origin, opening along +Y (Three.js forward for camera)
+    const verts = [
+      new THREE.Vector3(0, 0, 0),           // apex
+      new THREE.Vector3(-farW, depth, -farH), // bottom-left
+      new THREE.Vector3( farW, depth, -farH), // bottom-right
+      new THREE.Vector3( farW, depth,  farH), // top-right
+      new THREE.Vector3(-farW, depth,  farH), // top-left
+    ];
+
+    const edges = [
+      0,1, 0,2, 0,3, 0,4,  // apex to corners
+      1,2, 2,3, 3,4, 4,1,  // far rectangle
+    ];
+
+    const geo = new THREE.BufferGeometry();
+    const positions = [];
+    for (const idx of edges) {
+      positions.push(verts[idx].x, verts[idx].y, verts[idx].z);
+    }
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const mat = new THREE.LineBasicMaterial({ color: this.color, linewidth: 2 });
+    this.frustum = new THREE.LineSegments(geo, mat);
+    this.group.add(this.frustum);
+
+    // Small body box
+    const boxGeo = new THREE.BoxGeometry(size * 0.8, size * 0.4, size * 0.6);
+    const boxMat = new THREE.MeshPhongMaterial({
+      color: this.color,
+      emissive: this.color,
+      emissiveIntensity: 0.4,
+      transparent: true,
+      opacity: 0.6,
+    });
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.position.y = -size * 0.2;
+    this.group.add(box);
+  }
+
+  _buildLabel() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = `#${this.color.toString(16).padStart(6, '0')}`;
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(this.label, 64, 22);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.08, 0.02, 1);
+    sprite.position.y = -0.03;
+    this.group.add(sprite);
+  }
+
+  /**
+   * Convert Z-up config coords to Three.js Y-up and apply rotation.
+   */
+  _applyTransform() {
+    const { x, y, z } = this.configPos;
+    // Z-up to Y-up: (x, y, z) -> (x, z, -y)
+    this.group.position.set(x, z, -y);
+
+    // Apply rotations (config is degrees, convert to radians)
+    const rx = this.configRot.rx * Math.PI / 180;
+    const ry = this.configRot.ry * Math.PI / 180;
+    const rz = this.configRot.rz * Math.PI / 180;
+    this.group.rotation.set(rx, rz, -ry, 'XYZ');
+  }
+
+  /**
+   * Update from config object
+   */
+  updateConfig(config) {
+    this.configPos = config.position || this.configPos;
+    this.configRot = config.rotation || this.configRot;
+    this.fov = config.fov || this.fov;
+    this._applyTransform();
+  }
+
+  /**
+   * For arm-mounted cameras: attach to EE transform.
+   * @param {THREE.Matrix4} eeTransform - end-effector transform from FK
+   */
+  attachToEE(eeTransform) {
+    if (!this.isArmMounted) return;
+    // Offset position in EE local frame
+    const offset = new THREE.Vector3(
+      this.configPos.x,
+      this.configPos.z,   // Z-up z -> Y-up y
+      -this.configPos.y   // Z-up y -> Y-up -z
+    );
+    const eePos = new THREE.Vector3().setFromMatrixPosition(eeTransform);
+    const eeQuat = new THREE.Quaternion().setFromRotationMatrix(eeTransform);
+
+    offset.applyQuaternion(eeQuat);
+    this.group.position.copy(eePos).add(offset);
+
+    // Apply EE rotation + local rotation offset
+    const localQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(
+        this.configRot.rx * Math.PI / 180,
+        this.configRot.rz * Math.PI / 180,
+        -this.configRot.ry * Math.PI / 180,
+        'XYZ'
+      )
+    );
+    this.group.quaternion.copy(eeQuat).multiply(localQuat);
+  }
+
+  dispose() {
+    this.group.traverse(child => {
+      if (child.isMesh || child.isLineSegments) {
+        child.geometry.dispose();
+        child.material.dispose();
+      }
+      if (child.isSprite) {
+        child.material.map.dispose();
+        child.material.dispose();
+      }
+    });
+  }
+}
+
 // Export for module or global use
 if (typeof window !== 'undefined') {
   window.D1Arm3D = D1Arm3D;
@@ -454,4 +617,6 @@ if (typeof window !== 'undefined') {
   window.getJointPositions = getJointPositions;
   window.createWorkTable = createWorkTable;
   window.createAxes = createAxes;
+  window.Camera3D = Camera3D;
+  window.CAMERA_COLORS = CAMERA_COLORS;
 }

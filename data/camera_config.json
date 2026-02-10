@@ -1,14 +1,23 @@
 {
   "0": {
     "label": "Overhead",
-    "perspective": "overhead"
+    "perspective": "overhead",
+    "position": {"x": -0.51, "y": 0.53, "z": 0.28},
+    "rotation": {"rx": 0, "ry": 0, "rz": 0},
+    "fov": 78
   },
   "1": {
     "label": "Arm Cam",
-    "perspective": "arm-mounted"
+    "perspective": "arm-mounted",
+    "position": {"x": 0.0, "y": 0.0, "z": 0.05},
+    "rotation": {"rx": -90, "ry": 0, "rz": 0},
+    "fov": 60
   },
   "2": {
     "label": "Side View",
-    "perspective": "side"
+    "perspective": "side",
+    "position": {"x": 0.5, "y": 0.0, "z": 0.3},
+    "rotation": {"rx": 0, "ry": -90, "rz": 0},
+    "fov": 70
   }
 }

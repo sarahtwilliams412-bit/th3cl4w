@@ -652,6 +652,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <button class="btn on" id="simTogEnv" title="Toggle workspace envelope">Envelope</button>
         <button class="btn on" id="simTogGhost" title="Toggle ghost (live) arm">Ghost</button>
         <button class="btn on" id="simTogTrail" title="Toggle EE trail">Trail</button>
+        <button class="btn on" id="simTogCams" title="Toggle camera frustums">Cameras</button>
       </div>
     </div>
     <div style="flex:1"></div>
@@ -1268,6 +1269,17 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           <a href="/map3d.html" class="btn" target="_blank" style="text-decoration:none">🗺️ Map 3D</a>
         </div>
       </div>
+    </div>
+
+    <!-- Camera Orientation Section -->
+    <div class="panel-header" style="margin-top:16px">📷 Camera Setup</div>
+    <div class="panel-card" id="cameraOrientationCard">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn primary" onclick="camOrientLoad()">📥 Load</button>
+        <button class="btn" onclick="camOrientSaveAll()">💾 Save All</button>
+        <button class="btn" onclick="camOrientLoadCalib()" title="Load from calibration extrinsics">🎯 From Calibration</button>
+      </div>
+      <div id="camOrientContainer"></div>
     </div>
 
     <!-- Safety & Limits Section -->
@@ -3013,6 +3025,124 @@ async function simRefresh() {
 }
 
 // ============================================================
+//  Camera Orientation
+// ============================================================
+
+let _camOrientConfig = {};
+
+async function camOrientLoad() {
+  try {
+    const data = await apiCall('/api/cameras/orientation');
+    _camOrientConfig = data;
+    camOrientRender();
+  } catch (e) { console.error('Failed to load camera orientation:', e); }
+}
+
+function camOrientRender() {
+  const container = document.getElementById('camOrientContainer');
+  if (!container) return;
+  container.innerHTML = '';
+  const colors = { 0: '#00ffff', 1: '#ff4444', 2: '#44ff44' };
+
+  for (const [id, cfg] of Object.entries(_camOrientConfig)) {
+    const pos = cfg.position || { x: 0, y: 0, z: 0 };
+    const rot = cfg.rotation || { rx: 0, ry: 0, rz: 0 };
+    const fov = cfg.fov || 60;
+    const color = colors[id] || '#ffffff';
+
+    const div = document.createElement('div');
+    div.style.cssText = 'border:1px solid var(--card-border);border-radius:6px;padding:8px;margin-bottom:8px;border-left:3px solid ' + color;
+    div.innerHTML = `
+      <div style="font-family:var(--mono);font-size:11px;font-weight:bold;color:${color};margin-bottom:6px">${cfg.label || 'Camera ' + id} (cam${id})${cfg.perspective === 'arm-mounted' ? ' 🦾 EE-relative' : ''}</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Position (m, Z-up frame)</div>
+      ${_camSlider(id, 'px', 'X', pos.x, -2, 2, 0.01)}
+      ${_camSlider(id, 'py', 'Y', pos.y, -2, 2, 0.01)}
+      ${_camSlider(id, 'pz', 'Z', pos.z, -2, 2, 0.01)}
+      <div style="font-size:10px;color:var(--text-dim);margin:4px 0">Rotation (degrees)</div>
+      ${_camSlider(id, 'rx', 'RX', rot.rx, -180, 180, 1)}
+      ${_camSlider(id, 'ry', 'RY', rot.ry, -180, 180, 1)}
+      ${_camSlider(id, 'rz', 'RZ', rot.rz, -180, 180, 1)}
+      <div style="font-size:10px;color:var(--text-dim);margin:4px 0">FOV</div>
+      ${_camSlider(id, 'fov', 'FOV', fov, 30, 120, 1)}
+    `;
+    container.appendChild(div);
+  }
+
+  // Bind slider events
+  container.querySelectorAll('input[type="range"]').forEach(el => {
+    el.addEventListener('input', camOrientSliderChanged);
+  });
+}
+
+function _camSlider(camId, field, label, value, min, max, step) {
+  return `<div class="sim-joint-row">
+    <span class="sjl" style="width:24px">${label}</span>
+    <input type="range" data-cam="${camId}" data-field="${field}" min="${min}" max="${max}" step="${step}" value="${value}" style="flex:1;-webkit-appearance:none;appearance:none;height:4px;background:#1a2744;border-radius:2px;outline:none">
+    <span class="sjv" style="width:55px" id="camVal_${camId}_${field}">${Number(value).toFixed(field === 'fov' ? 0 : 2)}</span>
+  </div>`;
+}
+
+function camOrientSliderChanged(e) {
+  const camId = e.target.dataset.cam;
+  const field = e.target.dataset.field;
+  const val = parseFloat(e.target.value);
+  const valEl = document.getElementById(`camVal_${camId}_${field}`);
+  if (valEl) valEl.textContent = field === 'fov' ? val.toFixed(0) : val.toFixed(2);
+
+  // Update local config
+  const cfg = _camOrientConfig[camId];
+  if (!cfg) return;
+  if (!cfg.position) cfg.position = { x: 0, y: 0, z: 0 };
+  if (!cfg.rotation) cfg.rotation = { rx: 0, ry: 0, rz: 0 };
+
+  if (field === 'px') cfg.position.x = val;
+  else if (field === 'py') cfg.position.y = val;
+  else if (field === 'pz') cfg.position.z = val;
+  else if (field === 'rx') cfg.rotation.rx = val;
+  else if (field === 'ry') cfg.rotation.ry = val;
+  else if (field === 'rz') cfg.rotation.rz = val;
+  else if (field === 'fov') cfg.fov = val;
+
+  // Update 3D sim in real-time
+  if (window._sim) {
+    window._sim.updateSingleCamera(camId, cfg);
+  }
+}
+
+async function camOrientSaveAll() {
+  for (const [id, cfg] of Object.entries(_camOrientConfig)) {
+    await apiPost('/api/cameras/orientation', {
+      camera_id: parseInt(id),
+      position: cfg.position,
+      rotation: cfg.rotation,
+      fov: cfg.fov,
+    });
+  }
+  alert('Camera orientations saved!');
+}
+
+async function camOrientLoadCalib() {
+  // Try to load extrinsics for cam0
+  try {
+    const data = await apiCall('/api/cameras/extrinsics/0');
+    if (data.ok && data.extrinsics) {
+      const ext = data.extrinsics;
+      if (ext.camera_position_world_m) {
+        const p = ext.camera_position_world_m;
+        if (!_camOrientConfig['0']) _camOrientConfig['0'] = { label: 'Overhead', perspective: 'overhead' };
+        _camOrientConfig['0'].position = { x: p[0], y: p[1], z: p[2] };
+        camOrientRender();
+        // Update 3D sim
+        if (window._sim) window._sim.updateSingleCamera('0', _camOrientConfig['0']);
+        alert('Loaded cam0 position from calibration extrinsics');
+      }
+    }
+  } catch (e) {
+    alert('Failed to load calibration: ' + e.message);
+  }
+}
+
+// ============================================================
 //  INIT
 // ============================================================
 
@@ -3365,6 +3495,7 @@ async function pickCfgReset() {
     setupVizToggle('simTogEnv', (on) => sim.toggleEnvelope(on));
     setupVizToggle('simTogGhost', (on) => sim.toggleGhost(on));
     setupVizToggle('simTogTrail', (on) => sim.toggleTrail(on));
+    setupVizToggle('simTogCams', (on) => sim.toggleCameras(on));
 
     // Execute button
     document.getElementById('simBtnExecute').addEventListener('click', executeSimPose);

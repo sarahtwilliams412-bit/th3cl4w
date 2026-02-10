@@ -16,7 +16,7 @@ from typing import Optional
 
 import cv2
 import numpy as np
-import requests
+import requests  # type: ignore[import-untyped]
 
 logger = logging.getLogger("th3cl4w.calibration.auto")
 

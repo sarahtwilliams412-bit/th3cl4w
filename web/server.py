@@ -770,6 +770,63 @@ async def api_cameras_config_set(req: CameraConfigRequest):
     return {"ok": True, "config": config}
 
 
+# ── Camera Orientation endpoints ──────────────────────────────
+
+class CameraOrientationRequest(BaseModel):
+    camera_id: int = Field(ge=0, le=2)
+    position: Optional[Dict[str, float]] = None
+    rotation: Optional[Dict[str, float]] = None
+    fov: Optional[float] = Field(default=None, ge=30, le=120)
+
+
+@app.get("/api/cameras/orientation")
+async def api_cameras_orientation_get():
+    """Return all camera positions/orientations."""
+    config = _load_camera_config()
+    return config
+
+
+@app.post("/api/cameras/orientation")
+async def api_cameras_orientation_set(req: CameraOrientationRequest):
+    """Update a camera's position/orientation/fov."""
+    config = _load_camera_config()
+    cam_key = str(req.camera_id)
+    if cam_key not in config:
+        config[cam_key] = {"label": f"Camera {req.camera_id}", "perspective": "custom"}
+    if req.position is not None:
+        config[cam_key]["position"] = {
+            "x": req.position.get("x", 0),
+            "y": req.position.get("y", 0),
+            "z": req.position.get("z", 0),
+        }
+    if req.rotation is not None:
+        config[cam_key]["rotation"] = {
+            "rx": req.rotation.get("rx", 0),
+            "ry": req.rotation.get("ry", 0),
+            "rz": req.rotation.get("rz", 0),
+        }
+    if req.fov is not None:
+        config[cam_key]["fov"] = req.fov
+    _save_camera_config(config)
+    action_log.add(
+        "CAMERA_ORIENT",
+        f"Camera {req.camera_id}: pos={config[cam_key].get('position')}, rot={config[cam_key].get('rotation')}, fov={config[cam_key].get('fov')}",
+        "info",
+    )
+    return {"ok": True, "config": config}
+
+
+@app.get("/api/cameras/extrinsics/{camera_id}")
+async def api_cameras_extrinsics(camera_id: int):
+    """Return calibration extrinsics for a camera if available."""
+    ext_path = Path(_project_root) / "calibration_results" / f"camera{camera_id}_extrinsics.json"
+    if not ext_path.exists():
+        return JSONResponse({"ok": False, "error": f"No extrinsics for camera {camera_id}"}, status_code=404)
+    with open(ext_path) as f:
+        data = json.load(f)
+    return {"ok": True, "extrinsics": data}
+
+
 @app.get("/api/state")
 async def api_state():
     """Return current arm state (joints, gripper, power, enabled, error)."""
