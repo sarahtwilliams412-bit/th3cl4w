@@ -282,7 +282,7 @@ class CommandSmoother:
                 return
         elif self._last_feedback_time > 0:
             feedback_age = time.time() - self._last_feedback_time
-            if feedback_age > 0.5:  # 500ms staleness threshold
+            if feedback_age > 5.0:  # 5s staleness — DDS feedback is unreliable
                 if self._ticks % 50 == 0:  # Log every ~5s to avoid spam
                     logger.error("Feedback stale (%.1fs old) — refusing commands", feedback_age)
                 return
@@ -349,20 +349,13 @@ class CommandSmoother:
             # Joint limit check removed — SafetyMonitor is the single source of truth
             # for position limits. Duplicate check here was redundant.
 
-            if len(joints_changed) >= 3:
-                # Batch as set_all_joints when multiple joints move
+            # Always use individual set_joint — set_all_joints causes arm freezes
+            for jid in joints_changed:
                 try:
-                    self._arm.set_all_joints(send_angles)
+                    self._arm.set_joint(jid, self._current[jid])
                     self._commands_sent += 1
                 except Exception:
-                    logger.debug("Failed to send all-joints command")
-            else:
-                for jid in joints_changed:
-                    try:
-                        self._arm.set_joint(jid, self._current[jid])
-                        self._commands_sent += 1
-                    except Exception:
-                        logger.debug("Failed to send joint %d command", jid)
+                    logger.debug("Failed to send joint %d command", jid)
 
         # Log smoother state
         if should_log and joints_changed:

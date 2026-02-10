@@ -367,7 +367,7 @@ async def lifespan(app: FastAPI):
         smoother = CommandSmoother(
             arm,
             rate_hz=10.0,
-            smoothing_factor=0.35,
+            smoothing_factor=0.7,
             max_step_deg=MAX_STEP_DEG,
             collector=tc_ref,
             safety_monitor=safety_monitor,
@@ -375,7 +375,7 @@ async def lifespan(app: FastAPI):
         await smoother.start()
         action_log.add(
             "SYSTEM",
-            f"Command smoother started (10Hz, α=0.35, max_step={MAX_STEP_DEG}°, synced={smoother.synced})",
+            f"Command smoother started (10Hz, α=0.70, max_step={MAX_STEP_DEG}°, synced={smoother.synced})",
             "info",
         )
 
@@ -705,6 +705,21 @@ def _validate_env():
 
 
 _validate_env()
+
+# ---------------------------------------------------------------------------
+# Centralized camera server access
+# ---------------------------------------------------------------------------
+
+CAM_SERVER = "http://localhost:8081"
+
+
+async def cam_snap(client, cam_id: int) -> Optional[bytes]:
+    """Grab a JPEG snapshot from the camera server."""
+    try:
+        resp = await client.get(f"{CAM_SERVER}/snap/{cam_id}")
+        return resp.content if resp.status_code == 200 else None
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1089,7 +1104,7 @@ async def api_sim_toggle():
                 smoother = CommandSmoother(
                     arm,
                     rate_hz=10.0,
-                    smoothing_factor=0.35,
+                    smoothing_factor=0.7,
                     max_step_deg=MAX_STEP_DEG,
                     collector=tc_ref,
                     safety_monitor=safety_monitor,
@@ -1127,7 +1142,7 @@ async def api_sim_toggle():
         smoother = CommandSmoother(
             arm,
             rate_hz=10.0,
-            smoothing_factor=0.35,
+            smoothing_factor=0.7,
             max_step_deg=MAX_STEP_DEG,
             collector=tc_ref,
             safety_monitor=safety_monitor,
@@ -1556,30 +1571,8 @@ async def cmd_set_joint(req: SetJointRequest):
             resp_data["correlation_id"] = cid
         return JSONResponse(resp_data, status_code=400)
 
-    # Ramp large movements in 10° increments to avoid motor overload
-    current_angle = _get_current_joints()[req.id]
-    delta = req.angle - current_angle
-    RAMP_THRESHOLD_DEG = 20.0
-    RAMP_STEP_DEG = 10.0
-    RAMP_DELAY_S = 0.3
-
-    if abs(delta) > RAMP_THRESHOLD_DEG and smoother and smoother.running:
-        # Break into incremental steps
-        n_steps = int(abs(delta) / RAMP_STEP_DEG)
-        for i in range(1, n_steps + 1):
-            intermediate = current_angle + (delta / abs(delta)) * RAMP_STEP_DEG * i
-            # Clamp toward target
-            if delta > 0:
-                intermediate = min(intermediate, req.angle)
-            else:
-                intermediate = max(intermediate, req.angle)
-            smoother.set_joint_target(req.id, intermediate)
-            if intermediate != req.angle:
-                await asyncio.sleep(RAMP_DELAY_S)
-        # Ensure final target is set
-        smoother.set_joint_target(req.id, req.angle)
-        ok = True
-    elif smoother and smoother.running:
+    # Just set the target — the smoother handles rate-limiting via max_step_deg
+    if smoother and smoother.running:
         smoother.set_joint_target(req.id, req.angle)
         ok = True
     else:
