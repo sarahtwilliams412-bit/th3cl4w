@@ -2118,6 +2118,7 @@ async function charucoPoll() {
 }
 async function calibCompare() {
   showResult('calibCompareResult', await apiCall('/api/calibration/compare'));
+}
 // --- Intrinsic Calibration ---
 let _icalPollTimer = null;
 function _icalParams() {
