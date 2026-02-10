@@ -5471,6 +5471,84 @@ async def update_safety_config_api(req: dict):
     return JSONResponse({"ok": True, "safety": safety})
 
 
+@app.get("/api/config/limits")
+async def get_limits_config_api():
+    """Return current joint limits, torque proxy, and stall detection settings."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+    safety = cfg.get("safety")
+    defaults = cfg.get_defaults().get("safety", {})
+    return JSONResponse({
+        "joint_limits_deg": safety.get("joint_limits_deg", defaults.get("joint_limits_deg")),
+        "torque_proxy_limit": safety.get("torque_proxy_limit", 150.0),
+        "torque_proxy_enabled": safety.get("torque_proxy_enabled", True),
+        "torque_j2_factor": safety.get("torque_j2_factor", 0.7),
+        "stall_check_delay_s": safety.get("stall_check_delay_s", 5.0),
+        "stall_threshold_deg": safety.get("stall_threshold_deg", 15.0),
+        "stall_detection_enabled": safety.get("stall_detection_enabled", True),
+        "defaults": {
+            "joint_limits_deg": defaults.get("joint_limits_deg"),
+            "torque_proxy_limit": defaults.get("torque_proxy_limit"),
+            "torque_proxy_enabled": defaults.get("torque_proxy_enabled"),
+            "torque_j2_factor": defaults.get("torque_j2_factor"),
+            "stall_check_delay_s": defaults.get("stall_check_delay_s"),
+            "stall_threshold_deg": defaults.get("stall_threshold_deg"),
+            "stall_detection_enabled": defaults.get("stall_detection_enabled"),
+        },
+    })
+
+
+@app.post("/api/config/limits")
+async def update_limits_config_api(req: dict):
+    """Update joint limits, torque proxy, and stall detection settings.
+
+    Accepts any subset of:
+      joint_limits_deg, torque_proxy_limit, torque_proxy_enabled,
+      torque_j2_factor, stall_check_delay_s, stall_threshold_deg,
+      stall_detection_enabled
+    Set persist=false for temporary (apply without save).
+    """
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+
+    persist = req.pop("persist", True)
+    allowed_keys = {
+        "joint_limits_deg", "torque_proxy_limit", "torque_proxy_enabled",
+        "torque_j2_factor", "stall_check_delay_s", "stall_threshold_deg",
+        "stall_detection_enabled",
+    }
+    updates = {}
+    for k, v in req.items():
+        if k not in allowed_keys:
+            return JSONResponse({"ok": False, "error": f"Unknown key: {k}"}, status_code=400)
+        # Validate joint_limits_deg
+        if k == "joint_limits_deg":
+            if not isinstance(v, list) or len(v) != 6:
+                return JSONResponse({"ok": False, "error": "joint_limits_deg must be array of 6 [min,max] pairs"}, status_code=400)
+            hw_limits = [135, 85, 85, 135, 85, 135]
+            for i, pair in enumerate(v):
+                if not isinstance(pair, list) or len(pair) != 2:
+                    return JSONResponse({"ok": False, "error": f"J{i}: must be [min, max]"}, status_code=400)
+                if pair[0] < -hw_limits[i] or pair[1] > hw_limits[i] or pair[0] >= pair[1]:
+                    return JSONResponse({"ok": False, "error": f"J{i}: limits out of hardware range ±{hw_limits[i]}°"}, status_code=400)
+        updates[k] = v
+
+    if persist:
+        cfg.update({"safety": updates})
+    else:
+        # Apply in memory only (no save to disk)
+        import copy
+        with cfg._lock:
+            if "safety" not in cfg._data:
+                cfg._data["safety"] = {}
+            for k2, v2 in updates.items():
+                cfg._data["safety"][k2] = v2
+
+    action_log.add("CONFIG", f"Limits config updated (persist={persist}): {list(updates.keys())}", "info")
+    safety = cfg.get("safety")
+    return JSONResponse({"ok": True, "safety": safety})
+
+
 @app.get("/api/config/pick")
 async def get_pick_config_api():
     """Return full pick config."""
@@ -5495,6 +5573,233 @@ async def reset_pick_config_api():
     cfg = get_pick_config()
     cfg.reset()
     return JSONResponse({"ok": True, "config": cfg.get_all()})
+
+
+# ---------------------------------------------------------------------------
+# Comprehensive Safety Settings API
+# ---------------------------------------------------------------------------
+
+SAFETY_CONFIG_PATH = Path(_project_root) / "data" / "safety_config.json"
+
+def _get_all_safety_settings() -> dict:
+    """Gather ALL safety settings from all sources into one dict."""
+    from src.config.pick_config import get_pick_config
+    from src.safety.limits import (
+        JOINT_LIMITS_DEG as _JL,
+        VELOCITY_MAX_RAD, MAX_JOINT_SPEED_DEG, MAX_JOINT_ACCEL_DEG,
+        TORQUE_MAX_NM, MAX_WORKSPACE_RADIUS_MM, FEEDBACK_MAX_AGE_S,
+        MAX_STEP_DEG as _MSD, GRIPPER_MIN_MM as _GMN, GRIPPER_MAX_MM as _GMX,
+    )
+    cfg = get_pick_config()
+    safety = cfg.get("safety")
+
+    # Load overrides from safety_config.json if exists
+    overrides = {}
+    if SAFETY_CONFIG_PATH.exists():
+        try:
+            overrides = json.loads(SAFETY_CONFIG_PATH.read_text())
+        except Exception:
+            pass
+
+    def _ov(cat, key, default):
+        return overrides.get(cat, {}).get(key, default)
+
+    import math
+
+    result = {
+        "joint_position_limits": {
+            "limits_deg": safety.get("joint_limits_deg", _JL.tolist()),
+            "hardware_limits_deg": [
+                [-135, 135], [-85, 85], [-85, 85], [-135, 135], [-85, 85], [-135, 135]
+            ],
+            "gripper_min_mm": _GMN,
+            "gripper_max_mm": _GMX,
+        },
+        "velocity_limits": {
+            "max_rad_s": _ov("velocity_limits", "max_rad_s", VELOCITY_MAX_RAD.tolist()),
+            "max_deg_s": _ov("velocity_limits", "max_deg_s", MAX_JOINT_SPEED_DEG.tolist()),
+        },
+        "acceleration_limits": {
+            "max_deg_s2": _ov("acceleration_limits", "max_deg_s2", MAX_JOINT_ACCEL_DEG.tolist()),
+        },
+        "torque_limits": {
+            "max_nm": _ov("torque_limits", "max_nm", TORQUE_MAX_NM.tolist()),
+        },
+        "torque_proxy": {
+            "limit": safety.get("torque_proxy_limit", 150.0),
+            "j2_factor": safety.get("torque_j2_factor", 0.7),
+            "enabled": safety.get("torque_proxy_enabled", True),
+        },
+        "collision_detection": {
+            "position_error_deg": safety.get("collision_position_error_deg", 3.0),
+            "stall_duration_s": safety.get("collision_stall_duration_s", 0.5),
+            "cooldown_s": safety.get("collision_cooldown_s", 5.0),
+            "enabled": _ov("collision_detection", "enabled", False),
+        },
+        "stall_detection": {
+            "delay_s": safety.get("stall_check_delay_s", 5.0),
+            "threshold_deg": safety.get("stall_threshold_deg", 15.0),
+            "enabled": safety.get("stall_detection_enabled", True),
+        },
+        "command_smoother": {
+            "alpha": _ov("command_smoother", "alpha", 0.35),
+            "max_step_deg": _ov("command_smoother", "max_step_deg", _MSD),
+            "max_gripper_step_mm": _ov("command_smoother", "max_gripper_step_mm", 5.0),
+            "rate_hz": _ov("command_smoother", "rate_hz", 10.0),
+            "feedback_staleness_s": _ov("command_smoother", "feedback_staleness_s", 0.5),
+        },
+        "emergency_stop": {
+            "active": safety_monitor.estop_active if safety_monitor else False,
+            "auto_recovery_enabled": _ov("emergency_stop", "auto_recovery_enabled", True),
+            "auto_recovery_delay_s": _ov("emergency_stop", "auto_recovery_delay_s", 3.0),
+        },
+        "workspace_bounds": {
+            "max_radius_mm": _ov("workspace_bounds", "max_radius_mm", MAX_WORKSPACE_RADIUS_MM),
+        },
+        "ramp_control": {
+            "threshold_deg": _ov("ramp_control", "threshold_deg", 20.0),
+            "step_deg": _ov("ramp_control", "step_deg", 10.0),
+            "delay_s": _ov("ramp_control", "delay_s", 0.3),
+        },
+        "feedback_freshness": {
+            "max_age_s": _ov("feedback_freshness", "max_age_s", FEEDBACK_MAX_AGE_S),
+        },
+    }
+    return result
+
+
+_SAFETY_PRESETS = {
+    "conservative": {
+        "joint_position_limits": {"limits_deg": [[-100,100],[-70,70],[-70,70],[-100,100],[-70,70],[-100,100]]},
+        "torque_proxy": {"limit": 100.0, "j2_factor": 0.8, "enabled": True},
+        "stall_detection": {"delay_s": 3.0, "threshold_deg": 10.0, "enabled": True},
+        "collision_detection": {"position_error_deg": 2.0, "stall_duration_s": 0.3, "cooldown_s": 3.0, "enabled": True},
+        "command_smoother": {"alpha": 0.2, "max_step_deg": 5.0, "max_gripper_step_mm": 3.0},
+        "workspace_bounds": {"max_radius_mm": 450.0},
+        "ramp_control": {"threshold_deg": 15.0, "step_deg": 5.0, "delay_s": 0.5},
+    },
+    "normal": {
+        "joint_position_limits": {"limits_deg": [[-135,135],[-90,90],[-90,90],[-135,135],[-90,90],[-135,135]]},
+        "torque_proxy": {"limit": 150.0, "j2_factor": 0.7, "enabled": True},
+        "stall_detection": {"delay_s": 5.0, "threshold_deg": 15.0, "enabled": True},
+        "collision_detection": {"position_error_deg": 3.0, "stall_duration_s": 0.5, "cooldown_s": 5.0, "enabled": False},
+        "command_smoother": {"alpha": 0.35, "max_step_deg": 10.0, "max_gripper_step_mm": 5.0},
+        "workspace_bounds": {"max_radius_mm": 550.0},
+        "ramp_control": {"threshold_deg": 20.0, "step_deg": 10.0, "delay_s": 0.3},
+    },
+    "aggressive": {
+        "joint_position_limits": {"limits_deg": [[-135,135],[-85,85],[-85,85],[-135,135],[-85,85],[-135,135]]},
+        "torque_proxy": {"limit": 200.0, "j2_factor": 0.5, "enabled": False},
+        "stall_detection": {"delay_s": 8.0, "threshold_deg": 25.0, "enabled": False},
+        "collision_detection": {"position_error_deg": 5.0, "stall_duration_s": 1.0, "cooldown_s": 10.0, "enabled": False},
+        "command_smoother": {"alpha": 0.6, "max_step_deg": 20.0, "max_gripper_step_mm": 10.0},
+        "workspace_bounds": {"max_radius_mm": 600.0},
+        "ramp_control": {"threshold_deg": 30.0, "step_deg": 15.0, "delay_s": 0.15},
+    },
+}
+
+
+def _apply_safety_settings(settings: dict):
+    """Apply safety settings to running system and persist to safety_config.json."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+
+    # Update pick_config safety section
+    safety_updates = {}
+    if "joint_position_limits" in settings:
+        jpl = settings["joint_position_limits"]
+        if "limits_deg" in jpl:
+            safety_updates["joint_limits_deg"] = jpl["limits_deg"]
+    if "torque_proxy" in settings:
+        tp = settings["torque_proxy"]
+        if "limit" in tp: safety_updates["torque_proxy_limit"] = tp["limit"]
+        if "j2_factor" in tp: safety_updates["torque_j2_factor"] = tp["j2_factor"]
+        if "enabled" in tp: safety_updates["torque_proxy_enabled"] = tp["enabled"]
+    if "stall_detection" in settings:
+        sd = settings["stall_detection"]
+        if "delay_s" in sd: safety_updates["stall_check_delay_s"] = sd["delay_s"]
+        if "threshold_deg" in sd: safety_updates["stall_threshold_deg"] = sd["threshold_deg"]
+        if "enabled" in sd: safety_updates["stall_detection_enabled"] = sd["enabled"]
+    if "collision_detection" in settings:
+        cd = settings["collision_detection"]
+        if "position_error_deg" in cd: safety_updates["collision_position_error_deg"] = cd["position_error_deg"]
+        if "stall_duration_s" in cd: safety_updates["collision_stall_duration_s"] = cd["stall_duration_s"]
+        if "cooldown_s" in cd: safety_updates["collision_cooldown_s"] = cd["cooldown_s"]
+
+    if safety_updates:
+        cfg.update({"safety": safety_updates})
+
+    # Apply smoother settings at runtime
+    if "command_smoother" in settings and smoother:
+        cs = settings["command_smoother"]
+        if "alpha" in cs: smoother._alpha = cs["alpha"]
+        if "max_step_deg" in cs: smoother._max_step = cs["max_step_deg"]
+        if "max_gripper_step_mm" in cs: smoother._max_grip_step = cs["max_gripper_step_mm"]
+
+    # Apply collision detector settings
+    if "collision_detection" in settings and collision_detector:
+        cd = settings["collision_detection"]
+        if "enabled" in cd: collision_detector.enabled = cd["enabled"]
+        if "position_error_deg" in cd: collision_detector._position_error_deg = cd["position_error_deg"]
+        if "stall_duration_s" in cd: collision_detector._stall_duration_s = cd["stall_duration_s"]
+        if "cooldown_s" in cd: collision_detector._cooldown_s = cd["cooldown_s"]
+
+    # Save extended settings to safety_config.json
+    overrides = {}
+    for cat in ["velocity_limits", "acceleration_limits", "torque_limits",
+                "command_smoother", "collision_detection", "emergency_stop",
+                "workspace_bounds", "ramp_control", "feedback_freshness"]:
+        if cat in settings:
+            overrides[cat] = settings[cat]
+
+    if overrides:
+        existing = {}
+        if SAFETY_CONFIG_PATH.exists():
+            try:
+                existing = json.loads(SAFETY_CONFIG_PATH.read_text())
+            except Exception:
+                pass
+        for k, v in overrides.items():
+            if k not in existing:
+                existing[k] = {}
+            existing[k].update(v)
+        SAFETY_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SAFETY_CONFIG_PATH.write_text(json.dumps(existing, indent=2))
+
+
+@app.get("/api/config/safety/all")
+async def get_all_safety_config():
+    """Return ALL safety settings from all sources."""
+    return JSONResponse({
+        "ok": True,
+        "settings": _get_all_safety_settings(),
+        "presets": list(_SAFETY_PRESETS.keys()),
+    })
+
+
+@app.post("/api/config/safety/all")
+async def update_all_safety_config(req: dict):
+    """Update all safety settings."""
+    try:
+        _apply_safety_settings(req)
+        action_log.add("SAFETY_CONFIG", f"Updated categories: {list(req.keys())}", "info")
+        return JSONResponse({"ok": True, "settings": _get_all_safety_settings()})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+@app.post("/api/config/safety/preset")
+async def apply_safety_preset(req: dict):
+    """Apply a safety preset (conservative/normal/aggressive)."""
+    preset_name = req.get("preset", "").lower()
+    if preset_name not in _SAFETY_PRESETS:
+        return JSONResponse(
+            {"ok": False, "error": f"Unknown preset: {preset_name}. Available: {list(_SAFETY_PRESETS.keys())}"},
+            status_code=400,
+        )
+    _apply_safety_settings(_SAFETY_PRESETS[preset_name])
+    action_log.add("SAFETY_PRESET", f"Applied preset: {preset_name}", "warning")
+    return JSONResponse({"ok": True, "preset": preset_name, "settings": _get_all_safety_settings()})
 
 
 @app.get("/")

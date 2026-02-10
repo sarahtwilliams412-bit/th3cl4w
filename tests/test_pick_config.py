@@ -21,7 +21,7 @@ def test_defaults_loaded(tmp_path):
     cfg = _fresh_config(tmp_path)
     assert cfg.get("reach", "max_mm") == 550.0
     assert cfg.get("gripper", "open_mm") == 65.0
-    assert cfg.get("safety", "torque_proxy_limit") == 100.0
+    assert cfg.get("safety", "torque_proxy_limit") == 150.0
 
 
 def test_set_and_get(tmp_path):

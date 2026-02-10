@@ -306,6 +306,16 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   .ctrl-right { width: 100%; flex: 1; }
   .debug-stats { grid-template-columns: repeat(2, 1fr); }
 }
+/* Safety settings tooltips */
+.setting-tooltip { position: relative; cursor: help; }
+.setting-tooltip:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; z-index: 100; bottom: 100%; left: 0;
+  background: #1a2744; color: #e0e0e0; border: 1px solid var(--card-border);
+  border-radius: 6px; padding: 6px 10px; font-size: 11px; line-height: 1.4;
+  max-width: 300px; white-space: normal; pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
 </style>
 </head>
 <body>
@@ -421,6 +431,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>⚙️ Settings</span></div>
     <div class="nav-items">
       <div class="nav-item" data-panel="settings" onclick="showPanel(this)"><span class="nav-icon">⚙️</span> <span class="nav-label">Settings</span></div>
+      <div class="nav-item" data-panel="safety" onclick="showPanel(this)"><span class="nav-icon">🛡️</span> <span class="nav-label">Safety</span></div>
     </div>
   </div>
 </nav>
@@ -1242,6 +1253,75 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       </div>
     </div>
 
+    <!-- Safety & Limits Section -->
+    <div class="panel-header" style="margin-top:16px">🛡️ Safety & Limits</div>
+    <div class="panel-card" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn primary" onclick="limitsLoad()">📥 Load</button>
+        <button class="btn" onclick="limitsSave()">💾 Save</button>
+        <button class="btn" onclick="limitsApply()" title="Apply settings without saving to disk">⚡ Apply Without Save</button>
+        <button class="btn" onclick="limitsReset()" style="background:#c0392b;color:#fff">↺ Reset Defaults</button>
+      </div>
+      <div id="limitsContainer" style="display:none">
+        <!-- Joint Limits -->
+        <h4 style="margin:8px 0 4px;color:var(--accent)">Joint Limits (degrees)</h4>
+        <table style="width:100%;border-collapse:collapse;font-size:12px" id="jointLimitsTable">
+          <thead><tr style="color:var(--text-secondary)">
+            <th style="text-align:left;padding:4px">Joint</th>
+            <th style="text-align:left;padding:4px">Min (°)</th>
+            <th style="text-align:left;padding:4px">Max (°)</th>
+            <th style="text-align:left;padding:4px">Info</th>
+          </tr></thead>
+          <tbody id="jointLimitsBody"></tbody>
+        </table>
+
+        <!-- Torque Proxy -->
+        <h4 style="margin:12px 0 4px;color:var(--accent)">Torque Proxy</h4>
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px"
+             class="setting-tooltip"
+             data-tooltip="Rejects commands when estimated torque load exceeds limit. Formula: |J1| + |J2| × factor > limit. Disable if arm handles extended poses safely. Default limit: 150, factor: 0.7.">
+          ℹ️ Hover for details
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center">
+          <label style="font-size:12px" class="setting-tooltip"
+                 data-tooltip="Maximum torque proxy value before commands are rejected. Increase to allow more extended poses. Default: 150.">
+            Limit: <input type="number" id="lim_torqueLimit" step="1" style="width:70px;background:var(--bg-darker);color:var(--text-primary);border:1px solid var(--card-border);padding:2px 4px;border-radius:4px">
+          </label>
+          <label style="font-size:12px" class="setting-tooltip"
+                 data-tooltip="Weight factor for J2 (elbow) in the torque formula. Higher = stricter on elbow extension. Default: 0.7.">
+            J2 Factor: <input type="number" id="lim_torqueJ2" step="0.05" style="width:70px;background:var(--bg-darker);color:var(--text-primary);border:1px solid var(--card-border);padding:2px 4px;border-radius:4px">
+          </label>
+          <label style="font-size:12px" class="setting-tooltip"
+                 data-tooltip="When disabled, the torque proxy check is skipped entirely. Disable if the arm handles extended poses safely.">
+            <input type="checkbox" id="lim_torqueEnabled"> Enabled
+          </label>
+        </div>
+
+        <!-- Stall Detection -->
+        <h4 style="margin:12px 0 4px;color:var(--accent)">Stall Detection</h4>
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px"
+             class="setting-tooltip"
+             data-tooltip="Detects when a joint fails to reach its target. Increase delay for slow movements. Increase threshold to reduce false positives. Defaults: delay 5.0s, threshold 15.0°.">
+          ℹ️ Hover for details
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center">
+          <label style="font-size:12px" class="setting-tooltip"
+                 data-tooltip="Seconds to wait before checking if joint reached target. Increase for slow movements. Default: 5.0s.">
+            Delay (s): <input type="number" id="lim_stallDelay" step="0.5" style="width:70px;background:var(--bg-darker);color:var(--text-primary);border:1px solid var(--card-border);padding:2px 4px;border-radius:4px">
+          </label>
+          <label style="font-size:12px" class="setting-tooltip"
+                 data-tooltip="Degrees of error allowed before declaring a stall. Increase to reduce false positives. Default: 15.0°.">
+            Threshold (°): <input type="number" id="lim_stallThresh" step="0.5" style="width:70px;background:var(--bg-darker);color:var(--text-primary);border:1px solid var(--card-border);padding:2px 4px;border-radius:4px">
+          </label>
+          <label style="font-size:12px" class="setting-tooltip"
+                 data-tooltip="When disabled, stall detection is skipped. Useful during calibration or testing.">
+            <input type="checkbox" id="lim_stallEnabled"> Enabled
+          </label>
+        </div>
+      </div>
+      <div class="result-box" id="limitsResult" style="margin-top:8px;display:none;"></div>
+    </div>
+
     <!-- Pick Config Section -->
     <div class="panel-header" style="margin-top:16px">🎯 Pick Task Configuration</div>
     <div style="margin-bottom:8px">
@@ -1322,11 +1402,11 @@ Object.defineProperty(window, '_activeTab', {
 // ============================================================
 
 const JOINT_SPECS = [
-  { name: 'J0', min: -135, max: 135, label: 'Base Yaw',    type: 'yaw'   },
-  { name: 'J1', min: -90,  max: 90,  label: 'Shoulder',    type: 'pitch' },
-  { name: 'J2', min: -90,  max: 90,  label: 'Elbow',       type: 'pitch' },
+  { name: 'J0', min: -135, max: 135, label: 'Base Yaw',    type: 'yaw'   },  // was already ±135
+  { name: 'J1', min: -90,  max: 90,  label: 'Shoulder',    type: 'pitch' },  // widened from ±80
+  { name: 'J2', min: -90,  max: 90,  label: 'Elbow',       type: 'pitch' },  // widened from ±80
   { name: 'J3', min: -135, max: 135, label: 'Wrist Roll',  type: 'roll'  },
-  { name: 'J4', min: -90,  max: 90,  label: 'Wrist Pitch', type: 'pitch' },
+  { name: 'J4', min: -90,  max: 90,  label: 'Wrist Pitch', type: 'pitch' },  // widened from ±80
   { name: 'J5', min: -135, max: 135, label: 'Wrist Roll',  type: 'roll'  },
 ];
 
@@ -2335,6 +2415,114 @@ async function clawPredSaveHSV() {
   await apiPost('/api/claw-prediction/hsv', body);
 }
 async function clawPredGetROI() { showResult('cpRoiResult', await apiCall('/api/claw-prediction/roi')); }
+
+// --- Safety & Limits ---
+const JOINT_INFO = [
+  { name: 'J0', label: 'Base Yaw', hw: 135, tip: 'Base rotation. Hardware limit ±135°. Controls left/right sweep.' },
+  { name: 'J1', label: 'Shoulder Pitch', hw: 85, tip: 'Shoulder up/down. Hardware ±85°. Wider = more reach but more torque on motor.' },
+  { name: 'J2', label: 'Elbow Pitch', hw: 85, tip: 'Elbow bend. Hardware ±85°. Combined with J1, determines reach extension.' },
+  { name: 'J3', label: 'Elbow Roll', hw: 135, tip: 'Forearm rotation. Hardware ±135°.' },
+  { name: 'J4', label: 'Wrist Pitch', hw: 85, tip: 'Wrist up/down. Hardware ±85°. Wider = more dexterous tool angles.' },
+  { name: 'J5', label: 'Wrist Roll', hw: 135, tip: 'Wrist rotation. Hardware ±135°.' },
+];
+let _limitsDefaults = null;
+
+function showLimitsResult(msg, isErr) {
+  const el = document.getElementById('limitsResult');
+  el.style.display = 'block';
+  el.style.background = isErr ? '#3a1a1a' : '#1a3a1a';
+  el.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
+  setTimeout(() => el.style.display = 'none', 4000);
+}
+
+async function limitsLoad() {
+  try {
+    const resp = await fetch('/api/config/limits');
+    const d = await resp.json();
+    _limitsDefaults = d.defaults;
+    const tbody = document.getElementById('jointLimitsBody');
+    tbody.innerHTML = '';
+    const limits = d.joint_limits_deg;
+    for (let i = 0; i < 6; i++) {
+      const ji = JOINT_INFO[i];
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="padding:4px" class="setting-tooltip" data-tooltip="${ji.tip}. Default: ±${_limitsDefaults.joint_limits_deg[i][1]}°">${ji.name} — ${ji.label}</td>
+        <td style="padding:4px"><input type="number" id="lim_j${i}_min" value="${limits[i][0]}" step="1" style="width:60px;background:var(--bg-darker);color:var(--text-primary);border:1px solid var(--card-border);padding:2px 4px;border-radius:4px"></td>
+        <td style="padding:4px"><input type="number" id="lim_j${i}_max" value="${limits[i][1]}" step="1" style="width:60px;background:var(--bg-darker);color:var(--text-primary);border:1px solid var(--card-border);padding:2px 4px;border-radius:4px"></td>
+        <td style="padding:4px;font-size:11px;color:var(--text-secondary)">HW: ±${ji.hw}°</td>`;
+      tbody.appendChild(tr);
+    }
+    document.getElementById('lim_torqueLimit').value = d.torque_proxy_limit;
+    document.getElementById('lim_torqueJ2').value = d.torque_j2_factor;
+    document.getElementById('lim_torqueEnabled').checked = d.torque_proxy_enabled;
+    document.getElementById('lim_stallDelay').value = d.stall_check_delay_s;
+    document.getElementById('lim_stallThresh').value = d.stall_threshold_deg;
+    document.getElementById('lim_stallEnabled').checked = d.stall_detection_enabled;
+    document.getElementById('limitsContainer').style.display = 'block';
+    showLimitsResult('Loaded', false);
+  } catch (e) { showLimitsResult('Load failed: ' + e, true); }
+}
+
+function _gatherLimitsPayload() {
+  const jl = [];
+  for (let i = 0; i < 6; i++) {
+    jl.push([parseFloat(document.getElementById(`lim_j${i}_min`).value),
+             parseFloat(document.getElementById(`lim_j${i}_max`).value)]);
+  }
+  return {
+    joint_limits_deg: jl,
+    torque_proxy_limit: parseFloat(document.getElementById('lim_torqueLimit').value),
+    torque_j2_factor: parseFloat(document.getElementById('lim_torqueJ2').value),
+    torque_proxy_enabled: document.getElementById('lim_torqueEnabled').checked,
+    stall_check_delay_s: parseFloat(document.getElementById('lim_stallDelay').value),
+    stall_threshold_deg: parseFloat(document.getElementById('lim_stallThresh').value),
+    stall_detection_enabled: document.getElementById('lim_stallEnabled').checked,
+  };
+}
+
+async function limitsSave() {
+  try {
+    const payload = _gatherLimitsPayload();
+    payload.persist = true;
+    const resp = await fetch('/api/config/limits', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+    const d = await resp.json();
+    if (d.ok) showLimitsResult('Saved ✓', false);
+    else showLimitsResult(d.error || 'Save failed', true);
+  } catch (e) { showLimitsResult('Save failed: ' + e, true); }
+}
+
+async function limitsApply() {
+  try {
+    const payload = _gatherLimitsPayload();
+    payload.persist = false;
+    const resp = await fetch('/api/config/limits', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+    const d = await resp.json();
+    if (d.ok) showLimitsResult('Applied (not saved to disk) ✓', false);
+    else showLimitsResult(d.error || 'Apply failed', true);
+  } catch (e) { showLimitsResult('Apply failed: ' + e, true); }
+}
+
+async function limitsReset() {
+  if (!confirm('Reset all safety limits to defaults?')) return;
+  if (!_limitsDefaults) { showLimitsResult('Load config first', true); return; }
+  try {
+    const payload = {
+      joint_limits_deg: _limitsDefaults.joint_limits_deg,
+      torque_proxy_limit: _limitsDefaults.torque_proxy_limit,
+      torque_j2_factor: _limitsDefaults.torque_j2_factor,
+      torque_proxy_enabled: _limitsDefaults.torque_proxy_enabled,
+      stall_check_delay_s: _limitsDefaults.stall_check_delay_s,
+      stall_threshold_deg: _limitsDefaults.stall_threshold_deg,
+      stall_detection_enabled: _limitsDefaults.stall_detection_enabled,
+      persist: true,
+    };
+    const resp = await fetch('/api/config/limits', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+    const d = await resp.json();
+    if (d.ok) { limitsLoad(); showLimitsResult('Reset to defaults ✓', false); }
+    else showLimitsResult(d.error || 'Reset failed', true);
+  } catch (e) { showLimitsResult('Reset failed: ' + e, true); }
+}
 
 // --- Settings ---
 async function simToggle() {
