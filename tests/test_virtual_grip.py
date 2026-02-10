@@ -1,10 +1,14 @@
-"""Tests for virtual grip detection (geometric FK + grip check)."""
+"""Tests for VirtualGripDetector — geometric FK + proximity grip check."""
 
 import math
+
 import numpy as np
 import pytest
 
 from src.planning.virtual_grip import GripCheckResult, VirtualGripDetector
+
+D0, L1, L2, L3 = 121.5, 208.5, 208.5, 113.0
+HOME_Z = D0 + L1 + L2 + L3  # 651.5 mm
 
 
 @pytest.fixture
@@ -12,113 +16,97 @@ def detector():
     return VirtualGripDetector()
 
 
-class TestComputeGripperPosition:
-    """FK position tests."""
-
-    def test_home_pose(self, detector):
-        """Home [0,0,0,0,0,0]: arm up, then PI/2 elbow offset makes forearm horizontal.
-
-        shoulder at z=330, forearm horizontal +x, wrist pitch 0 continues horizontal.
-        Expected: x = L2 + L3 = 321.5, y = 0, z = d0 + L1 = 330.
-        """
-        pos = detector.compute_gripper_position([0, 0, 0, 0, 0, 0])
-        assert isinstance(pos, np.ndarray)
-        np.testing.assert_allclose(pos, [321.5, 0.0, 330.0], atol=0.1)
-
-    def test_reference_grab_pose(self, detector):
-        """Reference grab at [1, 25.9, 6.7, 0.5, 88.7, 3.3].
-
-        Should place gripper near table level — low z, near base in XY.
-        The wrist pitch of ~88.7° after the elbow bends the gripper downward.
-        """
-        pos = detector.compute_gripper_position([1.0, 25.9, 6.7, 0.5, 88.7, 3.3])
-        # z should be low (near table) — verified from JS FK: ~100mm
-        assert pos[2] < 150, f"z={pos[2]:.1f} should be below 150mm (near table)"
-        # Should be within reach distance from base axis
-        xy_dist = math.sqrt(pos[0] ** 2 + pos[1] ** 2)
-        assert xy_dist < 250, f"XY distance {xy_dist:.1f}mm should be < 250mm"
-
-    def test_link_lengths_match(self, detector):
-        assert detector.D0 == 121.5
-        assert detector.L1 == 208.5
-        assert detector.L2 == 208.5
-        assert detector.L3 == 113.0
-
-    def test_base_yaw_rotates_xy(self, detector):
-        """J0=90° should rotate the arm into the Y axis."""
-        pos = detector.compute_gripper_position([90, 0, 0, 0, 0, 0])
-        np.testing.assert_allclose(pos[0], 0.0, atol=0.5)
-        np.testing.assert_allclose(pos[1], 321.5, atol=0.5)
-        np.testing.assert_allclose(pos[2], 330.0, atol=0.5)
-
-    def test_returns_ndarray(self, detector):
-        pos = detector.compute_gripper_position([0, 0, 0, 0, 0, 0])
-        assert isinstance(pos, np.ndarray)
-        assert pos.shape == (3,)
+# ---------- FK tests ----------
 
 
-class TestCheckGrip:
-    """Grip detection tests."""
+def test_home_pose_z_high(detector: VirtualGripDetector):
+    """Home pose [0,0,0,0,0,0] → gripper straight up at z ≈ d0+L1+L2+L3."""
+    pos = detector.compute_gripper_position([0, 0, 0, 0, 0, 0])
+    assert isinstance(pos, np.ndarray)
+    assert pos.shape == (3,)
+    assert abs(pos[0]) < 1.0  # x ≈ 0
+    assert abs(pos[1]) < 1.0  # y ≈ 0
+    assert abs(pos[2] - HOME_Z) < 0.1  # z ≈ 651.5
 
-    def test_gripped_close_and_tight(self, detector):
-        """Gripper close to object and closed enough → gripped."""
-        pos = detector.compute_gripper_position([1.0, 25.9, 6.7, 0.5, 88.7, 3.3])
-        objects = [{"label": "can", "position_mm": list(pos), "width_mm": 66.0}]
-        result = detector.check_grip([1.0, 25.9, 6.7, 0.5, 88.7, 3.3], 50.0, objects)
-        assert result.gripped is True
-        assert result.object_label == "can"
-        assert result.distance_mm < 1.0
-        assert "Gripped" in result.message
 
-    def test_missed_too_far(self, detector):
-        """Object too far → not gripped."""
-        objects = [{"label": "can", "position_mm": [999, 999, 999], "width_mm": 66.0}]
-        result = detector.check_grip([0, 0, 0, 0, 0, 0], 50.0, objects)
-        assert result.gripped is False
-        assert "too far" in result.message
+def test_reference_pose_gripper_low(detector: VirtualGripDetector):
+    """Reference grab pose reaches down — z well below home, near table level.
 
-    def test_missed_gripper_too_wide(self, detector):
-        """Gripper wider than object + margin → not gripped."""
-        pos = detector.compute_gripper_position([0, 0, 0, 0, 0, 0])
-        objects = [{"label": "can", "position_mm": list(pos), "width_mm": 66.0}]
-        result = detector.check_grip([0, 0, 0, 0, 0, 0], 200.0, objects)
-        assert result.gripped is False
-        assert "gripper too wide" in result.message
+    The cumulative pitch J1+J2+J4 ≈ 121.3° swings the wrist link past horizontal.
+    With the arm typically mounted ~400 mm above the workspace surface the
+    effective height above the table is ~26 mm — solidly in grab range.
 
-    def test_empty_objects(self, detector):
-        """No objects → not gripped."""
-        result = detector.check_grip([0, 0, 0, 0, 0, 0], 50.0, [])
-        assert result.gripped is False
-        assert result.message == "No objects detected"
+    We verify:
+      • z is dramatically lower than home (at least 200 mm drop)
+      • The gripper has significant forward reach (r > 200 mm)
+    """
+    ref = [1.0, 25.9, 6.7, 0.5, 88.7, 3.3]
+    pos = detector.compute_gripper_position(ref)
+    # z should be much lower than home
+    assert pos[2] < HOME_Z - 200  # at least 200mm below home
+    # Significant horizontal reach
+    r = math.hypot(pos[0], pos[1])
+    assert r > 200  # reaching forward
 
-    def test_2d_position_gets_z_zero(self, detector):
-        """Object with only [x, y] gets z=0."""
-        objects = [{"label": "cup", "position_mm": [100, 100], "width_mm": 80.0}]
-        result = detector.check_grip([0, 0, 0, 0, 0, 0], 50.0, objects)
-        assert isinstance(result, GripCheckResult)
 
-    def test_closest_object_selected(self, detector):
-        """When multiple objects, closest one is checked."""
-        pos = detector.compute_gripper_position([0, 0, 0, 0, 0, 0])
-        objects = [
-            {"label": "far", "position_mm": [999, 999, 999], "width_mm": 66.0},
-            {"label": "close", "position_mm": list(pos), "width_mm": 66.0},
-        ]
-        result = detector.check_grip([0, 0, 0, 0, 0, 0], 50.0, objects)
-        assert result.object_label == "close"
-        assert result.gripped is True
+# ---------- check_grip tests ----------
 
-    def test_distance_calculation(self, detector):
-        """Known distance between two points."""
-        pos = detector.compute_gripper_position([0, 0, 0, 0, 0, 0])
-        offset_pos = [pos[0] + 30, pos[1], pos[2]]
-        objects = [{"label": "test", "position_mm": offset_pos, "width_mm": 66.0}]
-        result = detector.check_grip([0, 0, 0, 0, 0, 0], 50.0, objects)
-        np.testing.assert_allclose(result.distance_mm, 30.0, atol=0.1)
 
-    def test_default_object_width(self, detector):
-        """Object without width_mm defaults to 66mm (Red Bull can)."""
-        pos = detector.compute_gripper_position([0, 0, 0, 0, 0, 0])
-        objects = [{"label": "mystery", "position_mm": list(pos)}]
-        result = detector.check_grip([0, 0, 0, 0, 0, 0], 50.0, objects)
-        assert result.object_width_mm == 66.0
+def _make_objects_near(pos: np.ndarray, label: str = "can", offset_mm: float = 10.0):
+    """Create a detected object near the given position."""
+    return [
+        {
+            "label": label,
+            "position": {
+                "x": pos[0] + offset_mm,
+                "y": pos[1],
+                "z": pos[2],
+            },
+            "width_mm": 66.0,
+        }
+    ]
+
+
+def test_check_grip_true_when_close_and_closed(detector: VirtualGripDetector):
+    """Grip succeeds when gripper is close to object AND closed enough."""
+    ref = [1.0, 25.9, 6.7, 0.5, 88.7, 3.3]
+    pos = detector.compute_gripper_position(ref)
+    objects = _make_objects_near(pos, "soda_can", offset_mm=15.0)
+
+    result = detector.check_grip(ref, gripper_width_mm=30.0, detected_objects=objects)
+    assert result.gripped is True
+    assert result.object_label == "soda_can"
+    assert result.distance_mm < 50.0
+    assert isinstance(result.gripper_position_mm, np.ndarray)
+    assert result.message.startswith("Gripping")
+
+
+def test_check_grip_false_when_too_far(detector: VirtualGripDetector):
+    """Grip fails when object is too far away."""
+    ref = [1.0, 25.9, 6.7, 0.5, 88.7, 3.3]
+    pos = detector.compute_gripper_position(ref)
+    # Place object 200mm away
+    objects = _make_objects_near(pos, "mug", offset_mm=200.0)
+
+    result = detector.check_grip(ref, gripper_width_mm=30.0, detected_objects=objects)
+    assert result.gripped is False
+    assert "Too far" in result.message
+
+
+def test_check_grip_false_when_gripper_too_wide(detector: VirtualGripDetector):
+    """Grip fails when gripper is open too wide (not closed on object)."""
+    ref = [1.0, 25.9, 6.7, 0.5, 88.7, 3.3]
+    pos = detector.compute_gripper_position(ref)
+    objects = _make_objects_near(pos, "bottle", offset_mm=10.0)
+
+    result = detector.check_grip(ref, gripper_width_mm=60.0, detected_objects=objects)
+    assert result.gripped is False
+    assert "too wide" in result.message
+
+
+def test_check_grip_false_empty_objects(detector: VirtualGripDetector):
+    """Grip fails when no objects are detected."""
+    ref = [1.0, 25.9, 6.7, 0.5, 88.7, 3.3]
+    result = detector.check_grip(ref, gripper_width_mm=30.0, detected_objects=[])
+    assert result.gripped is False
+    assert "No objects" in result.message

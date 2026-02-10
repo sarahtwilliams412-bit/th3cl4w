@@ -963,6 +963,15 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
             <option value="any">🎯 Any Object</option>
           </select>
         </div>
+        <div class="form-row" style="margin-bottom:8px;">
+          <label>Mode</label>
+          <select id="autopickMode" style="flex:2;background:var(--bg);color:var(--text);border:1px solid var(--card-border);padding:4px 8px;border-radius:4px;">
+            <option value="auto">🔄 Auto</option>
+            <option value="physical">🦾 Physical</option>
+            <option value="simulation">🔮 Simulation</option>
+          </select>
+        </div>
+        <div id="autopickSimBadge" style="display:none;background:#7c3aed;color:white;padding:4px 10px;border-radius:4px;font-size:11px;margin-bottom:8px;">🔮 SIMULATION MODE</div>
         <div class="btn-row">
           <button class="btn primary" id="apStartBtn" onclick="apStart()" style="font-size:16px;padding:10px 24px;">🤖 AUTO PICK</button>
           <button class="btn danger" id="apStopBtn" onclick="apStop()" style="display:none;">⛔ STOP</button>
@@ -978,6 +987,11 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <div class="panel-card" style="grid-column:1/-1;">
         <h3>Pick Log</h3>
         <div id="apLog" style="font-family:var(--mono);font-size:10px;max-height:200px;overflow-y:auto;color:var(--text-dim);white-space:pre-wrap;"></div>
+      </div>
+      <div class="panel-card" style="grid-column:1/-1;">
+        <h3>📊 Pick History</h3>
+        <div id="autopickHistory" style="max-height:200px;overflow-y:auto;font-size:11px;color:var(--text-dim);font-family:var(--mono);"></div>
+        <button class="btn" onclick="loadPickHistory()" style="margin-top:6px;">Refresh</button>
       </div>
     </div>
   </div>
@@ -2899,7 +2913,8 @@ async function vlaDemoList() { showResult('vlaDemoResult', await apiCall('/api/v
 let _apPollTimer = null;
 async function apStart() {
   const target = document.getElementById('apTarget').value;
-  const res = await apiPost('/api/autopick/start', { target });
+  const mode = document.getElementById('autopickMode').value;
+  const res = await apiPost('/api/autopick/start', { target, mode });
   if (res && res.ok) {
     document.getElementById('apStartBtn').style.display = 'none';
     document.getElementById('apStopBtn').style.display = '';
@@ -2933,11 +2948,30 @@ async function apPollStatus() {
     }
     const logEl = document.getElementById('apLog');
     if (s.log && s.log.length) { logEl.textContent = s.log.join('\n'); logEl.scrollTop = logEl.scrollHeight; }
+    // Show sim badge
+    const simBadge = document.getElementById('autopickSimBadge');
+    if (simBadge) simBadge.style.display = s.mode === 'simulation' ? '' : 'none';
     const running = s.running;
     document.getElementById('apStartBtn').style.display = running ? 'none' : '';
     document.getElementById('apStopBtn').style.display = running ? '' : 'none';
     if (running) { _apPollTimer = setTimeout(apPollStatus, 500); }
+    else { loadPickHistory(); }
   } catch(e) { console.error('apPollStatus error', e); }
+}
+async function loadPickHistory() {
+  try {
+    const data = await apiCall('/api/autopick/history?limit=20');
+    if (!data || !data.episodes) return;
+    const el = document.getElementById('autopickHistory');
+    if (!el) return;
+    if (data.episodes.length === 0) { el.textContent = 'No episodes yet.'; return; }
+    el.innerHTML = data.episodes.reverse().map(ep => {
+      const dur = ep.end_time && ep.start_time ? (ep.end_time - ep.start_time).toFixed(1) + 's' : '?';
+      const icon = ep.success ? '✅' : '❌';
+      const mode = ep.mode === 'simulation' ? '🔮' : '🦾';
+      return `<div style="padding:2px 0;border-bottom:1px solid var(--card-border);">${icon} ${mode} <b>${ep.target||'?'}</b> — ${dur} — ${ep.phases?.length||0} phases${ep.failure_reason ? ' — '+ep.failure_reason : ''}</div>`;
+    }).join('');
+  } catch(e) { console.error('loadPickHistory', e); }
 }
 
 // --- Workspace Calibration ---

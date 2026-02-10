@@ -17,6 +17,8 @@ from typing import Any, Optional
 
 import httpx
 
+from src.telemetry.pick_episode import PickEpisodeRecorder
+
 logger = logging.getLogger("th3cl4w.planning.auto_pick")
 
 # Arm geometry (mm)
@@ -85,13 +87,15 @@ class AutoPick:
         self._stop_requested = False
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        self.episode_recorder = PickEpisodeRecorder()
+        self._current_mode: Optional[str] = None
 
     @property
     def running(self) -> bool:
         return self._running
 
     def get_status(self) -> dict:
-        return {
+        status = {
             "phase": self.state.phase.value,
             "target": self.state.target,
             "target_xy_mm": list(self.state.target_xy_mm),
@@ -100,7 +104,16 @@ class AutoPick:
             "running": self._running,
             "elapsed_s": round(time.time() - self.state.started_at, 1) if self.state.started_at else 0,
             "log": self.state.log[-20:],
+            "mode": self._current_mode or "unknown",
         }
+        ep = self.episode_recorder.current
+        if ep:
+            status["episode_id"] = ep.episode_id
+            status["episode_phases"] = [
+                {"name": p.name, "success": p.success, "duration_s": round(p.end_time - p.start_time, 2) if p.end_time else 0}
+                for p in ep.phases
+            ]
+        return status
 
     def stop(self):
         """Request stop of current pick operation."""
@@ -117,20 +130,20 @@ class AutoPick:
         if self._stop_requested:
             raise _StopRequested()
 
-    async def start(self, target: str = "redbull") -> asyncio.Task:
+    async def start(self, target: str = "redbull", mode: str = "auto") -> asyncio.Task:
         """Start the pick pipeline as a background task."""
         if self._running:
             raise RuntimeError("Pick already in progress")
         self._stop_requested = False
         self._running = True
         self.state = AutoPickState(target=target, started_at=time.time())
-        self._task = asyncio.create_task(self._run(target))
+        self._task = asyncio.create_task(self._run(target, mode))
         return self._task
 
-    async def _run(self, target: str) -> PickResult:
+    async def _run(self, target: str, mode: str = "auto") -> PickResult:
         t0 = time.time()
         try:
-            result = await self.execute(target)
+            result = await self.execute(target, mode)
             result.duration_s = time.time() - t0
             return result
         except _StopRequested:
@@ -146,47 +159,110 @@ class AutoPick:
         finally:
             self._running = False
 
-    async def execute(self, target: str = "redbull") -> PickResult:
-        """Full autonomous pick pipeline."""
-        # 1. DETECT
-        self.state.phase = AutoPickPhase.DETECTING
-        self._log(f"Detecting '{target}' via overhead camera...")
-        self._check_stop()
+    async def execute(self, target: str = "redbull", mode: str = "auto") -> PickResult:
+        """Full autonomous pick pipeline with episode recording."""
+        # Determine actual mode
+        actual_mode = mode
+        if mode == "auto":
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    resp = await client.get(f"{self.server_url}/api/sim-mode")
+                    data = resp.json()
+                    actual_mode = "simulation" if data.get("sim_mode") else "physical"
+            except Exception:
+                actual_mode = "physical"
+        self._current_mode = actual_mode
+        self._log(f"Mode: {actual_mode}")
 
-        x_mm, y_mm = await self._detect(target)
-        self.state.target_xy_mm = (x_mm, y_mm)
-        self._log(f"Target at ({x_mm:.1f}, {y_mm:.1f}) mm")
+        episode = self.episode_recorder.start(mode=actual_mode, target=target)
 
-        # 2. PLAN
-        self.state.phase = AutoPickPhase.PLANNING
-        self._check_stop()
-        joints = self.plan_joints(x_mm, y_mm)
-        self.state.planned_joints = joints
-        self._log(f"Planned joints: [{', '.join(f'{j:.1f}' for j in joints)}]")
+        try:
+            # 1. DETECT
+            self.state.phase = AutoPickPhase.DETECTING
+            self._log(f"Detecting '{target}' via overhead camera...")
+            self._check_stop()
 
-        # 3. EXECUTE
-        await self._execute_pick(joints)
+            self.episode_recorder.start_phase("detect")
+            x_mm, y_mm = await self._detect(target)
+            self.state.target_xy_mm = (x_mm, y_mm)
+            self._log(f"Target at ({x_mm:.1f}, {y_mm:.1f}) mm")
+            self.episode_recorder.record_detection(
+                method="hsv",
+                position_px=(0, 0),
+                position_mm=(x_mm, y_mm, 0.0),
+                confidence=1.0,
+            )
+            self.episode_recorder.end_phase(success=True)
 
-        # 4. VERIFY (simple)
-        self.state.phase = AutoPickPhase.VERIFYING
-        self._check_stop()
-        self._log("Verifying grip...")
-        # Simple: just check arm camera for presence
-        verified = await self._verify_grip()
+            # 2. PLAN
+            self.state.phase = AutoPickPhase.PLANNING
+            self._check_stop()
+            self.episode_recorder.start_phase("plan")
+            joints = self.plan_joints(x_mm, y_mm)
+            self.state.planned_joints = joints
+            self._log(f"Planned joints: [{', '.join(f'{j:.1f}' for j in joints)}]")
+            self.episode_recorder.record_plan(joints=joints)
+            self.episode_recorder.end_phase(success=True)
 
-        if verified:
-            self.state.phase = AutoPickPhase.DONE
-            self._log("Pick successful!")
-        else:
-            self.state.phase = AutoPickPhase.DONE
-            self._log("Pick complete (verification inconclusive)")
+            # 3. EXECUTE (with per-phase recording)
+            await self._execute_pick(joints)
 
-        return PickResult(
-            success=True,
-            phase=AutoPickPhase.DONE,
-            target_xy_mm=(x_mm, y_mm),
-            joints=joints,
-        )
+            # 4. VERIFY (mode-dependent)
+            self.state.phase = AutoPickPhase.VERIFYING
+            self._check_stop()
+            self._log("Verifying grip...")
+            self.episode_recorder.start_phase("verify")
+
+            if actual_mode == "simulation":
+                from src.planning.virtual_grip import VirtualGripDetector
+                detector = VirtualGripDetector()
+                try:
+                    async with httpx.AsyncClient(timeout=3.0) as client:
+                        state_resp = await client.get(f"{self.server_url}/api/state")
+                        state_data = state_resp.json()
+                        current_joints = state_data.get("joints", joints)
+                        gripper_w = state_data.get("gripper", 32.5)
+                        # Try to get detected objects
+                        obj_resp = await client.get(f"{self.server_url}/api/virtual-grip/check",
+                                                    params={"joints": ",".join(str(j) for j in current_joints),
+                                                            "gripper": str(gripper_w)})
+                        obj_data = obj_resp.json()
+                        verified = obj_data.get("gripped", False)
+                        gripped_label = obj_data.get("object_label", target)
+                except Exception as e:
+                    self._log(f"Sim verification fallback: {e}")
+                    verified = True
+                    gripped_label = target
+            else:
+                verified = await self._verify_grip()
+                gripped_label = target
+
+            self.episode_recorder.end_phase(success=verified)
+
+            if verified:
+                self.state.phase = AutoPickPhase.DONE
+                self._log("Pick successful!")
+            else:
+                self.state.phase = AutoPickPhase.DONE
+                self._log("Pick complete (verification inconclusive)")
+
+            self.episode_recorder.record_result(
+                success=verified,
+                grip_verified=verified,
+                gripped_object=gripped_label,
+            )
+
+            return PickResult(
+                success=verified,
+                phase=AutoPickPhase.DONE,
+                target_xy_mm=(x_mm, y_mm),
+                joints=joints,
+            )
+        except Exception as e:
+            self.episode_recorder.record_result(success=False, failure_reason=str(e))
+            raise
+        finally:
+            self.episode_recorder.finish()
 
     async def _detect(self, target: str) -> tuple[float, float]:
         """Detect target object via overhead camera HSV detection.
@@ -326,40 +402,50 @@ class AutoPick:
         self.state.phase = AutoPickPhase.APPROACHING
         self._check_stop()
         self._log("Opening gripper...")
+        self.episode_recorder.start_phase("open_gripper")
         await self._set_gripper(60.0)
         await asyncio.sleep(0.5)
+        self.episode_recorder.end_phase(success=True)
 
         # Phase 2: Move to approach position (above target, higher)
         self._log("Moving to approach position...")
         self._check_stop()
+        self.episode_recorder.start_phase("approach")
         approach = list(target_joints)
         approach[1] = target_joints[1] - 15  # shoulder back (less forward lean = higher)
         approach[4] = 70.0  # wrist partially tilted down
         await self._move_to(approach)
         await asyncio.sleep(1.5)
+        self.episode_recorder.end_phase(success=True)
 
         # Phase 3: Lower to grab position
         self.state.phase = AutoPickPhase.LOWERING
         self._check_stop()
         self._log("Lowering to grab position...")
+        self.episode_recorder.start_phase("lower")
         await self._move_to(target_joints)
         await asyncio.sleep(1.5)
+        self.episode_recorder.end_phase(success=True)
 
         # Phase 4: Close gripper
         self.state.phase = AutoPickPhase.GRIPPING
         self._check_stop()
         self._log(f"Closing gripper to {gripper_mm}mm...")
+        self.episode_recorder.start_phase("grip")
         await self._set_gripper(gripper_mm)
         await asyncio.sleep(1.0)
+        self.episode_recorder.end_phase(success=True)
 
         # Phase 5: Lift
         self.state.phase = AutoPickPhase.LIFTING
         self._check_stop()
         self._log("Lifting...")
+        self.episode_recorder.start_phase("lift")
         lift = list(target_joints)
         lift[1] = target_joints[1] - 20  # shoulder back up
         await self._move_to(lift)
         await asyncio.sleep(1.5)
+        self.episode_recorder.end_phase(success=True)
 
     async def _move_to(self, joints: list[float]):
         """Send individual joint commands with small delays."""

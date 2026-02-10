@@ -5859,6 +5859,7 @@ def _get_auto_pick() -> Any:
 
 class AutoPickRequest(BaseModel):
     target: str = Field(default="redbull", description="Object to pick: redbull, blue, green, any")
+    mode: str = Field(default="auto", description="Pick mode: auto, physical, simulation")
 
 
 @app.post("/api/autopick/start")
@@ -5870,9 +5871,9 @@ async def autopick_start(req: AutoPickRequest):
     if ap.running:
         return JSONResponse({"ok": False, "error": "Pick already in progress"}, status_code=409)
     try:
-        await ap.start(req.target)
-        action_log.add("AUTO_PICK", f"Started pick for '{req.target}'", "info")
-        return {"ok": True, "phase": ap.state.phase.value, "target": req.target}
+        await ap.start(req.target, mode=req.mode)
+        action_log.add("AUTO_PICK", f"Started pick for '{req.target}' (mode={req.mode})", "info")
+        return {"ok": True, "phase": ap.state.phase.value, "target": req.target, "mode": req.mode}
     except Exception as e:
         action_log.add("AUTO_PICK", f"Failed to start: {e}", "error")
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -5913,6 +5914,17 @@ async def autopick_plan(req: Request):
     z = float(body.get("z_mm", 0))
     joints = AutoPick.plan_joints(x, y, z)
     return {"ok": True, "joints": joints, "target_mm": {"x": x, "y": y, "z": z}}
+
+
+@app.get("/api/autopick/history")
+async def autopick_history(limit: int = 20):
+    """Return recent pick episodes."""
+    try:
+        from src.telemetry.pick_episode import PickEpisodeRecorder
+        recorder = PickEpisodeRecorder()
+        return {"ok": True, "episodes": recorder.load_episodes(limit=limit)}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------------------------
@@ -6729,7 +6741,7 @@ async def virtual_grip_check(req: VirtualGripRequest = VirtualGripRequest()):
         "distance_mm": result.distance_mm,
         "gripper_width_mm": result.gripper_width_mm,
         "object_width_mm": result.object_width_mm,
-        "gripper_position_mm": result.gripper_position_mm,
+        "gripper_position_mm": result.gripper_position_mm.tolist(),
         "message": result.message,
     }
 
