@@ -2036,6 +2036,52 @@ async def debug_pipeline(correlation_id: str):
     return pipeline
 
 
+@app.get("/api/debug/feedback")
+async def debug_feedback():
+    """Return DDS feedback health and recent samples (debug alias)."""
+    if arm is None or not hasattr(arm, "get_feedback_health"):
+        return {"available": False, "error": "No DDS connection or feedback monitor"}
+    health = arm.get_feedback_health()
+    recent = arm.feedback_monitor.get_recent_samples(20)
+    return {"available": True, "health": health, "recent_samples": recent}
+
+
+@app.get("/api/debug/smoother")
+async def debug_smoother():
+    """Return live command smoother state for diagnostics."""
+    if smoother is None:
+        return {"available": False, "error": "Command smoother not initialized"}
+    current = []
+    for i in range(smoother._num_joints):
+        current.append({
+            "joint": i,
+            "current": smoother._current[i],
+            "target": smoother._target[i],
+            "dirty": i in smoother._dirty_joints,
+        })
+    result = {
+        "available": True,
+        "running": smoother.running,
+        "synced": smoother.synced,
+        "arm_enabled": smoother.arm_enabled,
+        "rate_hz": smoother._rate_hz,
+        "smoothing_factor": smoother._alpha,
+        "max_step_deg": smoother._max_step,
+        "ticks": smoother._ticks,
+        "commands_sent": smoother._commands_sent,
+        "joints": current,
+        "gripper": {
+            "current": smoother._current_gripper,
+            "target": smoother._target_gripper,
+            "dirty": smoother._dirty_gripper,
+        },
+    }
+    # Include feedback freshness info if available
+    if smoother._last_feedback_time > 0:
+        result["feedback_age_s"] = round(time.time() - smoother._last_feedback_time, 3)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # WebSocket — stream telemetry events in real-time
 # ---------------------------------------------------------------------------
@@ -3715,12 +3761,23 @@ _ASCII_CHARSETS = {
 async def gpu_status_endpoint():
     """Return GPU compute (OpenCL) availability and status."""
     if _HAS_GPU_PREPROCESS:
-        return JSONResponse(_gpu_status())
+        info = _gpu_status()
+        # Add human-readable summary for diagnostics panel
+        if info.get("opencl_available"):
+            parts = [f"Device: {info.get('device', 'unknown')}"]
+            parts.append(f"OpenCL enabled: {info.get('opencl_enabled', False)}")
+            parts.append(f"HSV GPU kernel: {'OK' if info.get('hsv_gpu') else 'FALLBACK TO CPU'}")
+            info["summary"] = " | ".join(parts)
+        else:
+            info["summary"] = "OpenCL not available — all processing on CPU"
+        return JSONResponse(info)
     return JSONResponse(
         {
             "opencl_available": False,
             "opencl_enabled": False,
+            "hsv_gpu": False,
             "device": None,
+            "summary": "GPU preprocessing module not loaded — all processing on CPU",
         }
     )
 
