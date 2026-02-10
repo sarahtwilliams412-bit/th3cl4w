@@ -728,7 +728,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <summary class="section-title" style="cursor:pointer;user-select:none;">&#9654; Gemini Camera Assessment <span class="beta-pill">BETA</span></summary>
         <div id="geminiAssessPanel" style="margin-top:6px;font-size:10px;">
           <div style="color:var(--text-dim);line-height:1.5;margin-bottom:6px;">
-            Captures renders from all 3 cameras in the simulation, sends them to Gemini, and gets an AI assessment of where each camera is relative to the arm.
+            Captures live snapshots from all 3 cameras, sends them to Gemini, and gets an AI assessment of where each camera is positioned relative to the arm.
           </div>
           <div class="sim-btn-row">
             <button class="btn primary" id="geminiAssessBtn" title="Capture all cameras and assess with Gemini">Assess Camera Positions</button>
@@ -4819,8 +4819,27 @@ fetch('/api/objects/status').then(r => r.json()).then(data => {
     resultEl.style.display = 'none';
 
     try {
-      // Step 1: Capture renders from all cameras
-      const views = sim.captureAllCameraViews(640, 480);
+      // Step 1: Capture LIVE snapshots from all 3 cameras
+      statusEl.textContent = 'Capturing live camera feeds...';
+      const camIds = [0, 1, 2];
+      const views = {};
+      const images = {};
+      await Promise.all(camIds.map(async (id) => {
+        try {
+          const resp = await fetch('/snap/' + id);
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const blob = await resp.blob();
+          const dataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          });
+          views[id] = dataUrl;
+          images[id] = dataUrl.split(',')[1];
+        } catch (e) {
+          console.warn('[gemini-assess] cam' + id + ' snap failed:', e);
+        }
+      }));
 
       // Show previews
       previewsEl.style.display = 'block';
@@ -4836,15 +4855,6 @@ fetch('/api/objects/status').then(r => r.json()).then(data => {
 
       statusEl.textContent = 'Sending to Gemini for assessment...';
       btn.textContent = 'Assessing...';
-
-      // Step 3: Convert data URLs to base64 payloads
-      const images = {};
-      for (const [id, dataUrl] of Object.entries(views)) {
-        if (dataUrl) {
-          // Strip "data:image/jpeg;base64," prefix
-          images[id] = dataUrl.split(',')[1];
-        }
-      }
 
       // Step 4: Send to backend
       const resp = await fetch('/api/cameras/gemini-assess', {

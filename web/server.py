@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -3249,6 +3249,21 @@ async def get_overhead_calibration():
 # ---------------------------------------------------------------------------
 # Camera-based 3D localization (uses calibrated extrinsics)
 # ---------------------------------------------------------------------------
+
+
+@app.get("/snap/{cam_id}")
+async def proxy_camera_snap(cam_id: int):
+    """Proxy camera snapshots from camera server (:8081)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+            if resp.status_code != 200:
+                return JSONResponse({"error": f"Camera {cam_id} not available"}, status_code=resp.status_code)
+            return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
 
 
 @app.get("/api/camera/status")
