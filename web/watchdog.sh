@@ -1,5 +1,9 @@
 #!/bin/bash
 # Watchdog for th3cl4w web + camera servers — auto-restarts on crash
+#
+# NOTE: systemd user services are now the preferred way to manage th3cl4w.
+# See systemd/ directory and scripts/th3cl4w-ctl.sh for the new approach.
+# This script is kept as a fallback only.
 
 # Re-exec under setsid so the watchdog survives exec session cleanup
 if [ -z "$WATCHDOG_SETSID" ]; then

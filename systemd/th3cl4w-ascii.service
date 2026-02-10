@@ -1,0 +1,17 @@
+[Unit]
+Description=th3cl4w ASCII Video Server (port 8084)
+PartOf=th3cl4w.target
+After=th3cl4w-camera.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/sarah/.openclaw/workspace/th3cl4w
+EnvironmentFile=/home/sarah/.openclaw/workspace/th3cl4w/.env
+ExecStart=/home/linuxbrew/.linuxbrew/bin/python3.12 web/ascii_server.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=th3cl4w.target
