@@ -1251,7 +1251,7 @@ async def cmd_set_joint(req: SetJointRequest):
         return JSONResponse(resp_data, status_code=400)
 
     # Ramp large movements in 10° increments to avoid motor overload
-    current_angle = current_joints[req.id]
+    current_angle = _get_current_joints()[req.id]
     delta = req.angle - current_angle
     RAMP_THRESHOLD_DEG = 20.0
     RAMP_STEP_DEG = 10.0
