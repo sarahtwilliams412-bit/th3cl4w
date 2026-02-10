@@ -46,6 +46,43 @@ except ImportError:
 logger = logging.getLogger("th3cl4w.camera")
 
 # ---------------------------------------------------------------------------
+# Camera registry — single source of truth for camera hardware
+# ---------------------------------------------------------------------------
+
+CAMERA_REGISTRY = {
+    0: {
+        "id": 0,
+        "device": "/dev/video0",
+        "name": "Overhead",
+        "role": "overhead",
+        "mount": "fixed",
+        "resolution": [1920, 1080],
+        "fov_deg": 78,
+        "description": "Logitech BRIO mounted above workspace, looking straight down. Primary camera for object detection X/Y positioning.",
+    },
+    1: {
+        "id": 1,
+        "device": "/dev/video4",
+        "name": "Arm-mounted",
+        "role": "end_effector",
+        "mount": "arm",
+        "resolution": [1920, 1080],
+        "fov_deg": 78,
+        "description": "Camera attached to end-effector. Moves with arm. Used for close-up inspection and visual servo.",
+    },
+    2: {
+        "id": 2,
+        "device": "/dev/video6",
+        "name": "Side",
+        "role": "side_profile",
+        "mount": "fixed",
+        "resolution": [1920, 1080],
+        "fov_deg": 78,
+        "description": "Fixed side-view camera. Used for height (Z) estimation of objects on workspace.",
+    },
+}
+
+# ---------------------------------------------------------------------------
 # Camera capture thread
 # ---------------------------------------------------------------------------
 
@@ -67,6 +104,7 @@ class CameraThread:
         self.fps = fps
         self.jpeg_quality = jpeg_quality
         self._frame: Optional[bytes] = None
+        self._frame_time: float = 0.0  # monotonic timestamp of last frame
         self._lock = threading.Lock()
         self._running = False
         self._connected = False
@@ -162,6 +200,7 @@ class CameraThread:
             _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             with self._lock:
                 self._frame = buf.tobytes()
+                self._frame_time = time.monotonic()
 
             if self._health:
                 h, w = frame.shape[:2]
@@ -187,6 +226,14 @@ class CameraThread:
     def get_frame(self) -> bytes:
         with self._lock:
             return self._frame if self._frame else self._no_signal_frame
+
+    def get_frame_with_age(self) -> tuple[bytes, float]:
+        """Return (jpeg_bytes, age_ms). Age is milliseconds since frame was captured."""
+        with self._lock:
+            if self._frame and self._frame_time > 0:
+                age_ms = (time.monotonic() - self._frame_time) * 1000.0
+                return self._frame, age_ms
+            return self._no_signal_frame, -1.0
 
     def get_raw_frame(self) -> Optional[np.ndarray]:
         """Get the latest frame as a decoded numpy BGR array.
@@ -225,6 +272,12 @@ class CameraHandler(BaseHTTPRequestHandler):
             self._handle_mjpeg()
         elif self.path.startswith("/snap/"):
             self._handle_snapshot()
+        elif self.path.startswith("/latest/"):
+            self._handle_latest()
+        elif self.path.startswith("/frame/"):
+            self._handle_frame()
+        elif self.path == "/cameras":
+            self._handle_cameras()
         elif self.path == "/status":
             self._handle_status()
         elif self.path == "/world":
@@ -235,7 +288,9 @@ class CameraHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def _get_cam_index(self) -> Optional[int]:
-        parts = self.path.strip("/").split("/")
+        # Strip query string before parsing path
+        path = self.path.split("?")[0]
+        parts = path.strip("/").split("/")
         if len(parts) >= 2:
             try:
                 idx = int(parts[1])
@@ -285,6 +340,79 @@ class CameraHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(frame)
+
+    def _handle_latest(self):
+        """Return the most recent cached frame without triggering a new capture."""
+        idx = self._get_cam_index()
+        if idx is None:
+            self.send_error(404, "Camera not found")
+            return
+
+        frame, age_ms = cameras[idx].get_frame_with_age()
+        if age_ms < 0:
+            self.send_error(503, "No frame available yet")
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(frame)))
+        self.send_header("X-Frame-Age-Ms", str(int(age_ms)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(frame)
+
+    def _handle_frame(self):
+        """Return a single frame, optionally as raw numpy bytes."""
+        idx = self._get_cam_index()
+        if idx is None:
+            self.send_error(404, "Camera not found")
+            return
+
+        # Parse query string for format parameter
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        fmt = params.get("format", ["jpeg"])[0]
+
+        if fmt == "raw":
+            raw_frame = cameras[idx].get_raw_frame()
+            if raw_frame is None:
+                self.send_error(503, "No frame available")
+                return
+            h, w, c = raw_frame.shape
+            data = raw_frame.tobytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("X-Frame-Width", str(w))
+            self.send_header("X-Frame-Height", str(h))
+            self.send_header("X-Frame-Channels", str(c))
+            self.send_header("X-Frame-Dtype", "uint8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+        else:
+            # Default: JPEG (same as /snap/)
+            frame = cameras[idx].get_frame()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(frame)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(frame)
+
+    def _handle_cameras(self):
+        """Serve the camera registry as JSON."""
+        import json
+        body = json.dumps(CAMERA_REGISTRY, default=str).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _handle_status(self):
         import json
