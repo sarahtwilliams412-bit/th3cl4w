@@ -38,10 +38,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 from src.location.world_model import LocationWorldModel
 from src.location.tracker import ObjectTracker
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-)
+# Logging configured at __main__ via setup_logging(); fall back for import-time usage
 logger = logging.getLogger("th3cl4w.location_server")
 
 # --- Global state ---
@@ -204,8 +201,17 @@ async def ws_location(ws: WebSocket):
 # --- Main ---
 
 if __name__ == "__main__":
+    import argparse
     import uvicorn
 
-    port = int(os.environ.get("LOCATION_PORT", "8082"))
-    logger.info("Starting location server on port %d", port)
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    _parser = argparse.ArgumentParser(description="th3cl4w Location Server")
+    _parser.add_argument("--port", type=int, default=int(os.environ.get("LOCATION_PORT", "8082")))
+    _parser.add_argument("--debug", action="store_true", help="Enable DEBUG-level logging to logs/location.log")
+    _parser.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
+    _args = _parser.parse_args()
+
+    from src.utils.logging_config import setup_logging
+    setup_logging(server_name="location", debug=_args.debug, log_dir=_args.log_dir)
+
+    logger.info("Starting location server on port %d", _args.port)
+    uvicorn.run(app, host="0.0.0.0", port=_args.port, log_level="info")

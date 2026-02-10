@@ -417,12 +417,12 @@ def main():
     parser = argparse.ArgumentParser(description="th3cl4w Map Server")
     parser.add_argument("--port", type=int, default=MAP_SERVER_PORT)
     parser.add_argument("--host", type=str, default="0.0.0.0")
+    parser.add_argument("--debug", action="store_true", help="Enable DEBUG-level logging to logs/map.log")
+    parser.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [MAP] %(levelname)s %(name)s: %(message)s",
-    )
+    from src.utils.logging_config import setup_logging
+    setup_logging(server_name="map", debug=args.debug, log_dir=args.log_dir)
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

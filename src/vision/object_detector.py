@@ -2,8 +2,8 @@
 Object Detector — Detects objects from camera frames and maps them to 3D workspace.
 
 Uses the dual-camera setup:
-  cam0 (front/side): provides object height (Z) estimation
-  cam1 (overhead):   provides object X/Y position on workspace table
+  cam0 (overhead, video0): provides object X/Y position on workspace table
+  cam2 (side view, video6): provides object height (Z) estimation
 
 Detected objects are checked against the arm's reachable workspace (550mm radius)
 and exposed for 3D simulator visualization so users can practice pick operations.
@@ -22,6 +22,8 @@ import cv2
 import numpy as np
 
 from src.safety.limits import MAX_WORKSPACE_RADIUS_MM
+
+from src.vision.object_labeler import ObjectLabeler
 
 logger = logging.getLogger("th3cl4w.vision.object_detector")
 
@@ -44,8 +46,8 @@ _MIN_CONTOUR_AREA = 800
 _MAX_CONTOUR_AREA = 200000
 
 # Estimated workspace table dimensions in overhead camera FOV
-_TABLE_WIDTH_MM = 800.0  # X extent
-_TABLE_DEPTH_MM = 800.0  # Y extent
+_TABLE_WIDTH_MM = 800.0   # X extent
+_TABLE_DEPTH_MM = 800.0   # Y extent
 
 # Default object height when front camera not available (mm)
 _DEFAULT_OBJECT_HEIGHT_MM = 50.0
@@ -93,6 +95,16 @@ class DetectedObject:
     # Timestamp of detection
     timestamp: float = 0.0
 
+    # Shape classification: "cylinder", "box", "sphere", "irregular"
+    shape: str = "box"
+
+    # Rotation angle from minAreaRect (degrees)
+    rotation_deg: float = 0.0
+
+    # LLM vision labeling fields
+    category: str = ""
+    llm_confidence: float = 0.0
+
     def to_dict(self) -> dict:
         return {
             "id": self.obj_id,
@@ -115,6 +127,10 @@ class DetectedObject:
             "confidence": round(self.confidence, 3),
             "bbox": list(self.bbox_overhead),
             "timestamp": round(self.timestamp, 3),
+            "shape": self.shape,
+            "rotation_deg": round(self.rotation_deg, 1),
+            "category": self.category,
+            "llm_confidence": round(self.llm_confidence, 3),
         }
 
 
@@ -150,6 +166,9 @@ class ObjectDetector:
         self._last_update: float = 0.0
         self._update_count: int = 0
         self._frame_count: int = 0
+
+        # Vision labeler for LLM-based object identification
+        self._labeler = ObjectLabeler()
 
         # Background model for adaptive detection
         self._bg_subtractor = cv2.createBackgroundSubtractorMOG2(
@@ -191,14 +210,14 @@ class ObjectDetector:
 
     def detect_from_overhead(
         self,
-        cam1_frame: np.ndarray,
-        cam0_frame: Optional[np.ndarray] = None,
+        overhead_frame: np.ndarray,
+        side_frame: Optional[np.ndarray] = None,
     ) -> dict:
         """Run object detection on overhead camera frame.
 
         Args:
-            cam1_frame: BGR frame from overhead camera (cam1).
-            cam0_frame: Optional BGR frame from front camera (cam0) for height estimation.
+            overhead_frame: BGR frame from overhead camera (cam0=video0).
+            side_frame: Optional BGR frame from side camera (cam2=video6) for height estimation.
 
         Returns:
             Detection results summary dict.
@@ -209,14 +228,14 @@ class ObjectDetector:
         t0 = time.monotonic()
         self._frame_count += 1
 
-        h, w = cam1_frame.shape[:2]
+        h, w = overhead_frame.shape[:2]
 
         # Apply ROI
         rx = int(self._roi_x * w)
         ry = int(self._roi_y * h)
         rw = int(self._roi_w * w)
         rh = int(self._roi_h * h)
-        roi = cam1_frame[ry : ry + rh, rx : rx + rw]
+        roi = overhead_frame[ry:ry+rh, rx:rx+rw]
 
         # Auto-estimate scale if not calibrated
         if self._scale is None:
@@ -232,18 +251,26 @@ class ObjectDetector:
         merged = self._merge_detections(color_objects, bg_objects)
 
         # Estimate height from front camera if available
-        if cam0_frame is not None:
-            self._estimate_heights(merged, cam0_frame)
+        if side_frame is not None:
+            self._estimate_heights(merged, side_frame)
+
+        # Label objects using LLM vision (side camera + ontology)
+        try:
+            self._labeler.label_objects(side_frame, merged)
+        except Exception as e:
+            logger.debug("Object labeler error: %s", e)
 
         # Compute workspace position and reachability
         for obj in merged:
             obj.distance_from_base_mm = math.sqrt(obj.x_mm**2 + obj.y_mm**2)
-            obj.within_reach = self._min_reach <= obj.distance_from_base_mm <= self._max_reach
+            obj.within_reach = (
+                self._min_reach <= obj.distance_from_base_mm <= self._max_reach
+            )
             obj.timestamp = time.monotonic()
 
         # Sort by distance (closest first) and limit count
         merged.sort(key=lambda o: o.distance_from_base_mm)
-        merged = merged[: self._max_objects]
+        merged = merged[:self._max_objects]
 
         with self._lock:
             self._objects = merged
@@ -301,27 +328,48 @@ class ObjectDetector:
                 x, y, bw, bh = cv2.boundingRect(cnt)
 
                 # Get dominant color from the object region
-                obj_region = roi[y : y + bh, x : x + bw]
-                obj_mask = mask[y : y + bh, x : x + bw]
+                obj_region = roi[y:y+bh, x:x+bw]
+                obj_mask = mask[y:y+bh, x:x+bw]
                 color_bgr = self._get_dominant_color(obj_region, obj_mask)
 
-                # Map pixel position to workspace mm
-                cx_px = x + bw / 2.0
-                cy_px = y + bh / 2.0
+                # Use contour moments for better centroid
+                M = cv2.moments(cnt)
+                if M["m00"] > 0:
+                    cx_px = M["m10"] / M["m00"]
+                    cy_px = M["m01"] / M["m00"]
+                else:
+                    cx_px = x + bw / 2.0
+                    cy_px = y + bh / 2.0
                 ws_x, ws_y = self._pixel_to_workspace(cx_px, cy_px, rw, rh)
+
+                # Use minAreaRect for true width/depth and rotation
+                rect = cv2.minAreaRect(cnt)
+                (_, (rect_w, rect_h), angle) = rect
+                # Ensure width >= depth (swap if needed)
+                if rect_h > rect_w:
+                    rect_w, rect_h = rect_h, rect_w
+                    angle = angle + 90.0
+
+                width_mm = rect_w * self._scale if self._scale else 0
+                depth_mm = rect_h * self._scale if self._scale else 0
+
+                # Classify shape
+                shape, rotation = self._classify_shape(cnt, area, rect_w, rect_h)
 
                 obj = DetectedObject(
                     obj_id=self._next_id,
-                    label=label,
+                    label=f"{label} {shape}",
                     x_mm=ws_x,
                     y_mm=ws_y,
                     z_mm=_DEFAULT_OBJECT_HEIGHT_MM / 2.0,
                     bbox_overhead=(x + offset_x, y + offset_y, bw, bh),
-                    width_mm=bw * self._scale if self._scale else 0,
-                    depth_mm=bh * self._scale if self._scale else 0,
+                    width_mm=width_mm,
+                    depth_mm=depth_mm,
                     height_mm=_DEFAULT_OBJECT_HEIGHT_MM,
                     color_bgr=color_bgr,
                     confidence=min(1.0, area / 5000.0),
+                    shape=shape,
+                    rotation_deg=angle,
                 )
                 self._next_id += 1
                 objects.append(obj)
@@ -353,31 +401,90 @@ class ObjectDetector:
                 continue
 
             x, y, bw, bh = cv2.boundingRect(cnt)
-            obj_region = roi[y : y + bh, x : x + bw]
-            obj_mask = fg_mask[y : y + bh, x : x + bw]
+            obj_region = roi[y:y+bh, x:x+bw]
+            obj_mask = fg_mask[y:y+bh, x:x+bw]
             color_bgr = self._get_dominant_color(obj_region, obj_mask)
 
-            cx_px = x + bw / 2.0
-            cy_px = y + bh / 2.0
+            # Use contour moments for better centroid
+            M = cv2.moments(cnt)
+            if M["m00"] > 0:
+                cx_px = M["m10"] / M["m00"]
+                cy_px = M["m01"] / M["m00"]
+            else:
+                cx_px = x + bw / 2.0
+                cy_px = y + bh / 2.0
             ws_x, ws_y = self._pixel_to_workspace(cx_px, cy_px, rw, rh)
+
+            # Use minAreaRect for true dimensions
+            rect = cv2.minAreaRect(cnt)
+            (_, (rect_w, rect_h), angle) = rect
+            if rect_h > rect_w:
+                rect_w, rect_h = rect_h, rect_w
+                angle = angle + 90.0
+
+            width_mm = rect_w * self._scale if self._scale else 0
+            depth_mm = rect_h * self._scale if self._scale else 0
+
+            shape, _ = self._classify_shape(cnt, area, rect_w, rect_h)
 
             obj = DetectedObject(
                 obj_id=self._next_id,
-                label="object",
+                label=f"{bg_label} {shape}",
                 x_mm=ws_x,
                 y_mm=ws_y,
                 z_mm=_DEFAULT_OBJECT_HEIGHT_MM / 2.0,
                 bbox_overhead=(x + offset_x, y + offset_y, bw, bh),
-                width_mm=bw * self._scale if self._scale else 0,
-                depth_mm=bh * self._scale if self._scale else 0,
+                width_mm=width_mm,
+                depth_mm=depth_mm,
                 height_mm=_DEFAULT_OBJECT_HEIGHT_MM,
                 color_bgr=color_bgr,
-                confidence=min(1.0, area / 8000.0) * 0.7,  # lower confidence for bg method
+                confidence=min(1.0, area / 8000.0) * 0.7,
+                shape=shape,
+                rotation_deg=angle,
             )
             self._next_id += 1
             objects.append(obj)
 
         return objects
+
+    @staticmethod
+    def _classify_shape(
+        contour: np.ndarray, area: float, rect_w: float, rect_h: float
+    ) -> tuple[str, float]:
+        """Classify contour shape based on geometry.
+
+        Returns (shape, circularity) where shape is one of:
+        "cylinder", "box", "sphere", "irregular".
+        """
+        # Circularity: 4*pi*area / perimeter^2  (1.0 = perfect circle)
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter < 1e-6:
+            return "irregular", 0.0
+        circularity = (4.0 * math.pi * area) / (perimeter * perimeter)
+
+        # Aspect ratio from rotated rect
+        aspect = rect_w / max(rect_h, 1e-6)
+
+        # Extent: contour area / bounding rect area
+        rect_area = rect_w * rect_h
+        extent = area / max(rect_area, 1e-6)
+
+        if circularity > 0.82 and aspect < 1.25:
+            # Nearly circular top-down → could be cylinder or sphere
+            # We can't distinguish sphere vs cylinder from overhead alone,
+            # so default to cylinder (more common: cans, cups, bottles)
+            return "cylinder", circularity
+        elif circularity > 0.65 and aspect < 1.4:
+            # Somewhat circular — likely cylinder
+            return "cylinder", circularity
+        elif extent > 0.85 and aspect < 1.6:
+            # High extent + roughly square → box
+            return "box", circularity
+        elif extent > 0.75:
+            # Rectangular with higher aspect ratio → still box
+            return "box", circularity
+        else:
+            return "irregular", circularity
 
     def _merge_detections(
         self,
@@ -402,44 +509,92 @@ class ObjectDetector:
 
         return merged
 
-    def _estimate_heights(self, objects: list[DetectedObject], cam0_frame: np.ndarray):
-        """Estimate object heights from the front camera (cam0).
+    def _estimate_heights(
+        self, objects: list[DetectedObject], side_frame: np.ndarray
+    ):
+        """Estimate object heights from the side camera (cam2=video6).
 
-        Uses vertical position in the front camera to estimate height above table.
-        Objects higher in the image are taller (assuming perspective from front).
+        Uses contour detection on the side camera to find object silhouettes,
+        then matches them to overhead-detected objects by horizontal position.
+        The contour's vertical extent gives a much better height estimate than
+        simple edge scanning.
         """
-        h, w = cam0_frame.shape[:2]
-        gray = cv2.cvtColor(cam0_frame, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (15, 15), 0)
-
-        # Simple edge-based height estimation:
-        # Find vertical extent of objects in the front camera
-        edges = cv2.Canny(blurred, 30, 100)
+        h, w = side_frame.shape[:2]
         table_y = int(h * _FRONT_CAM_TABLE_Y_FRAC)
 
-        # For each detected object, try to estimate height from front view
+        # Find object contours in the front camera using color + edge detection
+        hsv = cv2.cvtColor(side_frame, cv2.COLOR_BGR2HSV)
+
+        # Build a combined mask of all detectable colors in front view
+        front_mask = np.zeros((h, w), dtype=np.uint8)
+        for key, cr in _COLOR_RANGES.items():
+            m = cv2.inRange(hsv, cr["lower"], cr["upper"])
+            front_mask = cv2.bitwise_or(front_mask, m)
+
+        # Also add edge-based detection for objects that don't match color ranges
+        gray = cv2.cvtColor(side_frame, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+        edges = cv2.Canny(blurred, 30, 100)
+        # Dilate edges to close gaps, then fill
+        edge_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        edges_dilated = cv2.dilate(edges, edge_kernel, iterations=2)
+        front_mask = cv2.bitwise_or(front_mask, edges_dilated)
+
+        # Only look above the table line
+        front_mask[table_y:, :] = 0
+
+        # Morphological cleanup
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        front_mask = cv2.morphologyEx(front_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        front_mask = cv2.morphologyEx(front_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+
+        front_contours, _ = cv2.findContours(
+            front_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        # Build list of front-view silhouettes with their horizontal center and height
+        front_silhouettes: list[tuple[float, float, float]] = []  # (cx_norm, top_y, bot_y)
+        for cnt in front_contours:
+            area = cv2.contourArea(cnt)
+            if area < 300:  # skip noise
+                continue
+            x, y, bw, bh = cv2.boundingRect(cnt)
+            if bh < 8:  # too short
+                continue
+            cx_norm = (x + bw / 2.0) / w  # normalized horizontal center
+            top_y = float(y)
+            bot_y = float(y + bh)
+            front_silhouettes.append((cx_norm, top_y, bot_y))
+
+        # Match each overhead object to the closest front silhouette by horizontal position
         for obj in objects:
-            # Scan a vertical column at the approximate horizontal position
-            # Map workspace X to front camera horizontal pixel
             norm_x = (obj.x_mm - _WS_MIN[0]) / (_WS_MAX[0] - _WS_MIN[0])
-            col = int(norm_x * w)
-            col = max(0, min(w - 1, col))
 
-            # Find the topmost edge above the table line in a band around the column
-            col_lo = max(0, col - 20)
-            col_hi = min(w, col + 20)
-            edge_band = edges[:table_y, col_lo:col_hi]
+            best_match = None
+            best_dist = 0.15  # max horizontal distance threshold (normalized)
 
-            if edge_band.size > 0:
-                rows_with_edges = np.where(edge_band.max(axis=1) > 0)[0]
-                if len(rows_with_edges) > 0:
-                    top_edge_row = rows_with_edges[0]
-                    pixel_height = table_y - top_edge_row
-                    # Convert pixel height to mm (linear approximation)
+            for cx_norm, top_y, bot_y in front_silhouettes:
+                dist = abs(cx_norm - norm_x)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_match = (top_y, bot_y)
+
+            if best_match is not None:
+                top_y, bot_y = best_match
+                # Use the contour's vertical extent relative to table line
+                pixel_height = table_y - top_y
+                if pixel_height > 5:
                     height_mm = (pixel_height / table_y) * _FRONT_CAM_MAX_HEIGHT_MM
                     height_mm = max(10.0, min(_FRONT_CAM_MAX_HEIGHT_MM, height_mm))
                     obj.height_mm = height_mm
                     obj.z_mm = height_mm / 2.0
+
+                    # If object is cylindrical and tall relative to width,
+                    # it might actually be a sphere if height ≈ width
+                    if obj.shape == "cylinder":
+                        diameter = max(obj.width_mm, obj.depth_mm)
+                        if diameter > 0 and 0.8 < (height_mm / diameter) < 1.2:
+                            obj.shape = "sphere"
 
     def _pixel_to_workspace(
         self, px: float, py: float, img_w: int, img_h: int
@@ -478,8 +633,40 @@ class ObjectDetector:
         median = np.median(pixels, axis=0).astype(int)
         return (int(median[0]), int(median[1]), int(median[2]))
 
+    @staticmethod
+    def _color_name_from_bgr(bgr: tuple[int, int, int]) -> str:
+        """Derive a human-readable color name from a BGR tuple using HSV."""
+        pixel = np.uint8([[list(bgr)]])
+        hsv = cv2.cvtColor(pixel, cv2.COLOR_BGR2HSV)[0][0]
+        h, s, v = int(hsv[0]), int(hsv[1]), int(hsv[2])
+
+        if v < 40:
+            return "dark"
+        if s < 40:
+            return "white" if v > 180 else "gray"
+        # Hue-based naming (OpenCV hue range 0-179)
+        if h < 8 or h >= 165:
+            return "red"
+        if h < 22:
+            return "orange"
+        if h < 35:
+            return "yellow"
+        if h < 80:
+            return "green"
+        if h < 100:
+            return "teal"
+        if h < 130:
+            return "blue"
+        if h < 150:
+            return "purple"
+        return "pink"
+
     def annotate_frame(self, frame: np.ndarray) -> np.ndarray:
-        """Draw detection overlays on a camera frame for visualization."""
+        """Draw detection overlays on a camera frame for visualization.
+
+        Draws bounding boxes, enclosing circles, crosshairs, labels with
+        object name, position, and reachability status.
+        """
         annotated = frame.copy()
         with self._lock:
             objects = list(self._objects)
@@ -490,22 +677,84 @@ class ObjectDetector:
             # Color based on reachability
             if obj.within_reach:
                 box_color = (0, 255, 100)  # green
-                label_prefix = "[REACH]"
+                label_tag = "REACHABLE"
             else:
                 box_color = (0, 140, 255)  # orange
-                label_prefix = "[FAR]"
+                label_tag = "OUT OF REACH"
 
-            # Draw bounding box
+            # Semi-transparent fill for bounding box
+            overlay = annotated.copy()
+            cv2.rectangle(overlay, (bx, by), (bx + bw, by + bh), box_color, -1)
+            cv2.addWeighted(overlay, 0.12, annotated, 0.88, 0, annotated)
+
+            # Draw bounding box border
             cv2.rectangle(annotated, (bx, by), (bx + bw, by + bh), box_color, 2)
 
-            # Draw center cross
+            # Draw enclosing circle around the object
             cx = bx + bw // 2
             cy = by + bh // 2
-            cv2.drawMarker(annotated, (cx, cy), box_color, cv2.MARKER_CROSS, 12, 1)
+            radius = int(max(bw, bh) * 0.65)
+            cv2.circle(annotated, (cx, cy), radius, box_color, 2, cv2.LINE_AA)
 
-            # Label
-            text = f"{label_prefix} {obj.label} d={obj.distance_from_base_mm:.0f}mm"
-            cv2.putText(annotated, text, (bx, by - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 1)
+            # Draw crosshair at center
+            cross_size = 8
+            cv2.line(annotated, (cx - cross_size, cy), (cx + cross_size, cy), box_color, 1, cv2.LINE_AA)
+            cv2.line(annotated, (cx, cy - cross_size), (cx, cy + cross_size), box_color, 1, cv2.LINE_AA)
+
+            # Draw a small filled circle at center
+            cv2.circle(annotated, (cx, cy), 3, box_color, -1, cv2.LINE_AA)
+
+            # Label background for readability
+            name_text = obj.label.upper()
+            pos_text = f"({obj.x_mm:.0f}, {obj.y_mm:.0f}) mm  d={obj.distance_from_base_mm:.0f}mm"
+            tag_text = label_tag
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale_name = 0.5
+            font_scale_info = 0.38
+            thickness = 1
+
+            # Measure text sizes
+            (nw, nh), _ = cv2.getTextSize(name_text, font, font_scale_name, thickness)
+            (pw, ph), _ = cv2.getTextSize(pos_text, font, font_scale_info, thickness)
+            (tw, th), _ = cv2.getTextSize(tag_text, font, font_scale_info, thickness)
+
+            label_w = max(nw, pw, tw) + 10
+            label_h = nh + ph + th + 18
+            label_x = bx
+            label_y = max(0, by - label_h - 4)
+
+            # Dark background behind label
+            cv2.rectangle(
+                annotated,
+                (label_x, label_y),
+                (label_x + label_w, label_y + label_h),
+                (0, 0, 0), -1
+            )
+            cv2.rectangle(
+                annotated,
+                (label_x, label_y),
+                (label_x + label_w, label_y + label_h),
+                box_color, 1
+            )
+
+            # Draw label text
+            y_off = label_y + nh + 4
+            cv2.putText(annotated, name_text, (label_x + 5, y_off), font, font_scale_name, (255, 255, 255), thickness, cv2.LINE_AA)
+            y_off += ph + 6
+            cv2.putText(annotated, pos_text, (label_x + 5, y_off), font, font_scale_info, (200, 200, 200), thickness, cv2.LINE_AA)
+            y_off += th + 4
+            cv2.putText(annotated, tag_text, (label_x + 5, y_off), font, font_scale_info, box_color, thickness, cv2.LINE_AA)
+
+        # Draw legend in corner
+        if objects:
+            legend_y = 20
+            cv2.putText(annotated, f"Detected: {len(objects)} objects", (10, legend_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+            n_reach = sum(1 for o in objects if o.within_reach)
+            legend_y += 20
+            cv2.putText(annotated, f"Reachable: {n_reach}", (10, legend_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 100), 1, cv2.LINE_AA)
 
         return annotated
 
