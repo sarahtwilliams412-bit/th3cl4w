@@ -68,6 +68,7 @@ CAMERA_REGISTRY = {
         "mount": "arm",
         "resolution": [1920, 1080],
         "fov_deg": 78,
+        "flip": -1,  # camera is mounted upside down — flip 180°
         "description": "Camera attached to end-effector. Moves with arm. Used for close-up inspection and visual servo.",
     },
     2: {
@@ -97,8 +98,12 @@ class CameraThread:
         height: int = 1080,
         fps: int = 15,
         jpeg_quality: int = 92,
+        flip_code: Optional[int] = None,
     ):
         self.device_id = device_id
+        self.flip_code = flip_code  # cv2.flip code: 0=vertical, 1=horizontal, -1=both
+        if flip_code is not None:
+            logger.info("Camera /dev/video%d: flip_code=%d", device_id, flip_code)
         self.width = width
         self.height = height
         self.fps = fps
@@ -197,6 +202,9 @@ class CameraThread:
                     self._frame = self._no_signal_frame
                 continue
 
+            # Rotate upside-down cameras (e.g. arm cam mounted inverted)
+            if self.flip_code is not None:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
             _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             with self._lock:
                 self._frame = buf.tobytes()
@@ -313,14 +321,23 @@ class CameraHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         cam = cameras[idx]
+        flip = CAMERA_REGISTRY.get(idx, {}).get("flip")
         try:
             while True:
-                frame = cam.get_frame()
+                frame_bytes = cam.get_frame()
+                if flip is not None:
+                    import numpy as np
+                    arr = np.frombuffer(frame_bytes, dtype=np.uint8)
+                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if img is not None:
+                        img = cv2.rotate(img, cv2.ROTATE_180)
+                        _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                        frame_bytes = buf.tobytes()
                 self.wfile.write(b"--frame\r\n")
                 self.wfile.write(b"Content-Type: image/jpeg\r\n")
-                self.wfile.write(f"Content-Length: {len(frame)}\r\n".encode())
+                self.wfile.write(f"Content-Length: {len(frame_bytes)}\r\n".encode())
                 self.wfile.write(b"\r\n")
-                self.wfile.write(frame)
+                self.wfile.write(frame_bytes)
                 self.wfile.write(b"\r\n")
                 time.sleep(1.0 / cam.fps)
         except (BrokenPipeError, ConnectionResetError):
@@ -332,14 +349,27 @@ class CameraHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Camera not found")
             return
 
-        frame = cameras[idx].get_frame()
+        cam = cameras[idx]
+        frame_bytes = cam.get_frame()
+
+        # Apply rotation at serve time for cameras with flip config
+        flip = CAMERA_REGISTRY.get(idx, {}).get("flip")
+        if flip is not None:
+            import numpy as np
+            arr = np.frombuffer(frame_bytes, dtype=np.uint8)
+            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if img is not None:
+                img = cv2.rotate(img, cv2.ROTATE_180)
+                _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                frame_bytes = buf.tobytes()
+
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
-        self.send_header("Content-Length", str(len(frame)))
+        self.send_header("Content-Length", str(len(frame_bytes)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        self.wfile.write(frame)
+        self.wfile.write(frame_bytes)
 
     def _handle_latest(self):
         """Return the most recent cached frame without triggering a new capture."""
@@ -348,19 +378,30 @@ class CameraHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Camera not found")
             return
 
-        frame, age_ms = cameras[idx].get_frame_with_age()
+        frame_bytes, age_ms = cameras[idx].get_frame_with_age()
         if age_ms < 0:
             self.send_error(503, "No frame available yet")
             return
 
+        # Apply rotation at serve time for cameras with flip config
+        flip = CAMERA_REGISTRY.get(idx, {}).get("flip")
+        if flip is not None:
+            import numpy as np
+            arr = np.frombuffer(frame_bytes, dtype=np.uint8)
+            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if img is not None:
+                img = cv2.rotate(img, cv2.ROTATE_180)
+                _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                frame_bytes = buf.tobytes()
+
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
-        self.send_header("Content-Length", str(len(frame)))
+        self.send_header("Content-Length", str(len(frame_bytes)))
         self.send_header("X-Frame-Age-Ms", str(int(age_ms)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        self.wfile.write(frame)
+        self.wfile.write(frame_bytes)
 
     def _handle_frame(self):
         """Return a single frame, optionally as raw numpy bytes."""
@@ -564,12 +605,15 @@ def main():
     setup_logging(server_name="camera", debug=args.debug, log_dir=args.log_dir)
 
     # Start camera threads
-    cameras[0] = CameraThread(args.cam0, args.width, args.height, args.fps, args.jpeg_quality)
-    cameras[1] = CameraThread(args.cam1, args.width, args.height, args.fps, args.jpeg_quality)
+    cameras[0] = CameraThread(args.cam0, args.width, args.height, args.fps, args.jpeg_quality,
+                               flip_code=CAMERA_REGISTRY.get(0, {}).get("flip"))
+    cameras[1] = CameraThread(args.cam1, args.width, args.height, args.fps, args.jpeg_quality,
+                               flip_code=CAMERA_REGISTRY.get(1, {}).get("flip"))
 
     # Try to open cam2 — don't crash if it fails
     try:
-        cam2 = CameraThread(args.cam2, args.width, args.height, args.fps, args.jpeg_quality)
+        cam2 = CameraThread(args.cam2, args.width, args.height, args.fps, args.jpeg_quality,
+                                flip_code=CAMERA_REGISTRY.get(2, {}).get("flip"))
         cameras[2] = cam2
     except Exception as e:
         logger.warning("Failed to create camera 2 (dev %d): %s — continuing with 2 cameras", args.cam2, e)
