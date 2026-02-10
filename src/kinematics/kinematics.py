@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from src.interface.d1_connection import NUM_JOINTS
+from src.control.joint_service import NUM_JOINTS, get_dh_params as _get_dh_params
 
 logger = logging.getLogger(__name__)
 
@@ -41,20 +41,12 @@ class DHParameters:
 
 
 # ---------------------------------------------------------------------------
-# D1 DH table
+# D1 DH table — imported from joint_service (single source of truth)
 # ---------------------------------------------------------------------------
-# Approximate DH parameters for the Unitree D1 arm (7-DOF, ~550 mm reach).
-# Joint ordering: shoulder_yaw, shoulder_pitch, shoulder_roll,
-#                 elbow_pitch, wrist_yaw, wrist_pitch, wrist_roll
 
 _D1_DH: list[DHParameters] = [
-    DHParameters(a=0.0, d=0.1215, alpha=-np.pi / 2, theta_offset=0.0),  # J1
-    DHParameters(a=0.0, d=0.0, alpha=np.pi / 2, theta_offset=0.0),  # J2
-    DHParameters(a=0.0, d=0.2085, alpha=-np.pi / 2, theta_offset=0.0),  # J3
-    DHParameters(a=0.0, d=0.0, alpha=np.pi / 2, theta_offset=0.0),  # J4
-    DHParameters(a=0.0, d=0.2085, alpha=-np.pi / 2, theta_offset=0.0),  # J5
-    DHParameters(a=0.0, d=0.0, alpha=np.pi / 2, theta_offset=0.0),  # J6
-    DHParameters(a=0.0, d=0.1130, alpha=0.0, theta_offset=0.0),  # J7
+    DHParameters(a=dh.a, d=dh.d, alpha=dh.alpha, theta_offset=dh.theta_offset)
+    for dh in _get_dh_params()
 ]
 
 assert len(_D1_DH) == NUM_JOINTS, f"DH table length {len(_D1_DH)} != NUM_JOINTS {NUM_JOINTS}"

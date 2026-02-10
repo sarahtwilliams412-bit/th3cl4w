@@ -31,9 +31,9 @@ class TestCameraConfig:
 
     def test_camera_ids(self):
         from src.config.camera_config import CAM_OVERHEAD, CAM_ARM, CAM_SIDE
-        assert CAM_OVERHEAD == 0
+        assert CAM_SIDE == 0
         assert CAM_ARM == 1
-        assert CAM_SIDE == 2
+        assert CAM_OVERHEAD == 2
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("CAMERA_SERVER_URL", "http://myhost:9999")

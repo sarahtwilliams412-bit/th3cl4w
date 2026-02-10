@@ -182,13 +182,13 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <div class="panel-title">Camera Feeds</div>
       <div class="cam-grid">
         <div class="cam-panel" id="camPanel0">
-          <div class="cam-placeholder" id="camPlaceholder0">cam0 — front/side</div>
+          <div class="cam-placeholder" id="camPlaceholder0">cam0 — side view</div>
           <img id="camImg0" style="display:none" crossorigin="anonymous">
           <canvas id="camOverlay0"></canvas>
           <div class="cam-label">CAM 0 — FRONT</div>
         </div>
         <div class="cam-panel" id="camPanel1">
-          <div class="cam-placeholder" id="camPlaceholder1">cam1 — overhead</div>
+          <div class="cam-placeholder" id="camPlaceholder1">cam1 — arm-mounted</div>
           <img id="camImg1" style="display:none" crossorigin="anonymous">
           <canvas id="camOverlay1"></canvas>
           <div class="cam-label">CAM 1 — OVERHEAD</div>
@@ -339,8 +339,8 @@ const GHOST_INTERVAL = 200; // ms between ghost captures
 let lastGhostTime = 0;
 
 // Camera extrinsics (estimated positions in arm-base frame, meters)
-// cam0: front/side camera — looking roughly from +X, +Z
-// cam1: overhead camera — looking down from +Z
+// cam0: side camera — looking roughly from +X, +Z
+// cam1: arm-mounted camera; cam2: overhead — looking down from +Z
 const camExtrinsics = [
   { x: 0.35, y: 0.25, z: 0.30, lookAt: [0, 0, 0.15] },
   { x: 0.0,  y: -0.05, z: 0.80, lookAt: [0, 0, 0.10] },

@@ -21,9 +21,13 @@ from src.planning.motion_planner import (
     Waypoint,
     Trajectory,
     TrajectoryPoint,
+)
+from src.control.joint_service import (
     NUM_ARM_JOINTS,
     GRIPPER_MIN_MM,
     GRIPPER_MAX_MM,
+    HOME_POSITION,
+    READY_POSITION,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,9 +49,9 @@ class TaskResult:
     sub_trajectories: list[Trajectory] = field(default_factory=list)
 
 
-# Common poses in degrees
-HOME_POSE = np.zeros(NUM_ARM_JOINTS)
-READY_POSE = np.array([0.0, -45.0, 0.0, 90.0, 0.0, -45.0])
+# Common poses in degrees — imported from joint_service
+HOME_POSE = HOME_POSITION.copy()
+READY_POSE = READY_POSITION.copy()
 
 
 class TaskPlanner:

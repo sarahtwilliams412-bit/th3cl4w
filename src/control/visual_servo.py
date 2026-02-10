@@ -24,7 +24,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 ARM_API = "http://localhost:8080"
-from src.config.camera_config import CAMERA_SERVER_URL as CAM_API
+from src.config.camera_config import CAMERA_SERVER_URL as CAM_API, CAM_SIDE
 
 # Image dimensions
 IMG_W, IMG_H = 1920, 1080
@@ -350,7 +350,7 @@ class VisualServo:
             # Phase management: horizontal first, then vertical
             if phase == "horizontal" and distance < 100:
                 phase = "vertical"
-                cam_id = 0  # switch to front cam for height
+                cam_id = CAM_SIDE  # switch to side cam for height
                 logger.info("Phase: horizontal aligned, switching to vertical (front cam)")
 
             # Decide which joint to move

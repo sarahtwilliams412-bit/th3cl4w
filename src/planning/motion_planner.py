@@ -26,15 +26,17 @@ import numpy as np
 
 from src.kinematics.kinematics import D1Kinematics
 from src.control.smooth_trajectory import minimum_jerk_scalar, fitts_law_duration
-from src.safety.limits import (
+from src.control.joint_service import (
     NUM_ARM_JOINTS,
     NUM_JOINTS,
-    JOINT_LIMITS_DEG,
+    joint_limits_deg_array,
     MAX_JOINT_SPEED_DEG as DEFAULT_MAX_JOINT_SPEED,
     MAX_JOINT_ACCEL_DEG as DEFAULT_MAX_JOINT_ACCEL,
     GRIPPER_MIN_MM,
     GRIPPER_MAX_MM,
 )
+
+JOINT_LIMITS_DEG = joint_limits_deg_array()
 
 logger = logging.getLogger(__name__)
 

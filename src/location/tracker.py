@@ -25,7 +25,7 @@ from src.config.pick_config import get_pick_config as _get_pick_config
 
 logger = logging.getLogger("th3cl4w.location.tracker")
 
-from src.config.camera_config import CAMERA_SERVER_URL as CAMERA_SERVER, latest_url
+from src.config.camera_config import CAMERA_SERVER_URL as CAMERA_SERVER, latest_url, CAM_OVERHEAD
 
 # Camera IDs
 CAMERA_IDS = [0, 1, 2]  # overhead, side, arm
@@ -296,7 +296,7 @@ class ObjectTracker:
     ) -> np.ndarray:
         """Convert a detection centroid to 3D position based on camera."""
         cx, cy = det.centroid_px
-        if cam_id == 0:
+        if cam_id == CAM_OVERHEAD:
             # Overhead camera → XY plane
             return _pixel_to_position_overhead(cx, cy, frame_w, frame_h)
         elif cam_id == 1:
@@ -311,7 +311,7 @@ class ObjectTracker:
     ) -> np.ndarray:
         """Estimate object dimensions from bounding box."""
         _, _, bw, bh = det.bbox
-        if cam_id == 0:
+        if cam_id == CAM_OVERHEAD:
             oh_mm = _tracker_cfg("overhead_mm_per_px")
             w_mm = bw * oh_mm
             d_mm = bh * oh_mm

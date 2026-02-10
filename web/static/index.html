@@ -2114,12 +2114,14 @@ Object.defineProperty(window, '_activeTab', {
 
 // =====================================================//  CONSTANTS & SPECS
 // =====================================================
-const JOINT_SPECS = [
-  { name: 'J0', min: -135, max: 135, label: 'Base Yaw',    type: 'yaw'   },  // was already ±135
-  { name: 'J1', min: -90,  max: 90,  label: 'Shoulder',    type: 'pitch' },  // widened from ±80
-  { name: 'J2', min: -90,  max: 90,  label: 'Elbow',       type: 'pitch' },  // widened from ±80
+// JOINT_SPECS: populated dynamically from /api/joints on load.
+// Fallback defaults in case the API is unreachable.
+let JOINT_SPECS = [
+  { name: 'J0', min: -135, max: 135, label: 'Base Yaw',    type: 'yaw'   },
+  { name: 'J1', min: -90,  max: 90,  label: 'Shoulder',    type: 'pitch' },
+  { name: 'J2', min: -90,  max: 90,  label: 'Elbow',       type: 'pitch' },
   { name: 'J3', min: -135, max: 135, label: 'Wrist Roll',  type: 'roll'  },
-  { name: 'J4', min: -90,  max: 90,  label: 'Wrist Pitch', type: 'pitch' },  // widened from ±80
+  { name: 'J4', min: -90,  max: 90,  label: 'Wrist Pitch', type: 'pitch' },
   { name: 'J5', min: -135, max: 135, label: 'Wrist Roll',  type: 'roll'  },
 ];
 
@@ -2226,34 +2228,65 @@ function showResult(elId, data) {
   el.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
 }
 
-// =====================================================//  SLIDER SETUP
+// =====================================================//  SLIDER SETUP (dynamic from /api/joints)
 // =====================================================
 const slidersDiv = document.getElementById('jointSliders');
-for (let i = 0; i < 6; i++) {
-  const spec = JOINT_SPECS[i];
-  const row = document.createElement('div');
-  row.className = 'joint-row';
-  row.innerHTML = `<span class="joint-label">${spec.name}</span><input type="range" class="joint-slider" id="js${i}" min="${spec.min}" max="${spec.max}" step="0.5" value="0"><span class="joint-value" id="jv${i}">0.0°</span>`;
-  slidersDiv.appendChild(row);
-  const slider = row.querySelector('input');
-  slider.addEventListener('mousedown', () => userDragging = i);
-  slider.addEventListener('touchstart', () => userDragging = i);
-  slider.addEventListener('input', () => {
-    document.getElementById(`jv${i}`).textContent = parseFloat(slider.value).toFixed(1) + '°';
-    if (!armSynced || updatingFromState) return;
-    throttledSendJoint(i, parseFloat(slider.value));
-  });
-  const release = () => {
-    if (userDragging === i) {
-      sendJoint(i, parseFloat(slider.value));
-      // Keep dragging flag for 1.5s so feedback doesn't snap slider back mid-move
-      setTimeout(() => { if (userDragging === i) userDragging = -1; }, 1500);
-    }
-  };
-  slider.addEventListener('mouseup', release);
-  slider.addEventListener('touchend', release);
-  slider.addEventListener('change', release);
+
+function buildJointSliders(specs) {
+  slidersDiv.innerHTML = '';
+  for (let i = 0; i < specs.length; i++) {
+    const spec = specs[i];
+    const row = document.createElement('div');
+    row.className = 'joint-row';
+    row.innerHTML = `<span class="joint-label">${spec.name}</span><input type="range" class="joint-slider" id="js${i}" min="${spec.min}" max="${spec.max}" step="0.5" value="0"><span class="joint-value" id="jv${i}">0.0°</span>`;
+    slidersDiv.appendChild(row);
+    const slider = row.querySelector('input');
+    slider.addEventListener('mousedown', ((idx) => () => userDragging = idx)(i));
+    slider.addEventListener('touchstart', ((idx) => () => userDragging = idx)(i));
+    slider.addEventListener('input', ((idx) => () => {
+      document.getElementById(`jv${idx}`).textContent = parseFloat(document.getElementById(`js${idx}`).value).toFixed(1) + '°';
+      if (!armSynced || updatingFromState) return;
+      throttledSendJoint(idx, parseFloat(document.getElementById(`js${idx}`).value));
+    })(i));
+    const release = ((idx) => () => {
+      if (userDragging === idx) {
+        sendJoint(idx, parseFloat(document.getElementById(`js${idx}`).value));
+        setTimeout(() => { if (userDragging === idx) userDragging = -1; }, 1500);
+      }
+    })(i);
+    slider.addEventListener('mouseup', release);
+    slider.addEventListener('touchend', release);
+    slider.addEventListener('change', release);
+  }
 }
+
+// Build with defaults immediately, then update from API
+buildJointSliders(JOINT_SPECS);
+
+// Fetch joint config from API and rebuild sliders
+(async function loadJointConfig() {
+  try {
+    const resp = await fetch('/api/joints');
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.ok && data.joints) {
+        // Filter to arm joints only (exclude gripper, which has its own slider)
+        const armJoints = data.joints.filter(j => j.type !== 'gripper');
+        JOINT_SPECS = armJoints.map(j => ({
+          name: j.name,
+          min: j.min,
+          max: j.max,
+          label: j.label,
+          type: j.type,
+        }));
+        buildJointSliders(JOINT_SPECS);
+        console.log('[joints] Loaded', JOINT_SPECS.length, 'joint configs from API');
+      }
+    }
+  } catch(e) {
+    console.warn('[joints] Failed to load from API, using defaults:', e);
+  }
+})();
 
 const gripSlider = document.getElementById('gripperSlider');
 gripSlider.addEventListener('mousedown', () => userDragging = 6);
@@ -3695,14 +3728,10 @@ async function clawPredSaveHSV() {
 async function clawPredGetROI() { showResult('cpRoiResult', await apiCall('/api/claw-prediction/roi')); }
 
 // --- Safety & Limits ---
-const JOINT_INFO = [
-  { name: 'J0', label: 'Base Yaw', hw: 135, tip: 'Base rotation. Hardware limit ±135°. Controls left/right sweep.' },
-  { name: 'J1', label: 'Shoulder Pitch', hw: 85, tip: 'Shoulder up/down. Hardware ±85°. Wider = more reach but more torque on motor.' },
-  { name: 'J2', label: 'Elbow Pitch', hw: 85, tip: 'Elbow bend. Hardware ±85°. Combined with J1, determines reach extension.' },
-  { name: 'J3', label: 'Elbow Roll', hw: 135, tip: 'Forearm rotation. Hardware ±135°.' },
-  { name: 'J4', label: 'Wrist Pitch', hw: 85, tip: 'Wrist up/down. Hardware ±85°. Wider = more dexterous tool angles.' },
-  { name: 'J5', label: 'Wrist Roll', hw: 135, tip: 'Wrist rotation. Hardware ±135°.' },
-];
+// JOINT_INFO: built dynamically from JOINT_SPECS (loaded from /api/joints)
+let JOINT_INFO = JOINT_SPECS.map(s => ({
+  name: s.name, label: s.label, hw: s.max, tip: `${s.label}. Hardware limit ±${s.max}°.`
+}));
 let _limitsDefaults = null;
 
 function showLimitsResult(msg, isErr) {

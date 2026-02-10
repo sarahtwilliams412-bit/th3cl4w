@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from src.config.camera_config import CAMERA_SERVER_URL as _CAM_API_DEFAULT
+from src.config.camera_config import CAMERA_SERVER_URL as _CAM_API_DEFAULT, CAM_SIDE, CAM_ARM, snap_url
 
 logger = logging.getLogger(__name__)
 
@@ -227,8 +227,8 @@ class DataCollector:
 
         async with httpx.AsyncClient(timeout=5.0) as c:
             state_resp = await c.get(f"{self.ARM_API}/api/state")
-            cam0_resp = await c.get(f"{self.CAM_API}/snap/0")
-            cam1_resp = await c.get(f"{self.CAM_API}/snap/1")
+            cam0_resp = await c.get(snap_url(CAM_SIDE))
+            cam1_resp = await c.get(snap_url(CAM_ARM))
 
         state = state_resp.json()
         self.record_step(

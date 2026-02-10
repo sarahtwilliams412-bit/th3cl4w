@@ -168,13 +168,19 @@ if _web_dir not in sys.path:
 
 from command_smoother import CommandSmoother
 
-from src.safety.limits import (
-    JOINT_LIMITS_DEG as _UNIFIED_JOINT_LIMITS_DEG,
+from src.control.joint_service import (
+    joint_limits_deg_array as _joint_limits_deg_array,
     GRIPPER_MIN_MM,
     GRIPPER_MAX_MM,
     MAX_STEP_DEG,
+    NUM_ARM_JOINTS,
+    all_joints_dict as _all_joints_dict,
+    joint_dict as _joint_dict,
+    ALL_JOINTS as _ALL_JOINTS,
 )
 from src.safety.safety_monitor import SafetyMonitor
+
+_UNIFIED_JOINT_LIMITS_DEG = _joint_limits_deg_array()
 
 # ---------------------------------------------------------------------------
 # CLI args (parsed early so lifespan can access them)
@@ -721,7 +727,7 @@ _validate_env()
 # Centralized camera server access
 # ---------------------------------------------------------------------------
 
-from src.config.camera_config import CAMERA_SERVER_URL as CAM_SERVER
+from src.config.camera_config import CAMERA_SERVER_URL as CAM_SERVER, CAM_OVERHEAD, CAM_SIDE, CAM_ARM, snap_url
 
 
 async def cam_snap(client, cam_id: int):
@@ -951,9 +957,9 @@ async def api_cameras_gemini_assess(req: GeminiAssessRequest):
 
         # Add each camera image
         cam_labels = {
-            "0": "Camera 0 (Overhead)",
-            "1": "Camera 1 (Arm-mounted)",
-            "2": "Camera 2 (Side View)",
+            str(CAM_SIDE): f"Camera {CAM_SIDE} (Side View)",
+            str(CAM_ARM): f"Camera {CAM_ARM} (Arm-mounted)",
+            str(CAM_OVERHEAD): f"Camera {CAM_OVERHEAD} (Overhead)",
         }
         for cam_id in sorted(req.images.keys()):
             img_b64 = req.images[cam_id]
@@ -1077,6 +1083,20 @@ Respond in JSON format:
             {"ok": False, "error": str(e), "inference_time_ms": round(elapsed_ms, 1)},
             status_code=500,
         )
+
+
+@app.get("/api/joints")
+async def api_joints():
+    """Return all joint configurations for dynamic UI building."""
+    return {"ok": True, "joints": _all_joints_dict()}
+
+
+@app.get("/api/joints/{joint_id}")
+async def api_joint_by_id(joint_id: int):
+    """Return a single joint configuration."""
+    if joint_id not in _ALL_JOINTS:
+        return JSONResponse({"ok": False, "error": f"Unknown joint ID: {joint_id}"}, status_code=404)
+    return {"ok": True, "joint": _joint_dict(joint_id)}
 
 
 @app.get("/api/state")
@@ -2828,10 +2848,10 @@ async def objects_detect():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp_overhead = await cam_snap(client, 0)  # overhead (cam0=video0)
+            resp_overhead = await cam_snap(client, CAM_OVERHEAD)  # overhead
             resp_side = None
             try:
-                resp_side = await cam_snap(client, 2)  # side (cam2=video6)
+                resp_side = await cam_snap(client, CAM_SIDE)  # side
             except Exception:
                 pass
 
@@ -2879,10 +2899,10 @@ async def objects_detect_snapshot():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp_overhead = await cam_snap(client, 0)  # overhead (cam0=video0)
+            resp_overhead = await cam_snap(client, CAM_OVERHEAD)  # overhead
             resp_side = None
             try:
-                resp_side = await cam_snap(client, 2)  # side (cam2=video6)
+                resp_side = await cam_snap(client, CAM_SIDE)  # side
             except Exception:
                 pass
 
@@ -2934,7 +2954,7 @@ async def objects_snapshot():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp_overhead = await cam_snap(client, 0)  # overhead (cam0=video0)
+            resp_overhead = await cam_snap(client, CAM_OVERHEAD)  # overhead
 
         if resp_overhead.status_code != 200:
             return JSONResponse(
@@ -3085,10 +3105,10 @@ async def objects_scan():
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp_overhead = await cam_snap(client, 0)
+            resp_overhead = await cam_snap(client, CAM_OVERHEAD)
             resp_side = None
             try:
-                resp_side = await cam_snap(client, 2)
+                resp_side = await cam_snap(client, CAM_SIDE)
             except Exception:
                 pass
 
@@ -4028,8 +4048,8 @@ async def _grab_camera_frame(camera: int) -> Optional[np.ndarray]:
 async def vision_plan(req: VisionPlanRequest):
     """Analyze camera feeds and build a task plan from an instruction.
 
-    Camera layout: cam0=front/side, cam1=overhead (default primary).
-    Uses both cameras by default for dual-view scene understanding.
+    Camera layout: cam0=side, cam1=arm, cam2=overhead (default primary).
+    Uses multiple cameras by default for dual-view scene understanding.
     """
     if not _HAS_VISION_PLANNING or vision_task_planner is None or scene_analyzer is None:
         return JSONResponse(
@@ -4099,7 +4119,7 @@ async def vision_plan(req: VisionPlanRequest):
 async def vision_analyze(camera: int = 1, use_both: bool = True):
     """Analyze the current camera view and return a scene description.
 
-    Camera layout: cam0=front/side, cam1=overhead (default).
+    Camera layout: cam0=side, cam1=arm, cam2=overhead (default).
     """
     if not _HAS_VISION_PLANNING or scene_analyzer is None:
         return JSONResponse(
@@ -4524,7 +4544,7 @@ async def ws_ascii(ws: WebSocket):
 async def ws_realworld3d(ws: WebSocket):
     """Stream voxel reconstruction data from dual camera visual hull carving.
 
-    Fetches frames from cam0 (front→X-Y) and cam1 (overhead→X-Z),
+    Fetches frames from cam0 (side) and cam2 (overhead),
     segments foreground via edge detection / frame differencing,
     intersects silhouettes to carve a 3D voxel grid, and sends
     non-empty voxels as JSON to the client.
@@ -5214,7 +5234,7 @@ async def charuco_calibration_start():
             # Solve fixed cameras (overhead + side)
             _charuco_state["status"] = "solving_fixed_cameras"
             fixed_results = {}
-            for cam_id, cam_attr in [(0, "cam0_jpeg"), (2, "cam2_jpeg")]:
+            for cam_id, cam_attr in [(CAM_SIDE, "cam0_jpeg"), (CAM_OVERHEAD, "cam2_jpeg")]:
                 fc = FixedCameraCalibrator(camera_id=cam_id, charuco_detector=charuco)
                 fc_detections = 0
                 for cap in session.captures:

@@ -16,16 +16,21 @@ from typing import Optional
 
 import numpy as np
 
-from src.interface.d1_connection import D1Command, D1State, NUM_JOINTS
-from src.safety.limits import (
-    JOINT_LIMITS_RAD_MIN,
-    JOINT_LIMITS_RAD_MAX,
+from src.interface.d1_connection import D1Command, D1State
+from src.control.joint_service import (
+    NUM_JOINTS,
+    joint_limits_rad_min_array,
+    joint_limits_rad_max_array,
     VELOCITY_MAX_RAD,
     TORQUE_MAX_NM,
     MAX_WORKSPACE_RADIUS_MM,
     MAX_WORKSPACE_RADIUS_M,
     FEEDBACK_MAX_AGE_S,
 )
+
+# Backward-compatible names
+JOINT_LIMITS_RAD_MIN = joint_limits_rad_min_array(include_gripper=True)
+JOINT_LIMITS_RAD_MAX = joint_limits_rad_max_array(include_gripper=True)
 
 logger = logging.getLogger(__name__)
 

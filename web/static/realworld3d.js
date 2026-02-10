@@ -214,7 +214,7 @@ function drawHUD(t){
   const lines=[
     'REAL WORLD 3D — Visual Hull Reconstruction',
     'FPS '+fps+'  Voxels: '+voxelCount+'  Frame: '+frameNum,
-    'CAM0(front):'+cam0s+'  CAM1(top):'+cam1s+'  '+wsStatus,
+    'CAM0(side):'+cam0s+'  CAM1(arm):'+cam1s+'  '+wsStatus,
     'XYZ '+pl.x.toFixed(1)+' '+(pl.y-EYE_H).toFixed(1)+' '+pl.z.toFixed(1),
     'R: Reset BG  |  WASD: Move  Arrows: Look  Space: Jump'
   ];

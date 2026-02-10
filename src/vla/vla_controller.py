@@ -23,7 +23,7 @@ from src.control.contact_detector import GripperContactDetector
 logger = logging.getLogger(__name__)
 
 ARM_API = "http://localhost:8080"
-from src.config.camera_config import CAMERA_SERVER_URL as CAM_API
+from src.config.camera_config import CAMERA_SERVER_URL as CAM_API, CAM_SIDE, CAM_ARM, snap_url
 
 
 class TaskState(Enum):
@@ -133,8 +133,8 @@ class VLAController:
         """Capture cameras and read arm state."""
         async with httpx.AsyncClient(timeout=5.0) as c:
             # Parallel fetch: both cameras + arm state
-            cam0_task = c.get(f"{CAM_API}/snap/0")
-            cam1_task = c.get(f"{CAM_API}/snap/1")
+            cam0_task = c.get(snap_url(CAM_SIDE))
+            cam1_task = c.get(snap_url(CAM_ARM))
             state_task = c.get(f"{ARM_API}/api/state")
 
             cam0_resp, cam1_resp, state_resp = await asyncio.gather(

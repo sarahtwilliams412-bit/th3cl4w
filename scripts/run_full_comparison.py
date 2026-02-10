@@ -19,6 +19,7 @@ if not os.environ.get("GEMINI_API_KEY"):
     sys.exit(1)
 
 import httpx
+from src.config.camera_config import CAM_SIDE
 from src.vision.llm_detector import LLMJointDetector
 from src.vision.fk_engine import fk_positions
 from src.vision.arm_segmenter import ArmSegmenter
@@ -211,7 +212,7 @@ async def run():
                     fk_px = []
                     for p in fk:
                         # Simple front-view projection (cam0) or top-down (cam1)
-                        if cam_id == 0:
+                        if cam_id == CAM_SIDE:
                             px = int(w/2 + p[1] * w * 2)  # Y->horizontal
                             py = int(h - p[2] * h * 1.5)   # Z->vertical (flip)
                         else:

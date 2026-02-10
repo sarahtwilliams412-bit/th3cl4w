@@ -30,6 +30,7 @@ import requests
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.config.camera_config import CAM_SIDE, CAM_OVERHEAD
 from src.vision.fk_engine import fk_positions
 from src.vision.arm_segmenter import ArmSegmenter
 from src.vision.joint_detector import JointDetector, JOINT_NAMES
@@ -91,8 +92,8 @@ def fk_to_dummy_pixels(joint_angles: list[float], cam_id: int) -> list[tuple[flo
     
     Since we don't have calibrated camera extrinsics, we use a simple
     projection based on camera perspective:
-    - cam0 (front): projects X→u, Z→v (inverted)
-    - cam1 (overhead): projects X→u, Y→v
+    - cam0 (side): projects X→u, Z→v (inverted)
+    - cam1 (overhead/arm): projects X→u, Y→v
     
     This is approximate but gives us FK ground truth in pixel space
     for error measurement.
@@ -104,8 +105,8 @@ def fk_to_dummy_pixels(joint_angles: list[float], cam_id: int) -> list[tuple[flo
     
     # Simple projection parameters (rough estimates)
     # These would normally come from camera calibration
-    if cam_id == 0:
-        # Front camera: looking along Y axis
+    if cam_id == CAM_SIDE:
+        # Side camera: looking along Y axis
         # X -> horizontal, Z -> vertical (inverted)
         cx, cy = W / 2, H * 0.7  # arm base roughly at 70% down
         scale = 1500.0  # pixels per meter (rough)

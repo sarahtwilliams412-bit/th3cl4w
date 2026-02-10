@@ -14,7 +14,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-NUM_JOINTS = 7  # 6 arm + 1 gripper
+from src.control.joint_service import NUM_JOINTS  # 7: 6 arm + 1 gripper
 
 # State packet layout: 7 positions + 7 velocities + 7 torques + 1 gripper + 1 timestamp = 23 floats
 STATE_PACKET_FORMAT = f"<{NUM_JOINTS}f{NUM_JOINTS}f{NUM_JOINTS}f1f1d"

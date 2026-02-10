@@ -20,6 +20,7 @@ import httpx
 from src.control.arm_operations import ArmOps
 from src.telemetry.pick_episode import PickEpisodeRecorder
 from src.telemetry.pick_recorder import PickVideoRecorder
+from src.config.camera_config import CAM_OVERHEAD, snap_url
 
 logger = logging.getLogger("th3cl4w.planning.auto_pick")
 
@@ -289,7 +290,7 @@ class AutoPick:
 
         # Snap overhead camera
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{self.cam_server_url}/snap/0")
+            resp = await client.get(snap_url(CAM_OVERHEAD))
             if resp.status_code != 200:
                 raise RuntimeError(f"Camera snap failed: {resp.status_code}")
             img_bytes = resp.content

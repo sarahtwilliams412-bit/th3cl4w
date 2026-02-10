@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from src.interface.d1_connection import D1Connection, D1State, D1Command, NUM_JOINTS
+from src.interface.d1_connection import D1Connection, D1State, D1Command
+from src.control.joint_service import NUM_JOINTS
 from src.control.smooth_trajectory import (
     minimum_jerk_waypoint,
     compute_movement_duration,
