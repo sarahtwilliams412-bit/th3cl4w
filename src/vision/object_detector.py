@@ -2,8 +2,8 @@
 Object Detector — Detects objects from camera frames and maps them to 3D workspace.
 
 Uses the dual-camera setup:
-  cam0 (front/side): provides object height (Z) estimation
-  cam1 (overhead):   provides object X/Y position on workspace table
+  cam0 (overhead, video0): provides object X/Y position on workspace table
+  cam2 (side view, video6): provides object height (Z) estimation
 
 Detected objects are checked against the arm's reachable workspace (550mm radius)
 and exposed for 3D simulator visualization so users can practice pick operations.
@@ -199,14 +199,14 @@ class ObjectDetector:
 
     def detect_from_overhead(
         self,
-        cam1_frame: np.ndarray,
-        cam0_frame: Optional[np.ndarray] = None,
+        overhead_frame: np.ndarray,
+        side_frame: Optional[np.ndarray] = None,
     ) -> dict:
         """Run object detection on overhead camera frame.
 
         Args:
-            cam1_frame: BGR frame from overhead camera (cam1).
-            cam0_frame: Optional BGR frame from front camera (cam0) for height estimation.
+            overhead_frame: BGR frame from overhead camera (cam0=video0).
+            side_frame: Optional BGR frame from side camera (cam2=video6) for height estimation.
 
         Returns:
             Detection results summary dict.
@@ -217,14 +217,14 @@ class ObjectDetector:
         t0 = time.monotonic()
         self._frame_count += 1
 
-        h, w = cam1_frame.shape[:2]
+        h, w = overhead_frame.shape[:2]
 
         # Apply ROI
         rx = int(self._roi_x * w)
         ry = int(self._roi_y * h)
         rw = int(self._roi_w * w)
         rh = int(self._roi_h * h)
-        roi = cam1_frame[ry:ry+rh, rx:rx+rw]
+        roi = overhead_frame[ry:ry+rh, rx:rx+rw]
 
         # Auto-estimate scale if not calibrated
         if self._scale is None:
@@ -240,8 +240,8 @@ class ObjectDetector:
         merged = self._merge_detections(color_objects, bg_objects)
 
         # Estimate height from front camera if available
-        if cam0_frame is not None:
-            self._estimate_heights(merged, cam0_frame)
+        if side_frame is not None:
+            self._estimate_heights(merged, side_frame)
 
         # Compute workspace position and reachability
         for obj in merged:
@@ -493,20 +493,20 @@ class ObjectDetector:
         return merged
 
     def _estimate_heights(
-        self, objects: list[DetectedObject], cam0_frame: np.ndarray
+        self, objects: list[DetectedObject], side_frame: np.ndarray
     ):
-        """Estimate object heights from the front camera (cam0).
+        """Estimate object heights from the side camera (cam2=video6).
 
-        Uses contour detection on the front camera to find object silhouettes,
+        Uses contour detection on the side camera to find object silhouettes,
         then matches them to overhead-detected objects by horizontal position.
         The contour's vertical extent gives a much better height estimate than
         simple edge scanning.
         """
-        h, w = cam0_frame.shape[:2]
+        h, w = side_frame.shape[:2]
         table_y = int(h * _FRONT_CAM_TABLE_Y_FRAC)
 
         # Find object contours in the front camera using color + edge detection
-        hsv = cv2.cvtColor(cam0_frame, cv2.COLOR_BGR2HSV)
+        hsv = cv2.cvtColor(side_frame, cv2.COLOR_BGR2HSV)
 
         # Build a combined mask of all detectable colors in front view
         front_mask = np.zeros((h, w), dtype=np.uint8)
@@ -515,7 +515,7 @@ class ObjectDetector:
             front_mask = cv2.bitwise_or(front_mask, m)
 
         # Also add edge-based detection for objects that don't match color ranges
-        gray = cv2.cvtColor(cam0_frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(side_frame, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (7, 7), 0)
         edges = cv2.Canny(blurred, 30, 100)
         # Dilate edges to close gaps, then fill

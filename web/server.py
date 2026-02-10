@@ -2557,25 +2557,25 @@ async def objects_detect():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp1 = await client.get("http://localhost:8081/snap/1")  # overhead
-            resp0 = None
+            resp_overhead = await client.get("http://localhost:8081/snap/0")  # overhead (cam0=video0)
+            resp_side = None
             try:
-                resp0 = await client.get("http://localhost:8081/snap/0")  # front
+                resp_side = await client.get("http://localhost:8081/snap/2")  # side (cam2=video6)
             except Exception:
                 pass
 
-        if resp1.status_code != 200:
+        if resp_overhead.status_code != 200:
             return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
 
-        cam1_frame = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
-        if cam1_frame is None:
+        overhead_frame = cv2.imdecode(np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR)
+        if overhead_frame is None:
             return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
 
-        cam0_frame = None
-        if resp0 is not None and resp0.status_code == 200:
-            cam0_frame = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        side_frame = None
+        if resp_side is not None and resp_side.status_code == 200:
+            side_frame = cv2.imdecode(np.frombuffer(resp_side.content, np.uint8), cv2.IMREAD_COLOR)
 
-        result = object_detector.detect_from_overhead(cam1_frame, cam0_frame)
+        result = object_detector.detect_from_overhead(overhead_frame, side_frame)
         return {"ok": True, **result}
 
     except Exception as e:
@@ -2600,29 +2600,29 @@ async def objects_detect_snapshot():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp1 = await client.get("http://localhost:8081/snap/1")  # overhead
-            resp0 = None
+            resp_overhead = await client.get("http://localhost:8081/snap/0")  # overhead (cam0=video0)
+            resp_side = None
             try:
-                resp0 = await client.get("http://localhost:8081/snap/0")  # front
+                resp_side = await client.get("http://localhost:8081/snap/2")  # side (cam2=video6)
             except Exception:
                 pass
 
-        if resp1.status_code != 200:
+        if resp_overhead.status_code != 200:
             return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
 
-        cam1_frame = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
-        if cam1_frame is None:
+        overhead_frame = cv2.imdecode(np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR)
+        if overhead_frame is None:
             return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
 
-        cam0_frame = None
-        if resp0 is not None and resp0.status_code == 200:
-            cam0_frame = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
+        side_frame = None
+        if resp_side is not None and resp_side.status_code == 200:
+            side_frame = cv2.imdecode(np.frombuffer(resp_side.content, np.uint8), cv2.IMREAD_COLOR)
 
         # Run detection
-        object_detector.detect_from_overhead(cam1_frame, cam0_frame)
+        object_detector.detect_from_overhead(overhead_frame, side_frame)
 
         # Annotate the frame with detection overlays
-        annotated = object_detector.annotate_frame(cam1_frame)
+        annotated = object_detector.annotate_frame(overhead_frame)
 
         # Encode as JPEG
         _, jpeg_buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
@@ -2647,17 +2647,17 @@ async def objects_snapshot():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp1 = await client.get("http://localhost:8081/snap/1")  # overhead
+            resp_overhead = await client.get("http://localhost:8081/snap/0")  # overhead (cam0=video0)
 
-        if resp1.status_code != 200:
+        if resp_overhead.status_code != 200:
             return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
 
-        cam1_frame = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
-        if cam1_frame is None:
+        overhead_frame = cv2.imdecode(np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR)
+        if overhead_frame is None:
             return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
 
         # Annotate with existing detections (no new detection run)
-        annotated = object_detector.annotate_frame(cam1_frame)
+        annotated = object_detector.annotate_frame(overhead_frame)
 
         _, jpeg_buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
         return Response(content=jpeg_buf.tobytes(), media_type="image/jpeg")
