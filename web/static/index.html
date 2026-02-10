@@ -395,7 +395,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="nav-group" data-group="mapping">
     <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>🗺️ Mapping</span></div>
     <div class="nav-items">
-      <div class="nav-item" data-panel="bifocal" onclick="showPanel(this)"><span class="nav-icon">🔍</span> <span class="nav-label">Bifocal/Workspace</span></div>
+      <div class="nav-item" data-panel="bifocal" onclick="showPanel(this)"><span class="nav-icon">🔍</span> <span class="nav-label">Workspace Calibration</span></div>
       <div class="nav-item" data-panel="object-detect" onclick="showPanel(this)"><span class="nav-icon">🎯</span> <span class="nav-label">Object Detection</span></div>
       <div class="nav-item" data-panel="scan3d" onclick="showPanel(this)"><span class="nav-icon">📡</span> <span class="nav-label">3D Scan</span></div>
     </div>
@@ -855,27 +855,47 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 </div>
 
 <!-- ============================================================ -->
-<!-- PANEL: Bifocal / Workspace Mapping                            -->
+<!-- PANEL: Workspace Calibration                                  -->
 <!-- ============================================================ -->
 <div class="panel" id="panel-bifocal">
   <div class="panel-body">
-    <div class="panel-header">🔍 Bifocal / Workspace Mapping</div>
-    <div class="panel-grid">
-      <div class="panel-card">
-        <h3>Bifocal Mode</h3>
-        <div class="status-indicator stopped" id="bifocalStatus">OFF</div>
-        <div class="btn-row" style="margin-top:8px;">
-          <button class="btn primary" onclick="bifocalToggle(true)">ENABLE</button>
-          <button class="btn danger" onclick="bifocalToggle(false)">DISABLE</button>
+    <div class="panel-header">🔍 Workspace Calibration</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;">
+      <div class="panel-card" id="wsCalibCam0">
+        <h3>Camera 0 — Overhead</h3>
+        <img id="wsCalibImg0" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 0">
+        <div style="margin-top:6px;display:flex;gap:6px;">
+          <button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/0`,'_blank')">Snap</button>
         </div>
       </div>
-      <div class="panel-card">
-        <h3>Workspace Calibration</h3>
-        <div class="btn-row">
-          <button class="btn primary" onclick="bifocalCalibrate()">🎯 CALIBRATE</button>
-          <button class="btn" onclick="bifocalPreview()">👁 PREVIEW</button>
+      <div class="panel-card" id="wsCalibCam1">
+        <h3>Camera 1 — Arm</h3>
+        <img id="wsCalibImg1" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 1">
+        <div style="margin-top:6px;display:flex;gap:6px;">
+          <button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/1`,'_blank')">Snap</button>
         </div>
-        <div class="result-box" id="bifocalResult" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="panel-card" id="wsCalibCam2">
+        <h3>Camera 2 — Side</h3>
+        <img id="wsCalibImg2" style="width:100%;background:#0d1525;border-radius:4px;" alt="Cam 2">
+        <div style="margin-top:6px;display:flex;gap:6px;">
+          <button class="btn" onclick="window.open(`http://${location.hostname}:8081/snap/2`,'_blank')">Snap</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel-grid" style="margin-top:12px;">
+      <div class="panel-card">
+        <h3>Scale Calibration</h3>
+        <p style="font-size:11px;color:#888;margin:4px 0;">Place a checkerboard in view of the overhead camera, then calibrate to establish pixel-to-mm scale.</p>
+        <div class="form-row" style="margin-top:6px;">
+          <label>Square size (mm)</label>
+          <input type="number" id="wsCalibSquareMm" value="25" min="1" max="100" step="0.1" style="width:80px;">
+        </div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn primary" onclick="wsCalibScale()">CALIBRATE</button>
+          <button class="btn" onclick="wsCalibPreview()">PREVIEW</button>
+        </div>
+        <div class="result-box" id="wsCalibResult" style="margin-top:8px;display:none;"></div>
       </div>
     </div>
   </div>
@@ -1694,6 +1714,7 @@ function showPanel(navItem) {
   if (prevPanel === 'factory' && typeof fw_deactivate === 'function') fw_deactivate();
   if (prevPanel === 'realworld' && typeof rw_deactivate === 'function') rw_deactivate();
   if (prevPanel === 'simulator' && typeof sim_deactivate === 'function') sim_deactivate();
+  if (prevPanel === 'bifocal' && typeof wsCalibStopStreams === 'function') wsCalibStopStreams();
 
   // Update nav
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -1712,6 +1733,7 @@ function showPanel(navItem) {
     if (panelId === 'factory' && typeof fw_activate === 'function') fw_activate();
     if (panelId === 'realworld' && typeof rw_activate === 'function') rw_activate();
     if (panelId === 'simulator' && typeof sim_activate === 'function') sim_activate();
+    if (panelId === 'bifocal' && typeof wsCalibStartStreams === 'function') wsCalibStartStreams();
     if (panelId === 'cameras') refreshCameraPanel();
     if (panelId === 'safety') safetyLoad();
     if (panelId === 'debug' && debugOn) pollDebug();
@@ -2490,10 +2512,36 @@ async function vlaDemoStart() { const task = document.getElementById('vlaDemoTas
 async function vlaDemoStop() { showResult('vlaDemoResult', await apiPost('/api/vla/demo/stop')); }
 async function vlaDemoList() { showResult('vlaDemoResult', await apiCall('/api/vla/demo/list')); }
 
-// --- Bifocal ---
-async function bifocalToggle(on) { const data = await apiPost('/api/bifocal/toggle', {enabled:on}); const el = document.getElementById('bifocalStatus'); el.textContent = on ? 'ON' : 'OFF'; el.className = 'status-indicator ' + (on ? 'running' : 'stopped'); }
-async function bifocalCalibrate() { showResult('bifocalResult', await apiPost('/api/bifocal/calibrate')); }
-async function bifocalPreview() { showResult('bifocalResult', await apiCall('/api/bifocal/preview')); }
+// --- Workspace Calibration ---
+let wsCalibStreaming = false;
+function wsCalibStartStreams() {
+  if (wsCalibStreaming) return;
+  wsCalibStreaming = true;
+  for (let i = 0; i < 3; i++) {
+    const img = document.getElementById(`wsCalibImg${i}`);
+    if (img) img.src = getMjpegUrl(i);
+  }
+}
+function wsCalibStopStreams() {
+  if (!wsCalibStreaming) return;
+  wsCalibStreaming = false;
+  for (let i = 0; i < 3; i++) {
+    const img = document.getElementById(`wsCalibImg${i}`);
+    if (img) img.src = '';
+  }
+}
+async function wsCalibScale() {
+  const sq = parseFloat(document.getElementById('wsCalibSquareMm').value) || 25;
+  showResult('wsCalibResult', await apiPost('/api/bifocal/calibrate-scale', {square_size_mm: sq}));
+}
+async function wsCalibPreview() {
+  // Grab fresh snapshots from all cameras and display them
+  for (let i = 0; i < 3; i++) {
+    const img = document.getElementById(`wsCalibImg${i}`);
+    if (img) img.src = getSnapUrl(i) + '?t=' + Date.now();
+  }
+  showResult('wsCalibResult', {ok: true, message: 'Camera snapshots refreshed'});
+}
 
 // --- 3D Scan ---
 async function scan3dStart() { showResult('scan3dResult', await apiPost('/api/scan3d/start')); scan3dRefresh(); }
