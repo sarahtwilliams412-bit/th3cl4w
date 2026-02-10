@@ -1,23 +1,52 @@
-# Calibration Configuration for Visual Hull Pipeline
+# Calibration Configuration for Multi-Camera Pipeline
 # Edit these values based on physical measurements
 
+# ChArUco board — primary calibration target (replaces plain checkerboard)
+# Print on rigid foam board to prevent warping
+charuco:
+  dictionary: "DICT_5X5_100"
+  squares_x: 7                    # columns of squares
+  squares_y: 5                    # rows of squares
+  square_size_mm: 30.0            # physical square size
+  marker_size_mm: 22.0            # ArUco marker size within each square
+
+# Legacy checkerboard config (kept for backward compatibility)
 checkerboard:
   inner_corners: [9, 6]
-  square_size_mm: 24.8       # Measure with calipers
+  square_size_mm: 24.8
 
 cameras:
-  top_down_id: "T"
-  profile_id: "P"
+  overhead_id: 0                  # cam0 — Logitech BRIO 4K, fixed overhead
+  arm_mounted_id: 1               # cam1 — Logitech MX Brio, on end-effector
+  side_id: 2                      # cam2 — Logitech BRIO 4K, fixed side view
 
 workspace:
-  # Measure these with tape measure from robot base
-  robot_base_position_mm: [500, 500, 0]  # Center of workspace
+  robot_base_position_mm: [500, 500, 0]
   workspace_bounds_mm:
     x: [0, 1000]
     y: [0, 1000]
     z: [0, 600]
 
-zmq_frame_source: "tcp://localhost:5555"
+calibration:
+  min_observations: 15            # minimum for hand-eye calibration
+  recommended_observations: 25    # target count for reliable results
+  min_rotational_diversity_deg: 30  # per axis
+  settle_time_s: 2.0              # wait after arm stops moving
+  buffer_flush_frames: 3          # discard before capture
+  hand_eye_solver: "DANIILIDIS"   # default solver (runs all 5, prefers this)
 
-# Grid parameters
+room_scan:
+  method: "fibonacci_sphere"
+  num_viewpoints_per_shell: 50
+  radii_m: [0.30, 0.45]
+  min_elevation_deg: -10
+  max_elevation_deg: 65
+  azimuth_range_deg: [-150, 150]
+
+validation:
+  multi_camera_agreement_mm: 10.0   # max allowed disagreement
+  touch_test_threshold_mm: 15.0     # max allowed touch test error
+  reprojection_error_threshold_px: 2.0
+
+zmq_frame_source: "tcp://localhost:5555"
 grid_resolution: 128
