@@ -713,13 +713,21 @@ _validate_env()
 CAM_SERVER = "http://localhost:8081"
 
 
-async def cam_snap(client, cam_id: int) -> Optional[bytes]:
-    """Grab a JPEG snapshot from the camera server."""
+async def cam_snap(client, cam_id: int):
+    """Grab a JPEG snapshot from the camera server.
+
+    Returns the httpx Response object (check .status_code and .content),
+    or a dummy object with status_code=0 and empty content on failure.
+    """
+
+    class _FailResp:
+        status_code = 0
+        content = b""
+
     try:
-        resp = await client.get(f"{CAM_SERVER}/snap/{cam_id}")
-        return resp.content if resp.status_code == 200 else None
+        return await client.get(f"{CAM_SERVER}/snap/{cam_id}")
     except Exception:
-        return None
+        return _FailResp()
 
 
 # ---------------------------------------------------------------------------
@@ -775,7 +783,7 @@ async def api_cameras():
     cam_config = _load_camera_config()
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
-            resp = await client.get("http://localhost:8081/status")
+            resp = await client.get(f"{CAM_SERVER}/status")
             status = resp.json()
     except Exception:
         status = {
@@ -2138,7 +2146,7 @@ async def ws_camera_feed(websocket: WebSocket, cam_id: int):
         async with httpx.AsyncClient(timeout=2.0) as client:
             while True:
                 try:
-                    resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+                    resp = await cam_snap(client, cam_id)
                     if resp.status_code != 200:
                         await asyncio.sleep(interval)
                         continue
@@ -2669,8 +2677,8 @@ async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp0 = await client.get("http://localhost:8081/snap/0")
-            resp1 = await client.get("http://localhost:8081/snap/1")
+            resp0 = await cam_snap(client, 0)
+            resp1 = await cam_snap(client, 1)
 
         left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
         right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
@@ -2712,8 +2720,8 @@ async def bifocal_calibrate_tape(req: TapeMeasureRequest):
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp0 = await client.get("http://localhost:8081/snap/0")
-            resp1 = await client.get("http://localhost:8081/snap/1")
+            resp0 = await cam_snap(client, 0)
+            resp1 = await cam_snap(client, 1)
 
         left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
         right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
@@ -2743,7 +2751,7 @@ async def bifocal_preview():
         async with httpx.AsyncClient(timeout=2.0) as client:
             for cam_id in range(3):
                 try:
-                    resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+                    resp = await cam_snap(client, cam_id)
                     cameras.append({"id": cam_id, "ok": resp.status_code == 200})
                 except Exception:
                     cameras.append({"id": cam_id, "ok": False})
@@ -2795,12 +2803,10 @@ async def objects_detect():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp_overhead = await client.get(
-                "http://localhost:8081/snap/0"
-            )  # overhead (cam0=video0)
+            resp_overhead = await cam_snap(client, 0)  # overhead (cam0=video0)
             resp_side = None
             try:
-                resp_side = await client.get("http://localhost:8081/snap/2")  # side (cam2=video6)
+                resp_side = await cam_snap(client, 2)  # side (cam2=video6)
             except Exception:
                 pass
 
@@ -2848,12 +2854,10 @@ async def objects_detect_snapshot():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp_overhead = await client.get(
-                "http://localhost:8081/snap/0"
-            )  # overhead (cam0=video0)
+            resp_overhead = await cam_snap(client, 0)  # overhead (cam0=video0)
             resp_side = None
             try:
-                resp_side = await client.get("http://localhost:8081/snap/2")  # side (cam2=video6)
+                resp_side = await cam_snap(client, 2)  # side (cam2=video6)
             except Exception:
                 pass
 
@@ -2905,9 +2909,7 @@ async def objects_snapshot():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp_overhead = await client.get(
-                "http://localhost:8081/snap/0"
-            )  # overhead (cam0=video0)
+            resp_overhead = await cam_snap(client, 0)  # overhead (cam0=video0)
 
         if resp_overhead.status_code != 200:
             return JSONResponse(
@@ -3058,10 +3060,10 @@ async def objects_scan():
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp_overhead = await client.get("http://localhost:8081/snap/0")
+            resp_overhead = await cam_snap(client, 0)
             resp_side = None
             try:
-                resp_side = await client.get("http://localhost:8081/snap/2")
+                resp_side = await cam_snap(client, 2)
             except Exception:
                 pass
 
@@ -3251,10 +3253,41 @@ async def proxy_camera_snap(cam_id: int):
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+            resp = await client.get(f"{CAM_SERVER}/snap/{cam_id}")
             if resp.status_code != 200:
                 return JSONResponse({"error": f"Camera {cam_id} not available"}, status_code=resp.status_code)
             return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@app.get("/cameras")
+async def proxy_cameras():
+    """Proxy camera registry from camera server (:8081)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(f"{CAM_SERVER}/cameras")
+            return JSONResponse(content=resp.json())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@app.get("/latest/{cam_id}")
+async def proxy_latest_frame(cam_id: int):
+    """Proxy latest cached frame from camera server (:8081)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{CAM_SERVER}/latest/{cam_id}")
+            if resp.status_code != 200:
+                return JSONResponse({"error": f"Camera {cam_id} not available"}, status_code=resp.status_code)
+            headers = {}
+            if "x-frame-age-ms" in resp.headers:
+                headers["X-Frame-Age-Ms"] = resp.headers["x-frame-age-ms"]
+            return Response(content=resp.content, media_type="image/jpeg", headers=headers)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=502)
 
@@ -3310,7 +3343,7 @@ async def locate_object(req: LocateRequest):
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(f"http://localhost:8081/snap/{req.camera_id}")
+                resp = await cam_snap(client, req.camera_id)
                 if resp.status_code != 200:
                     return JSONResponse(
                         {"ok": False, "error": "Camera snapshot failed"}, status_code=502
@@ -3520,8 +3553,8 @@ async def pick_detect(req: VisualPickRequest = VisualPickRequest()):
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp0 = await client.get("http://localhost:8081/snap/0")
-            resp1 = await client.get("http://localhost:8081/snap/1")
+            resp0 = await cam_snap(client, 0)
+            resp1 = await cam_snap(client, 1)
         if resp0.status_code != 200 or resp1.status_code != 200:
             return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
 
@@ -3600,8 +3633,8 @@ async def pick_plan(req: VisualPickRequest = VisualPickRequest()):
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp0 = await client.get("http://localhost:8081/snap/0")
-            resp1 = await client.get("http://localhost:8081/snap/1")
+            resp0 = await cam_snap(client, 0)
+            resp1 = await cam_snap(client, 1)
         if resp0.status_code != 200 or resp1.status_code != 200:
             return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
 
@@ -3769,8 +3802,8 @@ async def pick_calibrate_camera_arm():
     try:
         # Get camera frames
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp0 = await client.get("http://localhost:8081/snap/0")
-            resp1 = await client.get("http://localhost:8081/snap/1")
+            resp0 = await cam_snap(client, 0)
+            resp1 = await cam_snap(client, 1)
 
         left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
         right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
@@ -3838,7 +3871,7 @@ async def _grab_camera_frame(camera: int) -> Optional[np.ndarray]:
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(f"http://localhost:8081/snap/{camera}")
+            resp = await cam_snap(client, camera)
         if resp.status_code != 200:
             return None
         return cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
@@ -3989,8 +4022,8 @@ async def claw_predict_update():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp0 = await client.get("http://localhost:8081/snap/0")
-            resp1 = await client.get("http://localhost:8081/snap/1")
+            resp0 = await cam_snap(client, 0)
+            resp1 = await cam_snap(client, 1)
         if resp0.status_code != 200 or resp1.status_code != 200:
             return JSONResponse({"ok": False, "error": "Camera snapshots failed"}, status_code=502)
 
@@ -4284,7 +4317,7 @@ async def ws_ascii(ws: WebSocket):
             # Fetch a JPEG snapshot from the camera server
             try:
                 async with httpx.AsyncClient(timeout=2.0) as client:
-                    resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+                    resp = await cam_snap(client, cam_id)
                     if resp.status_code == 200:
                         jpeg_bytes = resp.content
                     else:
@@ -4386,8 +4419,8 @@ async def ws_realworld3d(ws: WebSocket):
             try:
                 async with httpx.AsyncClient(timeout=2.0) as client:
                     r0, r1 = await asyncio.gather(
-                        client.get("http://localhost:8081/snap/0"),
-                        client.get("http://localhost:8081/snap/1"),
+                        cam_snap(client, 0),
+                        cam_snap(client, 1),
                         return_exceptions=True,
                     )
                     if not isinstance(r0, Exception) and r0.status_code == 200:  # type: ignore[union-attr]
@@ -4560,7 +4593,7 @@ async def arm3d_status():
     for cam_id in [0, 1]:
         try:
             async with httpx.AsyncClient(timeout=1.0) as client:
-                resp = await client.get(f"http://localhost:8081/snap/{cam_id}")
+                resp = await cam_snap(client, cam_id)
                 cam_status[f"cam{cam_id}"] = {"online": resp.status_code == 200}
         except Exception:
             cam_status[f"cam{cam_id}"] = {"online": False}
@@ -4606,8 +4639,8 @@ async def ws_arm3d(ws: WebSocket):
             try:
                 async with httpx.AsyncClient(timeout=0.5) as client:
                     results = await asyncio.gather(
-                        client.get("http://localhost:8081/snap/0"),
-                        client.get("http://localhost:8081/snap/1"),
+                        cam_snap(client, 0),
+                        cam_snap(client, 1),
                         return_exceptions=True,
                     )
 
