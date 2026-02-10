@@ -691,6 +691,62 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           </div>
         </div>
       </details>
+
+      <details style="margin-top:8px;">
+        <summary class="section-title" style="cursor:pointer;user-select:none;">&#9654; Camera Positioning</summary>
+        <div id="camPosPanel" style="margin-top:6px;font-size:10px;">
+          <div style="margin-bottom:6px;display:flex;gap:4px;align-items:center;">
+            <label style="font-weight:600;color:var(--text-dim)">Camera:</label>
+            <select id="camPosSelect" style="flex:1;background:#1a1a2e;color:#ccc;border:1px solid #334;padding:2px 4px;font-family:var(--mono);font-size:10px;">
+              <option value="0">0 — Overhead</option>
+              <option value="1">1 — Arm Cam</option>
+              <option value="2">2 — Side View</option>
+            </select>
+          </div>
+          <div style="font-weight:600;color:var(--text-dim);margin-bottom:4px">Position (meters, Z-up)</div>
+          <div class="sim-joint-row"><span class="sjl">X</span><input type="range" id="camPosX" min="-1.5" max="1.5" step="0.01" value="0"><span class="sjv" id="camPosXVal">0.00</span></div>
+          <div class="sim-joint-row"><span class="sjl">Y</span><input type="range" id="camPosY" min="-1.5" max="1.5" step="0.01" value="0"><span class="sjv" id="camPosYVal">0.00</span></div>
+          <div class="sim-joint-row"><span class="sjl">Z</span><input type="range" id="camPosZ" min="-0.5" max="1.5" step="0.01" value="0"><span class="sjv" id="camPosZVal">0.00</span></div>
+          <div style="font-weight:600;color:var(--text-dim);margin-top:4px;margin-bottom:4px">Rotation (degrees)</div>
+          <div class="sim-joint-row"><span class="sjl">Rx</span><input type="range" id="camRotRx" min="-180" max="180" step="1" value="0"><span class="sjv" id="camRotRxVal">0</span></div>
+          <div class="sim-joint-row"><span class="sjl">Ry</span><input type="range" id="camRotRy" min="-180" max="180" step="1" value="0"><span class="sjv" id="camRotRyVal">0</span></div>
+          <div class="sim-joint-row"><span class="sjl">Rz</span><input type="range" id="camRotRz" min="-180" max="180" step="1" value="0"><span class="sjv" id="camRotRzVal">0</span></div>
+          <div style="font-weight:600;color:var(--text-dim);margin-top:4px;margin-bottom:4px">FOV</div>
+          <div class="sim-joint-row"><span class="sjl">FOV</span><input type="range" id="camPosFov" min="30" max="120" step="1" value="60"><span class="sjv" id="camPosFovVal">60</span></div>
+          <div style="margin-top:4px;font-family:var(--mono);font-size:9px;color:var(--text-dim);line-height:1.6" id="camPosDistInfo">
+            Dist to base: — | Dist to EE: —
+          </div>
+          <div class="sim-btn-row" style="margin-top:6px;">
+            <button class="btn" id="camPosLookAt" title="Auto-orient camera to look at arm">Look At Arm</button>
+            <button class="btn primary" id="camPosSave" title="Save camera config to server">Save</button>
+            <button class="btn" id="camPosReset" title="Reload from server">Reset</button>
+          </div>
+        </div>
+      </details>
+
+      <details style="margin-top:8px;">
+        <summary class="section-title" style="cursor:pointer;user-select:none;">&#9654; Gemini Camera Assessment <span class="beta-pill">BETA</span></summary>
+        <div id="geminiAssessPanel" style="margin-top:6px;font-size:10px;">
+          <div style="color:var(--text-dim);line-height:1.5;margin-bottom:6px;">
+            Captures renders from all 3 cameras in the simulation, sends them to Gemini, and gets an AI assessment of where each camera is relative to the arm.
+          </div>
+          <div class="sim-btn-row">
+            <button class="btn primary" id="geminiAssessBtn" title="Capture all cameras and assess with Gemini">Assess Camera Positions</button>
+          </div>
+          <div id="geminiAssessStatus" style="font-family:var(--mono);font-size:9px;color:var(--text-dim);padding:4px 0;display:none;">
+          </div>
+          <div id="geminiAssessPreviews" style="display:none;margin-top:6px;">
+            <div style="font-weight:600;color:var(--text-dim);margin-bottom:4px">Camera Captures</div>
+            <div style="display:flex;gap:4px;">
+              <div style="flex:1;text-align:center;"><div style="font-size:8px;color:var(--text-dim)">Cam 0</div><img id="geminiPreview0" style="width:100%;border-radius:3px;border:1px solid #334;"></div>
+              <div style="flex:1;text-align:center;"><div style="font-size:8px;color:var(--text-dim)">Cam 1</div><img id="geminiPreview1" style="width:100%;border-radius:3px;border:1px solid #334;"></div>
+              <div style="flex:1;text-align:center;"><div style="font-size:8px;color:var(--text-dim)">Cam 2</div><img id="geminiPreview2" style="width:100%;border-radius:3px;border:1px solid #334;"></div>
+            </div>
+          </div>
+          <div id="geminiAssessResult" style="display:none;margin-top:6px;padding:6px;background:#0d1525;border:1px solid #334;border-radius:4px;max-height:300px;overflow-y:auto;">
+          </div>
+        </div>
+      </details>
     </div>
     <div style="flex:1"></div>
     <div class="sim-execute-bar">
@@ -4563,6 +4619,321 @@ fetch('/api/objects/status').then(r => r.json()).then(data => {
     }
   }
 
+  // ----------------------------------------------------------
+  //  Camera Positioning Controls
+  // ----------------------------------------------------------
+
+  let camPosCurrentId = 0;
+
+  function initCameraPositioning() {
+    const select = document.getElementById('camPosSelect');
+    if (!select) return;
+
+    select.addEventListener('change', () => {
+      camPosCurrentId = parseInt(select.value);
+      camPosLoadCurrent();
+    });
+
+    // Position sliders
+    ['X', 'Y', 'Z'].forEach(axis => {
+      const slider = document.getElementById('camPos' + axis);
+      if (slider) {
+        slider.addEventListener('input', function() {
+          document.getElementById('camPos' + axis + 'Val').textContent = parseFloat(this.value).toFixed(2);
+          camPosApplyLive();
+        });
+      }
+    });
+
+    // Rotation sliders
+    ['Rx', 'Ry', 'Rz'].forEach(axis => {
+      const slider = document.getElementById('camRot' + axis);
+      if (slider) {
+        slider.addEventListener('input', function() {
+          document.getElementById('camRot' + axis + 'Val').textContent = this.value;
+          camPosApplyLive();
+        });
+      }
+    });
+
+    // FOV slider
+    const fovSlider = document.getElementById('camPosFov');
+    if (fovSlider) {
+      fovSlider.addEventListener('input', function() {
+        document.getElementById('camPosFovVal').textContent = this.value;
+        camPosApplyLive();
+      });
+    }
+
+    // Buttons
+    document.getElementById('camPosLookAt').addEventListener('click', () => {
+      if (!sim) return;
+      const newRot = sim.lookCameraAt(camPosCurrentId);
+      if (newRot) {
+        document.getElementById('camRotRx').value = newRot.rx;
+        document.getElementById('camRotRxVal').textContent = Math.round(newRot.rx);
+        document.getElementById('camRotRy').value = newRot.ry;
+        document.getElementById('camRotRyVal').textContent = Math.round(newRot.ry);
+        document.getElementById('camRotRz').value = newRot.rz;
+        document.getElementById('camRotRzVal').textContent = Math.round(newRot.rz);
+        camPosUpdateDistInfo();
+      }
+    });
+
+    document.getElementById('camPosSave').addEventListener('click', camPosSave);
+    document.getElementById('camPosReset').addEventListener('click', camPosLoadFromServer);
+
+    // Load initial camera
+    setTimeout(camPosLoadCurrent, 500);
+  }
+
+  function camPosLoadCurrent() {
+    if (!sim) return;
+    const cfg = sim.getCameraConfig(camPosCurrentId);
+    if (!cfg) return;
+
+    document.getElementById('camPosX').value = cfg.position.x;
+    document.getElementById('camPosXVal').textContent = cfg.position.x.toFixed(2);
+    document.getElementById('camPosY').value = cfg.position.y;
+    document.getElementById('camPosYVal').textContent = cfg.position.y.toFixed(2);
+    document.getElementById('camPosZ').value = cfg.position.z;
+    document.getElementById('camPosZVal').textContent = cfg.position.z.toFixed(2);
+
+    document.getElementById('camRotRx').value = cfg.rotation.rx;
+    document.getElementById('camRotRxVal').textContent = Math.round(cfg.rotation.rx);
+    document.getElementById('camRotRy').value = cfg.rotation.ry;
+    document.getElementById('camRotRyVal').textContent = Math.round(cfg.rotation.ry);
+    document.getElementById('camRotRz').value = cfg.rotation.rz;
+    document.getElementById('camRotRzVal').textContent = Math.round(cfg.rotation.rz);
+
+    document.getElementById('camPosFov').value = cfg.fov;
+    document.getElementById('camPosFovVal').textContent = cfg.fov;
+
+    camPosUpdateDistInfo();
+  }
+
+  function camPosApplyLive() {
+    if (!sim) return;
+    const cfg = {
+      position: {
+        x: parseFloat(document.getElementById('camPosX').value),
+        y: parseFloat(document.getElementById('camPosY').value),
+        z: parseFloat(document.getElementById('camPosZ').value),
+      },
+      rotation: {
+        rx: parseFloat(document.getElementById('camRotRx').value),
+        ry: parseFloat(document.getElementById('camRotRy').value),
+        rz: parseFloat(document.getElementById('camRotRz').value),
+      },
+      fov: parseFloat(document.getElementById('camPosFov').value),
+    };
+    sim.updateSingleCamera(camPosCurrentId, cfg);
+    camPosUpdateDistInfo();
+  }
+
+  function camPosUpdateDistInfo() {
+    if (!sim) return;
+    const distBase = sim.getCameraDistanceToBase(camPosCurrentId);
+    const distEE = sim.getCameraDistanceToEE(camPosCurrentId);
+    const el = document.getElementById('camPosDistInfo');
+    if (el && distBase != null) {
+      el.textContent = `Dist to base: ${distBase.toFixed(3)}m | Dist to EE: ${(distEE || 0).toFixed(3)}m`;
+    }
+  }
+
+  async function camPosSave() {
+    const pos = {
+      x: parseFloat(document.getElementById('camPosX').value),
+      y: parseFloat(document.getElementById('camPosY').value),
+      z: parseFloat(document.getElementById('camPosZ').value),
+    };
+    const rot = {
+      rx: parseFloat(document.getElementById('camRotRx').value),
+      ry: parseFloat(document.getElementById('camRotRy').value),
+      rz: parseFloat(document.getElementById('camRotRz').value),
+    };
+    const fov = parseFloat(document.getElementById('camPosFov').value);
+
+    try {
+      const resp = await fetch('/api/cameras/orientation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          camera_id: camPosCurrentId,
+          position: pos,
+          rotation: rot,
+          fov: fov,
+        }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        if (typeof logLocal === 'function') {
+          logLocal('CAM_POS', `Camera ${camPosCurrentId} position saved`, 'info');
+        }
+      }
+    } catch (e) {
+      console.error('[cam-pos] save failed:', e);
+    }
+  }
+
+  async function camPosLoadFromServer() {
+    try {
+      const resp = await fetch('/api/cameras/orientation');
+      const config = await resp.json();
+      if (sim) {
+        sim.updateCameras(config);
+        camPosLoadCurrent();
+      }
+    } catch (e) {
+      console.error('[cam-pos] load failed:', e);
+    }
+  }
+
+  // ----------------------------------------------------------
+  //  Gemini Camera Assessment (BETA)
+  // ----------------------------------------------------------
+
+  let geminiAssessing = false;
+
+  function initGeminiAssess() {
+    const btn = document.getElementById('geminiAssessBtn');
+    if (btn) {
+      btn.addEventListener('click', runGeminiAssessment);
+    }
+  }
+
+  async function runGeminiAssessment() {
+    if (!sim || geminiAssessing) return;
+    geminiAssessing = true;
+
+    const btn = document.getElementById('geminiAssessBtn');
+    const statusEl = document.getElementById('geminiAssessStatus');
+    const previewsEl = document.getElementById('geminiAssessPreviews');
+    const resultEl = document.getElementById('geminiAssessResult');
+
+    btn.disabled = true;
+    btn.textContent = 'Capturing...';
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Rendering scene from all 3 camera viewpoints...';
+    statusEl.style.color = 'var(--primary)';
+    resultEl.style.display = 'none';
+
+    try {
+      // Step 1: Capture renders from all cameras
+      const views = sim.captureAllCameraViews(640, 480);
+
+      // Show previews
+      previewsEl.style.display = 'block';
+      for (const [id, dataUrl] of Object.entries(views)) {
+        const img = document.getElementById('geminiPreview' + id);
+        if (img && dataUrl) img.src = dataUrl;
+      }
+
+      // Step 2: Get current arm state and camera configs for context
+      const armJoints = sim.simJoints.slice();
+      const camConfigs = sim.getAllCameraConfigs();
+      const eeInfo = sim.getEEInfo();
+
+      statusEl.textContent = 'Sending to Gemini for assessment...';
+      btn.textContent = 'Assessing...';
+
+      // Step 3: Convert data URLs to base64 payloads
+      const images = {};
+      for (const [id, dataUrl] of Object.entries(views)) {
+        if (dataUrl) {
+          // Strip "data:image/jpeg;base64," prefix
+          images[id] = dataUrl.split(',')[1];
+        }
+      }
+
+      // Step 4: Send to backend
+      const resp = await fetch('/api/cameras/gemini-assess', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          images: images,
+          joint_angles: armJoints,
+          ee_position: eeInfo,
+          camera_configs: camConfigs,
+        }),
+      });
+
+      const data = await resp.json();
+
+      if (data.ok) {
+        statusEl.textContent = `Assessment complete (${data.inference_time_ms || 0}ms)`;
+        statusEl.style.color = 'var(--success)';
+
+        // Display result
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = formatGeminiAssessment(data.assessment);
+      } else {
+        statusEl.textContent = 'Error: ' + (data.error || 'Unknown error');
+        statusEl.style.color = 'var(--error)';
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `<div style="color:var(--error)">${data.error || 'Assessment failed'}</div>`;
+      }
+    } catch (e) {
+      statusEl.textContent = 'Error: ' + e.message;
+      statusEl.style.color = 'var(--error)';
+      console.error('[gemini-assess] error:', e);
+    } finally {
+      geminiAssessing = false;
+      btn.disabled = false;
+      btn.textContent = 'Assess Camera Positions';
+    }
+  }
+
+  function formatGeminiAssessment(assessment) {
+    if (!assessment) return '<div style="color:var(--text-dim)">No assessment data</div>';
+
+    let html = '';
+
+    // Overall summary
+    if (assessment.summary) {
+      html += `<div style="font-weight:600;color:var(--primary);margin-bottom:6px;">Summary</div>`;
+      html += `<div style="color:#ccc;line-height:1.5;margin-bottom:8px;">${escapeHtml(assessment.summary)}</div>`;
+    }
+
+    // Per-camera assessments
+    if (assessment.cameras) {
+      for (const [id, cam] of Object.entries(assessment.cameras)) {
+        const color = id === '0' ? '#00ffff' : id === '1' ? '#ff4444' : '#44ff44';
+        html += `<div style="border-left:3px solid ${color};padding-left:6px;margin-bottom:6px;">`;
+        html += `<div style="font-weight:600;color:${color};font-size:10px;">Camera ${id}: ${cam.label || ''}</div>`;
+        if (cam.estimated_position) {
+          html += `<div style="color:#aaa;font-size:9px;">Est. position: ${cam.estimated_position}</div>`;
+        }
+        if (cam.relative_to_arm) {
+          html += `<div style="color:#ccc;font-size:9px;line-height:1.4;">${escapeHtml(cam.relative_to_arm)}</div>`;
+        }
+        if (cam.view_quality) {
+          html += `<div style="color:#8af;font-size:9px;">View quality: ${cam.view_quality}</div>`;
+        }
+        html += `</div>`;
+      }
+    }
+
+    // Recommendations
+    if (assessment.recommendations) {
+      html += `<div style="font-weight:600;color:var(--warning);margin-top:6px;margin-bottom:4px;font-size:10px;">Recommendations</div>`;
+      html += `<div style="color:#ccc;font-size:9px;line-height:1.5;">${escapeHtml(assessment.recommendations)}</div>`;
+    }
+
+    // Raw reasoning fallback
+    if (!assessment.cameras && assessment.raw) {
+      html += `<div style="color:#ccc;line-height:1.5;white-space:pre-wrap;font-size:9px;">${escapeHtml(assessment.raw)}</div>`;
+    }
+
+    return html;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   // Public activate/deactivate
   window.sim_activate = function() {
     initSimulator();
@@ -4572,6 +4943,8 @@ fetch('/api/objects/status').then(r => r.json()).then(data => {
       simFpsLast = performance.now();
       updateSimFps();
       simUpdateFromWS();
+      initCameraPositioning();
+      initGeminiAssess();
       // Check object detector status on activate
       fetch('/api/objects/status').then(r => r.json()).then(data => {
         if (data.available) {
