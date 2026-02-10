@@ -5178,6 +5178,94 @@ async def intrinsics_validate(cam_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Joint Mapping Calibration
+# ---------------------------------------------------------------------------
+
+from src.calibration.joint_mapper import get_joint_mapper
+from src.calibration.joint_mapping_calibrator import JointMappingCalibrator, CalibrationState as JMCalibState
+
+_jm_calibrator: Optional[JointMappingCalibrator] = None
+_jm_task: Optional[asyncio.Task] = None
+
+
+@app.post("/api/calibration/joint-mapping/start")
+async def joint_mapping_start():
+    """Start joint mapping calibration — moves each joint one at a time."""
+    global _jm_calibrator, _jm_task
+    if _jm_task and not _jm_task.done():
+        return JSONResponse({"ok": False, "error": "Joint mapping calibration already running"}, status_code=409)
+    if not (smoother and smoother._arm_enabled):
+        return JSONResponse({"ok": False, "error": "Arm must be enabled"}, status_code=409)
+
+    _jm_calibrator = JointMappingCalibrator()
+
+    def _get_angles():
+        return list(_cached_joint_angles)
+
+    async def _set_joint(joint_id: int, angle: float):
+        if smoother and smoother.running:
+            smoother.set_joint_target(joint_id, angle)
+        elif arm:
+            arm.set_joint(joint_id, angle)
+
+    def _is_enabled():
+        return smoother is not None and smoother._arm_enabled
+
+    async def _run():
+        await _jm_calibrator.run(
+            get_angles_fn=_get_angles,
+            set_joint_fn=_set_joint,
+            is_enabled_fn=_is_enabled,
+            joint_limits=JOINT_LIMITS_DEG,
+        )
+
+    _jm_task = asyncio.create_task(_run())
+    action_log.add("JOINT_MAPPING", "Calibration started", "info")
+    return {"ok": True}
+
+
+@app.get("/api/calibration/joint-mapping/status")
+async def joint_mapping_status():
+    """Get joint mapping calibration progress and results."""
+    if _jm_calibrator is None:
+        return {"state": "idle", "current_joint": -1, "total_joints": 6, "results": [], "error": None}
+    return _jm_calibrator.progress
+
+
+@app.post("/api/calibration/joint-mapping/stop")
+async def joint_mapping_stop():
+    """Abort joint mapping calibration."""
+    if _jm_calibrator:
+        _jm_calibrator.abort()
+        action_log.add("JOINT_MAPPING", "Calibration aborted", "warning")
+        return {"ok": True}
+    return {"ok": False, "error": "Not running"}
+
+
+class JointMappingApplyRequest(BaseModel):
+    mapping: dict  # {"0": 2, "1": 0, ...} — ui_joint_id -> dds_joint_id
+    labels: dict   # {"0": "J0 — base yaw", ...}
+
+
+@app.post("/api/calibration/joint-mapping/apply")
+async def joint_mapping_apply(req: JointMappingApplyRequest):
+    """Save the joint mapping."""
+    mapper = get_joint_mapper()
+    ui_to_dds = {int(k): int(v) for k, v in req.mapping.items()}
+    labels = {int(k): v for k, v in req.labels.items()}
+    mapper.save(ui_to_dds, labels)
+    action_log.add("JOINT_MAPPING", f"Mapping applied: {ui_to_dds}", "info")
+    return {"ok": True, "mapping": mapper.get_mapping_info()}
+
+
+@app.get("/api/calibration/joint-mapping/current")
+async def joint_mapping_current():
+    """Get the current joint mapping."""
+    mapper = get_joint_mapper()
+    return mapper.get_mapping_info()
+
+
+# ---------------------------------------------------------------------------
 # Pick Config API
 # ---------------------------------------------------------------------------
 

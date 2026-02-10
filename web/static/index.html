@@ -953,6 +953,38 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         </div>
         <div class="result-box" id="icalResult" style="margin-top:8px;display:none;"></div>
       </div>
+      <div class="panel-card" style="grid-column: 1 / -1; border-left:3px solid #2196F3;">
+        <h3>🗺️ Joint Mapping Calibration</h3>
+        <p style="font-size:11px;color:#888;margin:4px 0;">Tests each DDS joint index one at a time. Uses camera frame differencing to detect which physical joint actually moved. Identifies the real DDS→physical mapping.</p>
+        <div class="btn-row">
+          <button class="btn primary" id="btnJmStart" onclick="jmStart()">▶ START CALIBRATION</button>
+          <button class="btn danger" onclick="jmStop()">⏹ STOP</button>
+        </div>
+        <div class="status-indicator stopped" id="jmStatus" style="margin-top:8px;">IDLE</div>
+        <div id="jmProgress" style="margin-top:8px;display:none;">
+          <div style="background:#333;border-radius:4px;overflow:hidden;height:20px;">
+            <div id="jmProgressBar" style="background:#2196F3;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;"></div>
+          </div>
+        </div>
+        <table id="jmResultsTable" style="margin-top:8px;display:none;width:100%;font-size:12px;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1px solid #444;">
+              <th style="text-align:left;padding:4px;">DDS Index</th>
+              <th style="text-align:left;padding:4px;">Moved?</th>
+              <th style="text-align:left;padding:4px;">Diff Score</th>
+              <th style="text-align:left;padding:4px;">Region</th>
+              <th style="text-align:left;padding:4px;">Suggested Label</th>
+            </tr>
+          </thead>
+          <tbody id="jmResultsBody"></tbody>
+        </table>
+        <div id="jmApplySection" style="margin-top:8px;display:none;">
+          <h4 style="margin:8px 0 4px;">Edit Mapping (UI Joint → DDS Index)</h4>
+          <div id="jmMappingEditors" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;"></div>
+          <button class="btn primary" onclick="jmApply()" style="margin-top:8px;">✅ APPLY MAPPING</button>
+        </div>
+        <div class="result-box" id="jmApplyResult" style="margin-top:8px;display:none;"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -2186,6 +2218,77 @@ async function icalValidate() {
   } else {
     rb.innerHTML = `🔴 Validation failed: ${r.error}`;
   }
+  rb.style.display = 'block';
+}
+
+// --- Joint Mapping Calibration ---
+let _jmPollTimer = null;
+async function jmStart() {
+  const r = await apiPost('/api/calibration/joint-mapping/start');
+  if (!r.ok) { alert(r.error || 'Failed to start'); return; }
+  document.getElementById('jmStatus').textContent = 'RUNNING...';
+  document.getElementById('jmStatus').className = 'status-indicator running';
+  document.getElementById('jmProgress').style.display = 'block';
+  document.getElementById('jmResultsTable').style.display = 'table';
+  document.getElementById('jmResultsBody').innerHTML = '';
+  document.getElementById('jmApplySection').style.display = 'none';
+  if (_jmPollTimer) clearInterval(_jmPollTimer);
+  _jmPollTimer = setInterval(jmPoll, 1000);
+}
+async function jmStop() {
+  await apiPost('/api/calibration/joint-mapping/stop');
+  if (_jmPollTimer) { clearInterval(_jmPollTimer); _jmPollTimer = null; }
+}
+async function jmPoll() {
+  const st = await apiCall('/api/calibration/joint-mapping/status');
+  const el = document.getElementById('jmStatus');
+  const bar = document.getElementById('jmProgressBar');
+  const pct = st.total_joints > 0 ? Math.round(((st.current_joint + 1) / st.total_joints) * 100) : 0;
+  bar.style.width = pct + '%';
+  bar.textContent = `${st.current_joint + 1}/${st.total_joints}`;
+  el.textContent = st.state.toUpperCase() + (st.current_joint >= 0 ? ` — testing DDS joint ${st.current_joint}` : '');
+  el.className = 'status-indicator ' + (st.state === 'complete' ? 'active' : st.state === 'error' ? 'danger' : st.state === 'running' ? 'running' : 'stopped');
+  // Update results table
+  const tbody = document.getElementById('jmResultsBody');
+  tbody.innerHTML = '';
+  for (const r of st.results || []) {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid #333';
+    tr.innerHTML = `<td style="padding:4px;">angle${r.dds_index}</td>
+      <td style="padding:4px;">${r.skipped ? '⏭ skip' : (r.moved ? '✅ yes' : '❌ no')}</td>
+      <td style="padding:4px;">${r.diff_score.toFixed(0)}</td>
+      <td style="padding:4px;">${r.diff_region}</td>
+      <td style="padding:4px;">${r.suggested_label}${r.skip_reason ? ' (' + r.skip_reason + ')' : ''}</td>`;
+    tbody.appendChild(tr);
+  }
+  if (st.state === 'complete' || st.state === 'error' || st.state === 'aborted') {
+    clearInterval(_jmPollTimer); _jmPollTimer = null;
+    if (st.state === 'complete') jmShowApply(st.results);
+    if (st.error) el.textContent += ` — ${st.error}`;
+  }
+}
+function jmShowApply(results) {
+  const sec = document.getElementById('jmApplySection');
+  sec.style.display = 'block';
+  const editors = document.getElementById('jmMappingEditors');
+  editors.innerHTML = '';
+  for (let ui = 0; ui < 6; ui++) {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:4px;align-items:center;';
+    div.innerHTML = `<label style="width:30px;">J${ui}→</label><select id="jmMap${ui}" style="flex:1;">` +
+      [0,1,2,3,4,5].map(d => `<option value="${d}" ${d===ui?'selected':''}>DDS ${d}${results[d] ? ' ('+results[d].suggested_label+')' : ''}</option>`).join('') + '</select>';
+    editors.appendChild(div);
+  }
+}
+async function jmApply() {
+  const mapping = {}, labels = {};
+  for (let ui = 0; ui < 6; ui++) {
+    mapping[ui] = parseInt(document.getElementById('jmMap' + ui).value);
+    labels[ui] = `J${ui}`;
+  }
+  const r = await apiPost('/api/calibration/joint-mapping/apply', { mapping, labels });
+  const rb = document.getElementById('jmApplyResult');
+  rb.innerHTML = r.ok ? '✅ Mapping saved!' : `❌ ${r.error}`;
   rb.style.display = 'block';
 }
 
