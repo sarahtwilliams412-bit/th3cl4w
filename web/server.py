@@ -864,6 +864,53 @@ async def api_sim_toggle():
         return {"ok": True, "sim_mode": True}
 
 
+@app.post("/api/sim/preview-fk")
+async def api_sim_preview_fk(req: SetAllJointsRequest):
+    """Compute forward kinematics for given joint angles without moving the arm.
+
+    Returns end-effector position and all joint positions for 3D preview.
+    """
+    try:
+        from src.kinematics.kinematics import D1Kinematics
+
+        kin = D1Kinematics()
+        angles_rad = [a * 3.141592653589793 / 180.0 for a in req.angles]
+        # Pad to 7 if needed (6 arm + gripper=0)
+        while len(angles_rad) < 7:
+            angles_rad.append(0.0)
+        T = kin.forward_kinematics(angles_rad)
+        ee_pos = T[:3, 3].tolist()
+        # Also get all joint positions
+        joint_positions = kin.get_joint_positions_3d(angles_rad)
+        return {
+            "ok": True,
+            "ee_position": {"x": ee_pos[0], "y": ee_pos[1], "z": ee_pos[2]},
+            "joint_positions": [
+                {"x": float(p[0]), "y": float(p[1]), "z": float(p[2])}
+                for p in joint_positions
+            ],
+        }
+    except Exception as e:
+        return JSONResponse(
+            {"ok": False, "error": str(e)}, status_code=500
+        )
+
+
+@app.get("/api/sim/joint-limits")
+async def api_sim_joint_limits():
+    """Return joint limits and specs for the simulator UI."""
+    limits = {}
+    for i in range(6):
+        lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
+        limits[str(i)] = {"min": lo, "max": hi}
+    return {
+        "ok": True,
+        "joint_limits": limits,
+        "gripper_range": {"min": GRIPPER_RANGE[0], "max": GRIPPER_RANGE[1]},
+        "sim_mode": _sim_mode,
+    }
+
+
 @app.get("/api/diagnostics/feedback")
 async def api_diagnostics_feedback():
     """Return DDS feedback health and recent samples for debugging."""

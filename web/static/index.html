@@ -258,6 +258,45 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 .collision-alert .dismiss-btn { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: #fff; padding: 2px 12px; border-radius: 3px; cursor: pointer; font-family: var(--mono); font-size: 11px; margin-top: 4px; }
 @keyframes collisionFlash { 0% { opacity: 0; transform: translateY(-20px); } 100% { opacity: 1; transform: translateY(0); } }
 
+/* === Simulator Panel === */
+.sim-layout { display: flex; flex: 1; overflow: hidden; }
+.sim-viewport { flex: 1; position: relative; min-width: 0; background: #0d1525; }
+.sim-viewport canvas { display: block; width: 100%; height: 100%; }
+.sim-sidebar { width: 340px; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; border-left: 1px solid var(--card-border); background: var(--card); }
+.sim-controls { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.sim-mode-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #0d1525; border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+.sim-mode-toggle { position: relative; display: inline-flex; background: #1a2744; border-radius: 4px; border: 1px solid var(--card-border); overflow: hidden; }
+.sim-mode-toggle label { font-family: var(--mono); font-size: 10px; padding: 5px 14px; cursor: pointer; color: var(--text-dim); transition: all 0.15s; text-transform: uppercase; letter-spacing: 1px; user-select: none; }
+.sim-mode-toggle input { display: none; }
+.sim-mode-toggle input:checked + label { background: var(--info); color: #fff; }
+.sim-mode-toggle .mode-sim:checked + label { background: #f59e0b; color: #000; }
+.sim-mode-toggle .mode-phys:checked + label { background: #ef4444; color: #fff; }
+.sim-ee-info { font-family: var(--mono); font-size: 10px; color: var(--text-dim); padding: 6px 8px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; line-height: 1.6; }
+.sim-ee-info .ee-label { color: var(--info); text-transform: uppercase; letter-spacing: 1px; font-size: 9px; }
+.sim-ee-info .ee-val { color: var(--text); }
+.sim-joint-row { display: flex; align-items: center; gap: 4px; margin-bottom: 1px; }
+.sim-joint-row .sjl { font-family: var(--mono); font-size: 10px; width: 22px; color: var(--text-dim); text-align: right; }
+.sim-joint-row input[type="range"] { flex: 1; -webkit-appearance: none; appearance: none; height: 4px; background: #1a2744; border-radius: 2px; outline: none; }
+.sim-joint-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 10px; border-radius: 50%; background: var(--info); cursor: pointer; border: 1px solid #6ab0ff; }
+.sim-joint-row .sjv { font-family: var(--mono); font-size: 10px; width: 50px; text-align: right; color: var(--text); }
+.sim-btn-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.sim-btn-row .btn { font-size: 10px; padding: 4px 8px; }
+.sim-camera-presets { display: flex; gap: 3px; }
+.sim-camera-presets .btn { font-size: 9px; padding: 3px 6px; }
+.sim-viz-toggles { display: flex; gap: 3px; flex-wrap: wrap; }
+.sim-viz-toggles .btn { font-size: 9px; padding: 3px 6px; }
+.sim-viz-toggles .btn.on { background: #0a3d20; border-color: var(--success); color: var(--success); }
+.sim-overlay-info { position: absolute; top: 8px; left: 8px; font-family: var(--mono); font-size: 10px; color: rgba(224,224,224,0.6); pointer-events: none; line-height: 1.5; }
+.sim-overlay-mode { position: absolute; top: 8px; right: 8px; font-family: var(--mono); font-size: 11px; font-weight: bold; padding: 3px 10px; border-radius: 4px; pointer-events: none; }
+.sim-overlay-mode.simulate { background: rgba(245,158,11,0.85); color: #000; }
+.sim-overlay-mode.physical { background: rgba(239,68,68,0.85); color: #fff; }
+.sim-execute-bar { padding: 8px; border-top: 1px solid var(--card-border); background: #0d1525; }
+.sim-execute-bar .btn-execute { width: 100%; padding: 10px; font-size: 12px; font-weight: 700; font-family: var(--mono); letter-spacing: 2px; text-transform: uppercase; border-radius: 5px; cursor: pointer; transition: all 0.15s; border: 2px solid; }
+.sim-execute-bar .btn-execute.sim-mode { background: rgba(245,158,11,0.15); border-color: #f59e0b; color: #f59e0b; }
+.sim-execute-bar .btn-execute.sim-mode:hover { background: rgba(245,158,11,0.25); }
+.sim-execute-bar .btn-execute.phys-mode { background: rgba(239,68,68,0.15); border-color: #ef4444; color: #ef4444; }
+.sim-execute-bar .btn-execute.phys-mode:hover { background: rgba(239,68,68,0.3); box-shadow: 0 0 15px rgba(239,68,68,0.3); }
+
 /* === Responsive === */
 @media (max-width: 900px) {
   .sidebar { position: fixed; left: 0; top: var(--statusbar-h); bottom: 0; z-index: 200; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
@@ -310,6 +349,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <div class="nav-group-title" onclick="toggleNavGroup(this)"><span class="arrow">▶</span> <span>🎮 Control</span></div>
     <div class="nav-items">
       <div class="nav-item active" data-panel="control" onclick="showPanel(this)"><span class="nav-icon">🦾</span> <span class="nav-label">Arm Control</span></div>
+      <div class="nav-item" data-panel="simulator" onclick="showPanel(this)"><span class="nav-icon">🔮</span> <span class="nav-label">3D Simulator</span></div>
       <div class="nav-item" data-panel="cameras" onclick="showPanel(this)"><span class="nav-icon">📷</span> <span class="nav-label">Cameras</span></div>
     </div>
   </div>
@@ -517,6 +557,81 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="log-scroll" id="logScroll"></div>
 </div>
 </div><!-- /panel-control -->
+
+<!-- ============================================================ -->
+<!-- PANEL: 3D Simulator                                           -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-simulator">
+<div class="sim-layout">
+  <div class="sim-viewport" id="simViewport">
+    <div class="sim-overlay-info" id="simOverlayInfo">D1 Arm Simulator</div>
+    <div class="sim-overlay-mode simulate" id="simOverlayMode">SIMULATE</div>
+  </div>
+  <div class="sim-sidebar">
+    <div class="sim-mode-bar">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">Mode:</span>
+      <div class="sim-mode-toggle">
+        <input type="radio" name="simMode" id="simModeSim" class="mode-sim" value="simulate" checked>
+        <label for="simModeSim">Simulate</label>
+        <input type="radio" name="simMode" id="simModePhys" class="mode-phys" value="physical">
+        <label for="simModePhys">Physical</label>
+      </div>
+      <span style="flex:1"></span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim)" id="simFpsDisplay">-- fps</span>
+    </div>
+    <div class="sim-controls">
+      <div class="section-title">Sim Joint Control</div>
+      <div id="simJointSliders"></div>
+
+      <div style="margin-top:2px">
+        <div class="section-title">Gripper</div>
+        <div class="sim-joint-row">
+          <span class="sjl">G</span>
+          <input type="range" id="simGripperSlider" min="0" max="65" step="0.5" value="0">
+          <span class="sjv" id="simGripperValue">0.0</span>
+        </div>
+      </div>
+
+      <div class="section-title">End Effector</div>
+      <div class="sim-ee-info" id="simEEInfo">
+        <span class="ee-label">Position:</span> <span class="ee-val" id="simEEPos">x:0 y:0 z:0</span><br>
+        <span class="ee-label">Reach:</span> <span class="ee-val" id="simEEReach">0.000 m</span>
+      </div>
+
+      <div class="section-title">Quick Actions</div>
+      <div class="sim-btn-row">
+        <button class="btn" id="simBtnHome" title="Reset to home position">Home</button>
+        <button class="btn" id="simBtnSync" title="Sync from live arm state">Sync Live</button>
+        <button class="btn" id="simBtnClearTrail" title="Clear end-effector trail">Clear Trail</button>
+      </div>
+
+      <div class="section-title">Camera View</div>
+      <div class="sim-camera-presets">
+        <button class="btn" onclick="window._sim && window._sim.setCameraPreset('front')">Front</button>
+        <button class="btn" onclick="window._sim && window._sim.setCameraPreset('side')">Side</button>
+        <button class="btn" onclick="window._sim && window._sim.setCameraPreset('top')">Top</button>
+        <button class="btn" onclick="window._sim && window._sim.setCameraPreset('iso')">Iso</button>
+        <button class="btn" onclick="window._sim && window._sim.setCameraPreset('close')">Close</button>
+      </div>
+
+      <div class="section-title">Display</div>
+      <div class="sim-viz-toggles">
+        <button class="btn on" id="simTogGrid" title="Toggle grid">Grid</button>
+        <button class="btn on" id="simTogAxes" title="Toggle axes">Axes</button>
+        <button class="btn on" id="simTogEnv" title="Toggle workspace envelope">Envelope</button>
+        <button class="btn on" id="simTogGhost" title="Toggle ghost (live) arm">Ghost</button>
+        <button class="btn on" id="simTogTrail" title="Toggle EE trail">Trail</button>
+      </div>
+    </div>
+    <div style="flex:1"></div>
+    <div class="sim-execute-bar">
+      <button class="btn-execute sim-mode" id="simBtnExecute">
+        Send to Arm
+      </button>
+    </div>
+  </div>
+</div>
+</div><!-- /panel-simulator -->
 
 <!-- ============================================================ -->
 <!-- PANEL: Cameras (dedicated full-page camera view)              -->
@@ -1067,6 +1182,7 @@ function showPanel(navItem) {
   if (prevPanel === 'ascii' && typeof asciiDisconnect === 'function') asciiDisconnect();
   if (prevPanel === 'factory' && typeof fw_deactivate === 'function') fw_deactivate();
   if (prevPanel === 'realworld' && typeof rw_deactivate === 'function') rw_deactivate();
+  if (prevPanel === 'simulator' && typeof sim_deactivate === 'function') sim_deactivate();
 
   // Update nav
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -1084,6 +1200,7 @@ function showPanel(navItem) {
     if (panelId === 'ascii' && typeof asciiConnect === 'function') asciiConnect();
     if (panelId === 'factory' && typeof fw_activate === 'function') fw_activate();
     if (panelId === 'realworld' && typeof rw_activate === 'function') rw_activate();
+    if (panelId === 'simulator' && typeof sim_activate === 'function') sim_activate();
     if (panelId === 'cameras') refreshCameraPanel();
     if (panelId === 'debug' && debugOn) pollDebug();
   }, 100);
@@ -1399,6 +1516,8 @@ function connectWS() {
       armState = data; lastStateTs = Date.now(); wsUpdateCount++;
       if (jointsDiff || otherChanged || !armSynced) vizDirty = true;
       if (!armSynced) { armSynced = true; logLocal('SYNC', 'First arm state received', 'info'); }
+      // Feed live state to 3D simulator ghost arm
+      if (typeof window._simWsHook === 'function') window._simWsHook(data);
     } catch(err) {}
   };
 }
@@ -2011,5 +2130,241 @@ function dismissCollision() { document.getElementById('collisionAlert').classLis
 <script defer src="factory3d.js"></script>
 <script defer src="realworld3d.js"></script>
 <script defer src="js/arm3d-overlay.js"></script>
+<script src="js/simulator3d.js"></script>
+<script>
+// ============================================================
+//  3D Simulator Integration
+// ============================================================
+(function() {
+  'use strict';
+
+  let sim = null;
+  let simInitialized = false;
+  let simFpsFrames = 0;
+  let simFpsLast = performance.now();
+
+  function initSimulator() {
+    if (simInitialized) return;
+    const container = document.getElementById('simViewport');
+    if (!container || typeof D1ArmSimulator === 'undefined') return;
+
+    sim = new D1ArmSimulator(container);
+    window._sim = sim;
+    simInitialized = true;
+
+    // Build joint sliders
+    const sliderContainer = document.getElementById('simJointSliders');
+    const names = ['J0', 'J1', 'J2', 'J3', 'J4', 'J5'];
+    for (let i = 0; i < 6; i++) {
+      const [lo, hi] = SIM_JOINT_LIMITS[i];
+      const row = document.createElement('div');
+      row.className = 'sim-joint-row';
+      row.innerHTML = `<span class="sjl">${names[i]}</span>` +
+        `<input type="range" id="simSlider${i}" min="${lo}" max="${hi}" step="0.5" value="0">` +
+        `<span class="sjv" id="simVal${i}">0.0</span>`;
+      sliderContainer.appendChild(row);
+
+      const slider = row.querySelector('input');
+      slider.addEventListener('input', function() {
+        const v = parseFloat(this.value);
+        sim.setSimJoint(i, v);
+        document.getElementById('simVal' + i).textContent = v.toFixed(1);
+        updateSimEEInfo();
+      });
+    }
+
+    // Gripper slider
+    document.getElementById('simGripperSlider').addEventListener('input', function() {
+      const v = parseFloat(this.value);
+      sim.setSimGripper(v);
+      document.getElementById('simGripperValue').textContent = v.toFixed(1);
+    });
+
+    // Joints changed callback — update sliders when programmatic change
+    sim.onJointsChanged = function(joints, gripper) {
+      for (let i = 0; i < 6; i++) {
+        const sl = document.getElementById('simSlider' + i);
+        const vl = document.getElementById('simVal' + i);
+        if (sl) sl.value = joints[i];
+        if (vl) vl.textContent = joints[i].toFixed(1);
+      }
+      const gs = document.getElementById('simGripperSlider');
+      const gv = document.getElementById('simGripperValue');
+      if (gs) gs.value = gripper;
+      if (gv) gv.textContent = gripper.toFixed(1);
+      updateSimEEInfo();
+    };
+
+    // Mode toggle
+    document.querySelectorAll('input[name="simMode"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        sim.mode = this.value;
+        updateSimModeUI();
+      });
+    });
+
+    // Quick actions
+    document.getElementById('simBtnHome').addEventListener('click', () => {
+      sim.resetToHome();
+    });
+    document.getElementById('simBtnSync').addEventListener('click', () => {
+      // Sync from the live arm state coming through WebSocket
+      if (typeof armState !== 'undefined' && armState.joints) {
+        sim.setLiveState(armState.joints, armState.gripper || 0);
+        sim.syncFromLive();
+      }
+    });
+    document.getElementById('simBtnClearTrail').addEventListener('click', () => {
+      sim.clearTrail();
+    });
+
+    // Display toggles
+    setupVizToggle('simTogGrid', (on) => sim.toggleGrid(on));
+    setupVizToggle('simTogAxes', (on) => sim.toggleAxes(on));
+    setupVizToggle('simTogEnv', (on) => sim.toggleEnvelope(on));
+    setupVizToggle('simTogGhost', (on) => sim.toggleGhost(on));
+    setupVizToggle('simTogTrail', (on) => sim.toggleTrail(on));
+
+    // Execute button
+    document.getElementById('simBtnExecute').addEventListener('click', executeSimPose);
+
+    updateSimModeUI();
+  }
+
+  function setupVizToggle(id, callback) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      btn.classList.toggle('on');
+      callback(btn.classList.contains('on'));
+    });
+  }
+
+  function updateSimModeUI() {
+    if (!sim) return;
+    const overlay = document.getElementById('simOverlayMode');
+    const executeBtn = document.getElementById('simBtnExecute');
+    if (sim.mode === 'physical') {
+      overlay.textContent = 'PHYSICAL';
+      overlay.className = 'sim-overlay-mode physical';
+      executeBtn.className = 'btn-execute phys-mode';
+      executeBtn.textContent = 'EXECUTE ON ARM';
+    } else {
+      overlay.textContent = 'SIMULATE';
+      overlay.className = 'sim-overlay-mode simulate';
+      executeBtn.className = 'btn-execute sim-mode';
+      executeBtn.textContent = 'Send to Arm';
+    }
+  }
+
+  function updateSimEEInfo() {
+    if (!sim) return;
+    const info = sim.getEEInfo();
+    const posEl = document.getElementById('simEEPos');
+    const reachEl = document.getElementById('simEEReach');
+    if (posEl) posEl.textContent = `x:${info.x}  y:${info.y}  z:${info.z}`;
+    if (reachEl) reachEl.textContent = info.reach + ' m';
+  }
+
+  async function executeSimPose() {
+    if (!sim) return;
+    const joints = sim.simJoints.slice();
+    const gripper = sim.simGripper;
+
+    if (sim.mode === 'physical') {
+      // Confirm before sending to real hardware
+      if (!confirm('Send simulated pose to physical arm?\n\nJoints: [' +
+        joints.map(v => v.toFixed(1)).join(', ') + ']\nGripper: ' + gripper.toFixed(1) + ' mm')) {
+        return;
+      }
+    }
+
+    try {
+      // Send joints to arm via API
+      const resp = await fetch('/api/command/set-all-joints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ angles: joints }),
+      });
+      const data = await resp.json();
+      if (!data.ok) {
+        console.warn('[sim] set-all-joints failed:', data.error || data);
+      }
+
+      // Send gripper
+      const gResp = await fetch('/api/command/set-gripper', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ position: gripper }),
+      });
+      await gResp.json();
+
+      // Log
+      if (typeof logLocal === 'function') {
+        logLocal('SIM_EXEC', `Joints=[${joints.map(v=>v.toFixed(1)).join(',')}] G=${gripper.toFixed(1)}`, 'info');
+      }
+    } catch (e) {
+      console.error('[sim] execute error:', e);
+      if (typeof logLocal === 'function') {
+        logLocal('SIM_EXEC', 'Failed: ' + e.message, 'error');
+      }
+    }
+  }
+
+  // FPS counter
+  function updateSimFps() {
+    if (!sim || !sim.active) return;
+    simFpsFrames++;
+    const now = performance.now();
+    if (now - simFpsLast >= 1000) {
+      const fps = Math.round(simFpsFrames * 1000 / (now - simFpsLast));
+      const el = document.getElementById('simFpsDisplay');
+      if (el) el.textContent = fps + ' fps';
+      simFpsFrames = 0;
+      simFpsLast = now;
+    }
+    requestAnimationFrame(updateSimFps);
+  }
+
+  // Feed live arm state to ghost on each WS update
+  function simUpdateFromWS() {
+    if (!sim || !sim.active) return;
+    if (typeof armState !== 'undefined' && armState.joints) {
+      sim.setLiveState(armState.joints, armState.gripper || 0);
+    }
+    updateSimEEInfo();
+
+    // Update overlay info
+    const overlay = document.getElementById('simOverlayInfo');
+    if (overlay && armState) {
+      const mode = armState.sim_mode ? 'SIM' : 'LIVE';
+      const conn = armState.connected ? 'Connected' : 'Disconnected';
+      overlay.textContent = `D1 Arm Simulator | Server: ${mode} | ${conn}`;
+    }
+  }
+
+  // Public activate/deactivate
+  window.sim_activate = function() {
+    initSimulator();
+    if (sim) {
+      sim.activate();
+      simFpsFrames = 0;
+      simFpsLast = performance.now();
+      updateSimFps();
+      simUpdateFromWS();
+    }
+  };
+
+  window.sim_deactivate = function() {
+    if (sim) sim.deactivate();
+  };
+
+  // Hook into WebSocket state updates
+  const _origOnWsMessage = window._simWsHook;
+  window._simWsHook = function(state) {
+    if (sim && sim.active) simUpdateFromWS();
+  };
+})();
+</script>
 </body>
 </html>
