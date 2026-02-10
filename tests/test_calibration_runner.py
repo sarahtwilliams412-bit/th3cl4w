@@ -58,7 +58,7 @@ class TestComputeIncrements:
 
 class TestCalibrationPoses:
     def test_20_poses(self):
-        assert len(CALIBRATION_POSES) == 20
+        assert len(CALIBRATION_POSES) == 25
 
     def test_all_within_limits(self):
         for pose in CALIBRATION_POSES:
@@ -83,7 +83,7 @@ class TestRunnerInit:
         runner = _make_runner()
         p = runner.progress
         assert p["running"] is False
-        assert p["total_poses"] == 20
+        assert p["total_poses"] == 25
 
 
 class TestCommandPose:

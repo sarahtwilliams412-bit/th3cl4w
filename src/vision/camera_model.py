@@ -41,18 +41,28 @@ def load_intrinsics(camera_id: int) -> tuple[Optional[np.ndarray], Optional[np.n
         return None, None
     try:
         data = json.loads(intrinsics_path.read_text())
-        # Use camera_index to find the right key
-        index = data.get("camera_index", {})
-        key = index.get(str(camera_id))
-        if key is None:
-            # Fallback: try cam{id}_*
+        # Try multiple formats:
+        # 1. "cameras" wrapper: {"cameras": {"cam0": {...}, ...}}
+        # 2. camera_index map: {"camera_index": {"0": "cam0_overhead"}, "cam0_overhead": {...}}
+        # 3. Direct top-level: {"cam0_overhead": {...}}
+        cam_data = None
+        cameras = data.get("cameras", {})
+        if cameras:
+            key = f"cam{camera_id}"
+            if key in cameras:
+                cam_data = cameras[key]
+        if cam_data is None:
+            index = data.get("camera_index", {})
+            key = index.get(str(camera_id))
+            if key and key in data:
+                cam_data = data[key]
+        if cam_data is None:
             for k in data:
                 if k.startswith(f"cam{camera_id}_"):
-                    key = k
+                    cam_data = data[k]
                     break
-        if key is None or key not in data:
+        if cam_data is None:
             return None, None
-        cam_data = data[key]
         cm = cam_data["camera_matrix"]
         K = np.array([
             [cm["fx"], 0.0, cm["cx"]],
