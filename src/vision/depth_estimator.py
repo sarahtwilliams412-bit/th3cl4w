@@ -54,7 +54,9 @@ def _load_model():
     except Exception as e:
         logger.warning("MiDaS unavailable: %s", e)
 
-    logger.error("No depth estimation model available. Install: pip install transformers torch torchvision")
+    logger.error(
+        "No depth estimation model available. Install: pip install transformers torch torchvision"
+    )
     return False
 
 
@@ -92,6 +94,7 @@ def estimate_depth(frame_bgr: np.ndarray) -> Optional[np.ndarray]:
 
     if _backend == "depth_anything":
         from PIL import Image
+
         pil_img = Image.fromarray(frame_rgb)
         inputs = _processor(images=pil_img, return_tensors="pt")
         with torch.no_grad():
@@ -99,12 +102,17 @@ def estimate_depth(frame_bgr: np.ndarray) -> Optional[np.ndarray]:
             predicted_depth = outputs.predicted_depth
 
         # Interpolate to original size
-        depth = torch.nn.functional.interpolate(
-            predicted_depth.unsqueeze(1),
-            size=(h, w),
-            mode="bicubic",
-            align_corners=False,
-        ).squeeze().cpu().numpy()
+        depth = (
+            torch.nn.functional.interpolate(
+                predicted_depth.unsqueeze(1),
+                size=(h, w),
+                mode="bicubic",
+                align_corners=False,
+            )
+            .squeeze()
+            .cpu()
+            .numpy()
+        )
 
     elif _backend == "midas":
         input_batch = _processor(frame_rgb)
@@ -116,12 +124,17 @@ def estimate_depth(frame_bgr: np.ndarray) -> Optional[np.ndarray]:
             input_batch = input_batch.unsqueeze(0)
         with torch.no_grad():
             prediction = _model(input_batch)
-        depth = torch.nn.functional.interpolate(
-            prediction.unsqueeze(1),
-            size=(h, w),
-            mode="bicubic",
-            align_corners=False,
-        ).squeeze().cpu().numpy()
+        depth = (
+            torch.nn.functional.interpolate(
+                prediction.unsqueeze(1),
+                size=(h, w),
+                mode="bicubic",
+                align_corners=False,
+            )
+            .squeeze()
+            .cpu()
+            .numpy()
+        )
     else:
         return None
 

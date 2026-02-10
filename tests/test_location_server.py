@@ -23,7 +23,6 @@ from src.location.world_model import (
 )
 from src.location.detector import UnifiedDetector, DetectionResult
 
-
 # ============================================================
 # Reachability tests
 # ============================================================
@@ -230,17 +229,20 @@ class TestDetector:
 class TestTrackerPositionConversion:
     def test_overhead_center_maps_to_origin(self):
         from src.location.tracker import _pixel_to_position_overhead
+
         pos = _pixel_to_position_overhead(960, 540, 1920, 1080)
         assert abs(pos[0]) < 1.0
         assert abs(pos[1]) < 1.0
 
     def test_overhead_offset(self):
         from src.location.tracker import _pixel_to_position_overhead
+
         pos = _pixel_to_position_overhead(1920, 540, 1920, 1080)
         assert pos[0] > 0  # right side = positive X
 
     def test_side_bottom_maps_to_ground(self):
         from src.location.tracker import _pixel_to_position_side
+
         pos = _pixel_to_position_side(960, 1080, 1920, 1080)
         assert abs(pos[2]) < 1.0  # bottom pixel = ground level
 

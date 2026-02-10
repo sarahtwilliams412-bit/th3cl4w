@@ -1,0 +1,6 @@
+[Unit]
+Description=th3cl4w All Services
+Wants=th3cl4w-main.service th3cl4w-camera.service th3cl4w-location.service th3cl4w-map.service th3cl4w-ascii.service
+
+[Install]
+WantedBy=default.target

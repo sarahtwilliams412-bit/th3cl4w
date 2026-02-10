@@ -188,9 +188,7 @@ class HandEyeCalibrator:
         spreads = angles.max(axis=0) - angles.min(axis=0)
         return float(spreads[0]), float(spreads[1]), float(spreads[2])
 
-    def solve(
-        self, method: int = HAND_EYE_METHODS[DEFAULT_METHOD]
-    ) -> Optional[np.ndarray]:
+    def solve(self, method: int = HAND_EYE_METHODS[DEFAULT_METHOD]) -> Optional[np.ndarray]:
         """Solve for T_ee_cam using a single OpenCV hand-eye method.
 
         Args:
@@ -240,15 +238,13 @@ class HandEyeCalibrator:
         det, orth_err, is_valid = _validate_rotation(R_cam2ee)
         if not is_valid:
             logger.warning(
-                "HandEye: rotation matrix failed sanity check "
-                "(det=%.4f, orth_err=%.4f)",
+                "HandEye: rotation matrix failed sanity check " "(det=%.4f, orth_err=%.4f)",
                 det,
                 orth_err,
             )
 
         logger.info(
-            "HandEye solved: T_ee_cam t=(%.4f, %.4f, %.4f)m, "
-            "det(R)=%.6f, orth_err=%.6f",
+            "HandEye solved: T_ee_cam t=(%.4f, %.4f, %.4f)m, " "det(R)=%.6f, orth_err=%.6f",
             T_ee_cam[0, 3],
             T_ee_cam[1, 3],
             T_ee_cam[2, 3],
@@ -331,13 +327,9 @@ class HandEyeCalibrator:
         # Compute cross-solver consistency
         if len(valid_translations) >= 2:
             t_arr = np.array(valid_translations)
-            result.translation_spread_mm = (
-                float(np.max(np.ptp(t_arr, axis=0))) * 1000.0
-            )
+            result.translation_spread_mm = float(np.max(np.ptp(t_arr, axis=0))) * 1000.0
             r_arr = np.array(valid_rotations)
-            result.rotation_spread_deg = (
-                float(np.max(np.ptp(r_arr, axis=0))) * 180.0 / np.pi
-            )
+            result.rotation_spread_deg = float(np.max(np.ptp(r_arr, axis=0))) * 180.0 / np.pi
             logger.info(
                 "Cross-solver spread: translation=%.2fmm, rotation=%.2fdeg",
                 result.translation_spread_mm,
@@ -376,9 +368,7 @@ class HandEyeCalibrator:
 
         return result
 
-    def solve_and_save(
-        self, method: str = DEFAULT_METHOD
-    ) -> Optional[np.ndarray]:
+    def solve_and_save(self, method: str = DEFAULT_METHOD) -> Optional[np.ndarray]:
         """Solve using all methods, save the best result."""
         result = self.solve_all_methods()
         if result.best_transform is None:

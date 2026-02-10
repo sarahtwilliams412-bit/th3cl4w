@@ -250,17 +250,13 @@ class TestSmoothCommandPipeline:
         assert pipeline.is_initialized
 
     def test_sensor_filter(self):
-        pipeline = SmoothCommandPipeline(
-            n_joints=2, enable_sensor_filter=True, dt=0.01
-        )
+        pipeline = SmoothCommandPipeline(n_joints=2, enable_sensor_filter=True, dt=0.01)
         pipeline.reset(np.array([0.0, 0.0]))
 
         result = pipeline.filter_sensor(np.array([1.0, 2.0]))
         assert result.shape == (2,)
 
     def test_no_sensor_filter(self):
-        pipeline = SmoothCommandPipeline(
-            n_joints=2, enable_sensor_filter=False, dt=0.01
-        )
+        pipeline = SmoothCommandPipeline(n_joints=2, enable_sensor_filter=False, dt=0.01)
         result = pipeline.filter_sensor(np.array([1.0, 2.0]))
         np.testing.assert_allclose(result, [1.0, 2.0])

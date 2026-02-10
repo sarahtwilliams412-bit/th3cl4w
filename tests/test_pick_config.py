@@ -1,4 +1,5 @@
 """Tests for pick_config module."""
+
 import json
 import copy
 import pytest
@@ -9,11 +10,13 @@ from unittest.mock import patch
 def _fresh_config(tmp_path):
     """Create a fresh PickConfig pointing at tmp_path."""
     import src.config.pick_config as mod
+
     # Reset singleton
     mod.PickConfig._instance = None
     mod._CONFIG_DIR = tmp_path
     mod._CONFIG_FILE = tmp_path / "pick_config.json"
     from src.config.pick_config import get_pick_config
+
     return get_pick_config()
 
 
@@ -72,9 +75,7 @@ def test_get_all(tmp_path):
 
 def test_load_from_existing_file(tmp_path):
     # Write a partial config
-    (tmp_path / "pick_config.json").write_text(json.dumps({
-        "reach": {"max_mm": 123.0}
-    }))
+    (tmp_path / "pick_config.json").write_text(json.dumps({"reach": {"max_mm": 123.0}}))
     cfg = _fresh_config(tmp_path)
     assert cfg.get("reach", "max_mm") == 123.0
     # Defaults for unspecified values preserved

@@ -101,7 +101,8 @@ class OverheadCalibrator:
 
         logger.info(
             "Overhead calibration complete: %d points, reprojection error %.2f mm",
-            len(pixel_points), reproj_err,
+            len(pixel_points),
+            reproj_err,
         )
 
         return {

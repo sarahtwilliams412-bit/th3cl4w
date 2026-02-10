@@ -244,9 +244,7 @@ class StiffnessScheduler:
         self._target_damping = _DAMPING_PROFILES[mode].copy()
         self._transition_progress = 0.0
 
-    def set_target_params(
-        self, stiffness: np.ndarray, damping: np.ndarray
-    ) -> None:
+    def set_target_params(self, stiffness: np.ndarray, damping: np.ndarray) -> None:
         """Start transition to custom parameters."""
         self._target_stiffness = np.asarray(stiffness, dtype=np.float64)
         self._target_damping = np.asarray(damping, dtype=np.float64)
@@ -265,12 +263,8 @@ class StiffnessScheduler:
             start_k = self._current_stiffness
             start_d = self._current_damping
 
-            self._current_stiffness = (
-                start_k + (self._target_stiffness - start_k) * s_smooth
-            )
-            self._current_damping = (
-                start_d + (self._target_damping - start_d) * s_smooth
-            )
+            self._current_stiffness = start_k + (self._target_stiffness - start_k) * s_smooth
+            self._current_damping = start_d + (self._target_damping - start_d) * s_smooth
 
             if self._transition_progress >= 1.0:
                 self._current_stiffness = self._target_stiffness.copy()

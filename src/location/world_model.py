@@ -35,8 +35,8 @@ class TrackedObject:
 
     id: str
     label: str
-    position_mm: np.ndarray          # (3,) XYZ relative to arm base
-    dimensions_mm: np.ndarray         # (3,) width, height, depth
+    position_mm: np.ndarray  # (3,) XYZ relative to arm base
+    dimensions_mm: np.ndarray  # (3,) width, height, depth
     confidence: float
     category: ObjectCategory
     reach_status: ReachStatus
@@ -151,7 +151,9 @@ class LocationWorldModel:
             if match_id:
                 obj = self._objects[match_id]
                 # Smooth position
-                obj.position_mm = obj.position_mm * (1 - POSITION_ALPHA) + position_mm * POSITION_ALPHA
+                obj.position_mm = (
+                    obj.position_mm * (1 - POSITION_ALPHA) + position_mm * POSITION_ALPHA
+                )
                 obj.dimensions_mm = dimensions_mm
                 obj.confidence = max(obj.confidence, confidence)  # keep best confidence
                 obj.reach_status = reach_status
@@ -256,9 +258,9 @@ class LocationWorldModel:
     def get_reachable(self) -> list[TrackedObject]:
         with self._lock:
             return [
-                o for o in self._objects.values()
-                if o.reach_status in (ReachStatus.REACHABLE, ReachStatus.MARGINAL)
-                and not o.stale
+                o
+                for o in self._objects.values()
+                if o.reach_status in (ReachStatus.REACHABLE, ReachStatus.MARGINAL) and not o.stale
             ]
 
     def get_object(self, obj_id: str) -> Optional[TrackedObject]:

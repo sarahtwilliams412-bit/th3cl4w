@@ -71,6 +71,7 @@ class TestDetectObject:
     def test_detection_speed(self):
         """Detection should complete in <30ms."""
         import time
+
         frame = _make_red_circle_frame(w=1920, h=1080, cx=960, cy=540, radius=80)
         t0 = time.monotonic()
         for _ in range(10):

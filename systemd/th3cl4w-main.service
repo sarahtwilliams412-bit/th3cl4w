@@ -1,0 +1,16 @@
+[Unit]
+Description=th3cl4w Main Web Server (port 8080)
+PartOf=th3cl4w.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/sarah/.openclaw/workspace/th3cl4w
+EnvironmentFile=/home/sarah/.openclaw/workspace/th3cl4w/.env
+ExecStart=/home/linuxbrew/.linuxbrew/bin/python3.12 web/server.py --interface eno1
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=th3cl4w.target

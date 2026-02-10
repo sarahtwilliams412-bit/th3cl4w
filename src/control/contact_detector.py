@@ -20,10 +20,12 @@ logger = logging.getLogger(__name__)
 
 ARM_API = "http://localhost:8080"
 
+
 # Gripper physical range (from config)
 def _gripper_range():
     cfg = _get_pick_config()
     return cfg.get("gripper", "min_mm"), cfg.get("gripper", "max_mm")
+
 
 GRIPPER_MIN_MM = 0.0
 GRIPPER_MAX_MM = 65.0

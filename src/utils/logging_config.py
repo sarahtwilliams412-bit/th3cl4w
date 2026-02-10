@@ -9,7 +9,6 @@ import logging
 import sys
 from logging.handlers import RotatingFileHandler
 
-
 DEFAULT_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
 # Log rotation defaults

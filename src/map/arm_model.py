@@ -58,11 +58,13 @@ class ArmModel:
         links = []
         for i in range(len(positions) - 1):
             radius = LINK_RADII[i] if i < len(LINK_RADII) else 0.015
-            links.append({
-                "start": positions[i].tolist(),
-                "end": positions[i + 1].tolist(),
-                "radius": radius,
-            })
+            links.append(
+                {
+                    "start": positions[i].tolist(),
+                    "end": positions[i + 1].tolist(),
+                    "radius": radius,
+                }
+            )
 
         # End-effector pose
         ee_pose = self._kin.forward_kinematics(angles_rad)
@@ -75,9 +77,7 @@ class ArmModel:
             joint_angles_deg=angles,
         )
 
-    def compute_reach_envelope(
-        self, n_samples: int = 5000, radius_m: float = 0.55
-    ) -> dict:
+    def compute_reach_envelope(self, n_samples: int = 5000, radius_m: float = 0.55) -> dict:
         """Pre-compute a reach envelope mesh (hemisphere of reachable points).
 
         Returns dict with 'vertices' and 'faces' for Three.js.

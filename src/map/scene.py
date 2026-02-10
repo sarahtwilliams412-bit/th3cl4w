@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 
-
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ArmSkeletonData:
     """Snapshot of the arm's 3D skeleton."""
+
     joints: List[List[float]] = field(default_factory=list)  # [[x,y,z], ...] 8 positions
     links: List[Dict[str, Any]] = field(default_factory=list)  # [{start, end, radius}, ...]
     gripper_mm: float = 0.0

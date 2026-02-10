@@ -9,6 +9,7 @@ class TestDepthEstimator:
 
     def test_import(self):
         from src.vision.depth_estimator import estimate_depth, is_available, get_backend
+
         assert callable(estimate_depth)
         assert callable(is_available)
         assert callable(get_backend)
@@ -43,6 +44,7 @@ class TestDepthEstimatorWithModel:
     @pytest.fixture(autouse=True)
     def check_model(self):
         from src.vision.depth_estimator import is_available
+
         if not is_available():
             pytest.skip("Depth model not available")
 

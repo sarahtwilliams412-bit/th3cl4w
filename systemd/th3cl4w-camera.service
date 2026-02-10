@@ -1,0 +1,16 @@
+[Unit]
+Description=th3cl4w Camera Server (port 8081)
+PartOf=th3cl4w.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/sarah/.openclaw/workspace/th3cl4w
+EnvironmentFile=/home/sarah/.openclaw/workspace/th3cl4w/.env
+ExecStart=/home/linuxbrew/.linuxbrew/bin/python3.12 web/camera_server.py --cam2 6
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=th3cl4w.target

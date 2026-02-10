@@ -23,12 +23,8 @@ SCAN_DIR = Path(__file__).parent.parent.parent / "data" / "scans"
 # Predefined scan viewpoints (joint angles in degrees)
 # 8 viewpoints: circle around workspace at 2 heights
 SCAN_POSES: List[Dict[str, float]] = [
-    {"J0": angle, "J1": 30, "J2": 40, "J3": 0, "J4": 50, "J5": 0}
-    for angle in [-60, -30, 0, 30, 60]
-] + [
-    {"J0": angle, "J1": 50, "J2": 30, "J3": 0, "J4": 40, "J5": 0}
-    for angle in [-45, 0, 45]
-]
+    {"J0": angle, "J1": 30, "J2": 40, "J3": 0, "J4": 50, "J5": 0} for angle in [-60, -30, 0, 30, 60]
+] + [{"J0": angle, "J1": 50, "J2": 30, "J3": 0, "J4": 40, "J5": 0} for angle in [-45, 0, 45]]
 
 # Joint limits for safety
 JOINT_LIMITS = {
@@ -245,12 +241,14 @@ class ScanManager:
                     clouds.append(cloud)
                     self.status.points_total += len(cloud)
 
-                metadata["poses"].append({
-                    "index": i,
-                    "angles": angles,
-                    "points": len(cloud),
-                    "camera_pose": camera_pose.tolist(),
-                })
+                metadata["poses"].append(
+                    {
+                        "index": i,
+                        "angles": angles,
+                        "points": len(cloud),
+                        "camera_pose": camera_pose.tolist(),
+                    }
+                )
 
                 logger.info("Pose %d/%d: %d points", i + 1, len(poses), len(cloud))
 
@@ -289,7 +287,9 @@ class ScanManager:
 
             self.status.phase = "done"
             self.status.running = False
-            logger.info("Scan complete: %s (%d points)", self.status.scan_id, self.status.points_total)
+            logger.info(
+                "Scan complete: %s (%d points)", self.status.scan_id, self.status.points_total
+            )
 
         except asyncio.CancelledError:
             self.status.phase = "aborted"
@@ -304,6 +304,7 @@ class ScanManager:
         """Capture a frame from the camera server."""
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(f"{self.camera_url}/snap/{camera_id}")
                 if resp.status_code == 200:
@@ -313,6 +314,7 @@ class ScanManager:
         except ImportError:
             # Try urllib
             import urllib.request
+
             try:
                 with urllib.request.urlopen(
                     f"{self.camera_url}/snap/{camera_id}", timeout=5
@@ -338,14 +340,16 @@ class ScanManager:
                 try:
                     with open(d / "metadata.json") as f:
                         meta = json.load(f)
-                    scans.append({
-                        "scan_id": d.name,
-                        "start_time": meta.get("start_time"),
-                        "end_time": meta.get("end_time"),
-                        "total_points": meta.get("total_points", 0),
-                        "num_poses": len(meta.get("poses", [])),
-                        "has_ply": (d / "scan.ply").exists(),
-                    })
+                    scans.append(
+                        {
+                            "scan_id": d.name,
+                            "start_time": meta.get("start_time"),
+                            "end_time": meta.get("end_time"),
+                            "total_points": meta.get("total_points", 0),
+                            "num_poses": len(meta.get("poses", [])),
+                            "has_ply": (d / "scan.ply").exists(),
+                        }
+                    )
                 except Exception:
                     scans.append({"scan_id": d.name, "has_ply": (d / "scan.ply").exists()})
 

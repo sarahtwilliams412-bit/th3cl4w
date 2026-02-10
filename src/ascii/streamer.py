@@ -22,6 +22,7 @@ logger = logging.getLogger("th3cl4w.ascii.streamer")
 @dataclass
 class StreamConfig:
     """Global streaming configuration."""
+
     width: int = 120
     height: int = 60
     charset_name: str = "standard"
@@ -46,6 +47,7 @@ class StreamConfig:
 @dataclass
 class AsciiStreamFrame:
     """A single ASCII frame ready for streaming."""
+
     cam_id: int
     lines: list[str]
     width: int
@@ -98,8 +100,13 @@ class CameraStream:
         self._running = True
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
-        logger.info("Camera stream %d started (%dx%d @ %.1f fps)",
-                     self.cam_id, self.config.width, self.config.height, self.config.fps)
+        logger.info(
+            "Camera stream %d started (%dx%d @ %.1f fps)",
+            self.cam_id,
+            self.config.width,
+            self.config.height,
+            self.config.fps,
+        )
 
     def stop(self):
         self._running = False
