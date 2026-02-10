@@ -23,6 +23,8 @@ import numpy as np
 
 from src.safety.limits import MAX_WORKSPACE_RADIUS_MM
 
+from src.vision.object_labeler import ObjectLabeler
+
 logger = logging.getLogger("th3cl4w.vision.object_detector")
 
 # Default HSV ranges for common object colors
@@ -99,6 +101,10 @@ class DetectedObject:
     # Rotation angle from minAreaRect (degrees)
     rotation_deg: float = 0.0
 
+    # LLM vision labeling fields
+    category: str = ""
+    llm_confidence: float = 0.0
+
     def to_dict(self) -> dict:
         return {
             "id": self.obj_id,
@@ -123,6 +129,8 @@ class DetectedObject:
             "timestamp": round(self.timestamp, 3),
             "shape": self.shape,
             "rotation_deg": round(self.rotation_deg, 1),
+            "category": self.category,
+            "llm_confidence": round(self.llm_confidence, 3),
         }
 
 
@@ -158,6 +166,9 @@ class ObjectDetector:
         self._last_update: float = 0.0
         self._update_count: int = 0
         self._frame_count: int = 0
+
+        # Vision labeler for LLM-based object identification
+        self._labeler = ObjectLabeler()
 
         # Background model for adaptive detection
         self._bg_subtractor = cv2.createBackgroundSubtractorMOG2(
@@ -242,6 +253,12 @@ class ObjectDetector:
         # Estimate height from front camera if available
         if side_frame is not None:
             self._estimate_heights(merged, side_frame)
+
+        # Label objects using LLM vision (side camera + ontology)
+        try:
+            self._labeler.label_objects(side_frame, merged)
+        except Exception as e:
+            logger.debug("Object labeler error: %s", e)
 
         # Compute workspace position and reachability
         for obj in merged:

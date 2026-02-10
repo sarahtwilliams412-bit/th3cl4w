@@ -828,13 +828,19 @@ class D1ArmSimulator {
     ctx.strokeRect(1, 1, 254, 62);
 
     ctx.fillStyle = obj.within_reach ? '#44ff88' : '#ff8844';
-    ctx.font = 'bold 20px monospace';
+    ctx.font = 'bold 18px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(obj.label.toUpperCase(), 128, 24);
+    ctx.fillText(obj.label.toUpperCase(), 128, 22);
+
+    if (obj.category) {
+      ctx.fillStyle = '#8af';
+      ctx.font = '12px monospace';
+      ctx.fillText(obj.category, 128, 38);
+    }
 
     ctx.fillStyle = '#ccc';
-    ctx.font = '14px monospace';
-    ctx.fillText(`${obj.distance_mm}mm ${obj.within_reach ? 'REACH' : 'FAR'}`, 128, 48);
+    ctx.font = '12px monospace';
+    ctx.fillText(`${obj.distance_mm}mm ${obj.within_reach ? 'REACH' : 'FAR'}`, 128, 54);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.minFilter = THREE.LinearFilter;

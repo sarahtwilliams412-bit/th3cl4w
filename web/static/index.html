@@ -4180,7 +4180,9 @@ fetch('/api/objects/status').then(r => r.json()).then(data => {
           const reachTag = o.within_reach
             ? '<span style="color:var(--success)">[REACH]</span>'
             : '<span style="color:var(--warning)">[FAR]</span>';
-          return `<div style="padding:1px 0">${reachTag} <span style="color:${o.color_hex}">\u25A0</span> ${o.label} — ${o.distance_mm}mm</div>`;
+          const displayLabel = o.category ? `${o.label} <span style="color:#888;font-size:8px">[${o.category}]</span>` : o.label;
+          const confBadge = o.llm_confidence > 0 ? ` <span style="color:#6af;font-size:8px">${Math.round(o.llm_confidence*100)}%</span>` : '';
+          return `<div style="padding:1px 0">${reachTag} <span style="color:${o.color_hex}">\u25A0</span> ${displayLabel}${confBadge} — ${o.distance_mm}mm</div>`;
         }).join('');
       }
     }

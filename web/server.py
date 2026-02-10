@@ -2666,6 +2666,47 @@ async def objects_snapshot():
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
+@app.get("/api/objects/ontology")
+async def objects_ontology_get():
+    """Return the object ontology."""
+    import json as _json
+    from pathlib import Path as _Path
+    ont_path = _Path(__file__).resolve().parent.parent / "data" / "object_ontology.json"
+    try:
+        with open(ont_path, "r") as f:
+            return _json.load(f)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/objects/ontology")
+async def objects_ontology_post(request: Request):
+    """Add or update an entry in the object ontology."""
+    import json as _json
+    from pathlib import Path as _Path
+    ont_path = _Path(__file__).resolve().parent.parent / "data" / "object_ontology.json"
+    try:
+        body = await request.json()
+        with open(ont_path, "r") as f:
+            ontology = _json.load(f)
+        # Expect body like {"label": "new_object", "category": "...", ...}
+        label = body.pop("label", None)
+        if not label:
+            return JSONResponse({"error": "Missing 'label' field"}, status_code=400)
+        ontology.setdefault("objects", {})[label] = body
+        with open(ont_path, "w") as f:
+            _json.dump(ontology, f, indent=2)
+        # Reload ontology in the labeler if available
+        if _HAS_OBJECT_DETECT and object_detector is not None:
+            try:
+                object_detector._labeler.reload_ontology()
+            except Exception:
+                pass
+        return {"ok": True, "label": label}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/api/objects/list")
 async def objects_list():
     """Get all currently detected objects."""
