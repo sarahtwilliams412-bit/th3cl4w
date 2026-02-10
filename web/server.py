@@ -1198,7 +1198,9 @@ async def cmd_enable_here():
     # Immediately send current position as target so arm holds still
     if angles is not None and len(angles) >= 6:
         angles_list = [float(a) for a in angles[:6]]
-        arm.set_all_joints(angles_list, _correlation_id=cid)
+        # set_all_joints expects 7 values (6 joints + gripper)
+        angles_with_gripper = angles_list + [float(gripper)]
+        arm.set_all_joints(angles_with_gripper, _correlation_id=cid)
         if smoother:
             smoother.set_arm_enabled(True)
             smoother.sync_from_feedback(angles_list, float(gripper))
