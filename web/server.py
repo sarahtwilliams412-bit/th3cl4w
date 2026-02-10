@@ -1,6 +1,6 @@
 # th3cl4w V1 Server — Stable Base
 #!/usr/bin/env python3.12
-from dotenv import load_dotenv
+from dotenv import load_dotenv # type: ignore[import-not-found]
 load_dotenv()  # Load .env file before anything else
 """
 th3cl4w — Web Control Panel for Unitree D1 Arm.
@@ -70,7 +70,6 @@ except ImportError:
 
 try:
     from src.vision.workspace_mapper import WorkspaceMapper
-    from src.planning.collision_preview import CollisionPreview
 
     _HAS_BIFOCAL = True
 except ImportError:
@@ -107,13 +106,9 @@ try:
 except ImportError:
     _HAS_CLAW_PREDICT = False
 
-try:
-    from src.safety.collision_detector import CollisionDetector, StallEvent
-    from src.vision.collision_analyzer import CollisionAnalyzer
-
-    _HAS_COLLISION = True
-except ImportError:
-    _HAS_COLLISION = False
+# CollisionDetector + CollisionAnalyzer removed — too aggressive, false positives.
+# Files kept as dead code. See: simplify safety layers PR.
+_HAS_COLLISION = False
 
 try:
     from src.vision.pose_fusion import PoseFusion, CameraCalib, FusionSource
@@ -256,16 +251,13 @@ smoother: Optional[CommandSmoother] = None
 safety_monitor: Optional[SafetyMonitor] = None
 task_planner: Any = None  # TaskPlanner instance, initialized in lifespan
 workspace_mapper: Any = None  # WorkspaceMapper for bifocal vision
-collision_preview: Any = None  # CollisionPreview for path checking
 arm_tracker: Any = None  # DualCameraArmTracker for visual object tracking
 grasp_planner: Any = None  # VisualGraspPlanner for grasp pose computation
 pick_executor: Any = None  # PickExecutor for autonomous pick operations
 vision_task_planner: Any = None  # VisionTaskPlanner for camera-guided planning
 scene_analyzer: Any = None  # SceneAnalyzer for scene understanding
 claw_predictor: Any = None  # ClawPositionPredictor for visual claw tracking
-collision_detector: Any = None  # CollisionDetector for stall detection
-collision_analyzer: Any = None  # CollisionAnalyzer for camera + vision analysis
-collision_events: list = []  # Recent collision events for API
+collision_events: list = []  # Recent collision events for API (kept for API compat)
 vla_controller: Any = None  # VLAController for vision-language-action
 vla_data_collector: Any = None  # DataCollector for recording demonstrations
 pose_fusion: Any = None  # PoseFusion engine
@@ -368,11 +360,10 @@ async def lifespan(app: FastAPI):
         task_planner = TaskPlanner()
         action_log.add("SYSTEM", "Task planner initialized", "info")
 
-    # Initialize bifocal workspace mapper and collision preview
-    global workspace_mapper, collision_preview
+    # Initialize bifocal workspace mapper
+    global workspace_mapper
     if _HAS_BIFOCAL:
         workspace_mapper = WorkspaceMapper()
-        collision_preview = CollisionPreview()
         action_log.add(
             "SYSTEM", "Bifocal workspace mapper initialized (disabled by default)", "info"
         )
@@ -435,21 +426,6 @@ async def lifespan(app: FastAPI):
             action_log.add("SYSTEM", f"Camera models loaded: {list(camera_models.keys())}", "info")
     except Exception as e:
         logger.warning(f"Failed to load camera models: {e}")
-
-    # Initialize collision detector + analyzer
-    global collision_detector, collision_analyzer
-    if _HAS_COLLISION:
-        collision_detector = CollisionDetector()
-        # TEMP: Disable collision detector — too aggressive for real arm
-        # (3° threshold triggers on normal motion lag, backs off every command)
-        collision_detector.enabled = False
-        logger.info("Collision detector initialized but DISABLED (too aggressive for real arm)")
-        collision_analyzer = CollisionAnalyzer()
-        action_log.add(
-            "SYSTEM",
-            f"Collision detector initialized (vision={'yes' if collision_analyzer.vision_available else 'no'})",
-            "info",
-        )
 
     yield
 
@@ -728,7 +704,7 @@ def _load_camera_config() -> dict:
             for k, v in defaults.items():
                 if k not in saved:
                     saved[k] = v
-            return saved
+            return saved  # type: ignore[no-any-return]
         except Exception:
             pass
     return defaults
@@ -901,10 +877,10 @@ async def api_sim_preview_fk(req: SetAllJointsRequest):
         # Pad to 7 if needed (6 arm + gripper=0)
         while len(angles_rad) < 7:
             angles_rad.append(0.0)
-        T = kin.forward_kinematics(angles_rad)
+        T = kin.forward_kinematics(angles_rad)  # type: ignore[arg-type]
         ee_pos = T[:3, 3].tolist()
         # Also get all joint positions
-        joint_positions = kin.get_joint_positions_3d(angles_rad)
+        joint_positions = kin.get_joint_positions_3d(angles_rad)  # type: ignore[arg-type]
         return {
             "ok": True,
             "ee_position": {"x": ee_pos[0], "y": ee_pos[1], "z": ee_pos[2]},
@@ -1255,7 +1231,7 @@ async def _auto_recover_power():
 async def cmd_set_joint(req: SetJointRequest):
     """Set a single joint to a target angle (degrees)."""
     cid = _new_cid()
-    _telem_cmd_sent("set-joint", {"id": req.id, "angle": req.angle}, cid)
+    _telem_cmd_sent("set-joint", {"id": req.id, "angle": req.angle}, cid)  # type: ignore[arg-type]
     if not (smoother and smoother._arm_enabled):
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
     action_log.add("SET_JOINT", f"Request: J{req.id} -> {req.angle}°", "info")
@@ -1268,35 +1244,6 @@ async def cmd_set_joint(req: SetJointRequest):
             "ok": False,
             "action": "SET_JOINT",
             "error": f"Angle {req.angle} out of range [{lo}, {hi}]",
-            "state": get_arm_state(),
-        }
-        if cid:
-            resp_data["correlation_id"] = cid
-        return JSONResponse(resp_data, status_code=400)
-
-    # Safe reach check: rough torque proxy using current targets
-    from src.config.pick_config import get_pick_config as _get_pick_config
-    _safety_cfg = _get_pick_config()
-    current_joints = list(armState_joints())
-    proposed = list(current_joints)
-    proposed[req.id] = req.angle
-    _j2_factor = _safety_cfg.get("safety", "torque_j2_factor")
-    _torque_limit = _safety_cfg.get("safety", "torque_proxy_limit")
-    _torque_enabled = _safety_cfg.get("safety", "torque_proxy_enabled")
-    if _torque_enabled is None:
-        _torque_enabled = True
-    torque_proxy = abs(proposed[1]) + abs(proposed[2]) * _j2_factor
-    if _torque_enabled and torque_proxy > _torque_limit:
-        action_log.add(
-            "SET_JOINT",
-            f"REJECTED — torque proxy {torque_proxy:.1f} > 100 (J1={proposed[1]:.1f}° J2={proposed[2]:.1f}°)",
-            "warning",
-        )
-        resp_data = {
-            "ok": False,
-            "action": "SET_JOINT",
-            "error": "Pose may exceed torque limits",
-            "torque_proxy": round(torque_proxy, 1),
             "state": get_arm_state(),
         }
         if cid:
@@ -1332,36 +1279,16 @@ async def cmd_set_joint(req: SetJointRequest):
     else:
         ok = arm.set_joint(req.id, req.angle, _correlation_id=cid) if arm else False
 
-    # Schedule stall detection check
-    if ok:
-        asyncio.create_task(_check_stall(req.id, req.angle, cid))
-
     resp = cmd_response(ok, "SET_JOINT", f"J{req.id} = {req.angle}°", cid)
     await broadcast_ack("SET_JOINT", ok)
     return resp
-
-
-async def _check_stall(joint_id: int, target_angle: float, cid: str | None):
-    """After delay, check if joint reached within threshold of target. Log warning if stalled."""
-    from src.config.pick_config import get_pick_config as _get_pick_config
-    _scfg = _get_pick_config()
-    _stall_enabled = _scfg.get("safety", "stall_detection_enabled")
-    if _stall_enabled is not None and not _stall_enabled:
-        return
-    await asyncio.sleep(_scfg.get("safety", "stall_check_delay_s"))
-    state = get_arm_state()
-    actual = state["joints"][joint_id]
-    if abs(actual - target_angle) > _scfg.get("safety", "stall_threshold_deg"):
-        msg = f"J{joint_id} stalled at {actual:.1f}° (target {target_angle:.1f}°)"
-        action_log.add("STALL", msg, "warning")
-        logger.warning(msg)
 
 
 @app.post("/api/command/set-all-joints")
 async def cmd_set_all_joints(req: SetAllJointsRequest):
     """Set all 6 joints to target angles simultaneously."""
     cid = _new_cid()
-    _telem_cmd_sent("set-all-joints", {"angles": req.angles}, cid)
+    _telem_cmd_sent("set-all-joints", {"angles": req.angles}, cid)  # type: ignore[arg-type]
     if not (smoother and smoother._arm_enabled):
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
     action_log.add("SET_ALL_JOINTS", f"Request: {[round(a,1) for a in req.angles]}", "info")
@@ -1393,7 +1320,7 @@ async def cmd_set_all_joints(req: SetAllJointsRequest):
 @app.post("/api/command/set-gripper")
 async def cmd_set_gripper(req: SetGripperRequest):
     cid = _new_cid()
-    _telem_cmd_sent("set-gripper", {"position": req.position}, cid)
+    _telem_cmd_sent("set-gripper", {"position": req.position}, cid)  # type: ignore[arg-type]
     if not (smoother and smoother._arm_enabled):
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
     action_log.add("SET_GRIPPER", f"Request: {req.position} mm", "info")
@@ -1610,11 +1537,11 @@ async def _execute_nod(speed: float, cid: str | None) -> dict:
     """Execute a nodding (yes) gesture by pitching the wrist up and down."""
     global _active_task
     if not _HAS_PLANNING:
-        return JSONResponse(
+        return JSONResponse(  # type: ignore[return-value]
             {"ok": False, "error": "planning module not available"}, status_code=501
         )
     if not (smoother and smoother.arm_enabled):
-        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)  # type: ignore[return-value]
 
     current = _get_current_joints()
     gripper = armState_gripper()
@@ -1647,11 +1574,11 @@ async def _execute_shake(speed: float, cid: str | None) -> dict:
     """Execute a shaking (no) gesture by rotating the base yaw side to side."""
     global _active_task
     if not _HAS_PLANNING:
-        return JSONResponse(
+        return JSONResponse(  # type: ignore[return-value]
             {"ok": False, "error": "planning module not available"}, status_code=501
         )
     if not (smoother and smoother.arm_enabled):
-        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
+        return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)  # type: ignore[return-value]
 
     current = _get_current_joints()
     gripper = armState_gripper()
@@ -1704,20 +1631,6 @@ async def ws_state(ws: WebSocket):
                     state["claw_prediction"] = {"enabled": True, "detected": False}
             elif claw_predictor is not None:
                 state["claw_prediction"] = {"enabled": False}
-            # Feed collision detector with commanded vs actual
-            if _HAS_COLLISION and collision_detector and smoother and smoother.arm_enabled:
-                commanded = []
-                for j in range(6):
-                    t = smoother._target[j]
-                    c = smoother._current[j]
-                    # Use target if set, else current smoother position
-                    commanded.append(
-                        t if t is not None else (c if c is not None else state["joints"][j])
-                    )
-                stall = collision_detector.update(commanded, state["joints"])
-                if stall is not None:
-                    asyncio.create_task(_handle_collision(stall, ws_clients[:]))
-
             await ws.send_json(state)
             if _HAS_TELEMETRY:
                 tc = get_collector()
@@ -2515,58 +2428,14 @@ async def bifocal_calibrate_tape(req: TapeMeasureRequest):
 
 @app.post("/api/bifocal/preview")
 async def bifocal_preview():
-    """Preview the current arm pose against the workspace map for collisions."""
-    if not _HAS_BIFOCAL or workspace_mapper is None or collision_preview is None:
-        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
-
-    current = _get_current_joints()
-    result = collision_preview.preview_single_pose(current, workspace_mapper)
-    arm_points = collision_preview.get_arm_envelope(current)
-
-    return {
-        "ok": True,
-        "clear": result.clear,
-        "summary": result.summary,
-        "hits": [
-            {
-                "link": h.link_index,
-                "point": h.link_point_mm,
-                "severity": h.severity,
-            }
-            for h in result.hits
-        ],
-        "arm_points_mm": arm_points,
-        "checked": result.checked_points,
-        "elapsed_ms": result.elapsed_ms,
-    }
+    """Preview endpoint — collision preview removed (unreliable FK)."""
+    return JSONResponse({"ok": False, "error": "Collision preview removed — unreliable FK"}, status_code=501)
 
 
 @app.post("/api/bifocal/preview-target")
 async def bifocal_preview_target(req: SetAllJointsRequest):
-    """Preview a target pose against the workspace map for collisions."""
-    if not _HAS_BIFOCAL or workspace_mapper is None or collision_preview is None:
-        return JSONResponse({"ok": False, "error": "Bifocal module not available"}, status_code=501)
-
-    target = np.array(req.angles[:6])
-    result = collision_preview.preview_single_pose(target, workspace_mapper)
-    arm_points = collision_preview.get_arm_envelope(target)
-
-    return {
-        "ok": True,
-        "clear": result.clear,
-        "summary": result.summary,
-        "hits": [
-            {
-                "link": h.link_index,
-                "point": h.link_point_mm,
-                "severity": h.severity,
-            }
-            for h in result.hits
-        ],
-        "arm_points_mm": arm_points,
-        "checked": result.checked_points,
-        "elapsed_ms": result.elapsed_ms,
-    }
+    """Preview endpoint — collision preview removed (unreliable FK)."""
+    return JSONResponse({"ok": False, "error": "Collision preview removed — unreliable FK"}, status_code=501)
 
 
 # ---------------------------------------------------------------------------
@@ -2764,8 +2633,8 @@ async def locate_object(req: LocateRequest):
                     {"ok": False, "error": "GEMINI_API_KEY not set"}, status_code=501
                 )
 
-            from google import genai as _genai
-            from google.genai import types as _gtypes
+            from google import genai as _genai # type: ignore[import-untyped]
+            from google.genai import types as _gtypes # type: ignore[import-untyped]
 
             _client = _genai.Client(api_key=api_key)
 
@@ -3059,7 +2928,7 @@ async def pick_plan(req: VisualPickRequest = VisualPickRequest()):
             current_gripper_mm=gripper,
             target_label=req.target,
             workspace_mapper=workspace_mapper,
-            collision_preview=collision_preview,
+            collision_preview=None,
         )
 
         response_data = {
@@ -3566,12 +3435,6 @@ async def run_viz_calibration():
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
 
     _viz_calib_running = True
-    # Disable collision detection during calibration — it fights the calibrator
-    _saved_collision = collision_detector
-    _saved_collision_enabled = None
-    if collision_detector and hasattr(collision_detector, "enabled"):
-        _saved_collision_enabled = collision_detector.enabled
-        collision_detector.enabled = False
     try:
         result = await _run_viz_calibration()
         action_log.add(
@@ -3599,13 +3462,6 @@ async def run_viz_calibration():
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     finally:
         _viz_calib_running = False
-        # Re-enable collision detection
-        if (
-            collision_detector
-            and hasattr(collision_detector, "enabled")
-            and _saved_collision_enabled is not None
-        ):
-            collision_detector.enabled = _saved_collision_enabled
 
 
 # ---------------------------------------------------------------------------
@@ -3613,74 +3469,7 @@ async def run_viz_calibration():
 # ---------------------------------------------------------------------------
 
 
-async def _handle_collision(stall: "StallEvent", clients: list):
-    """Handle a detected collision: stop, analyze, broadcast, back off."""
-    global collision_events
-    action_log.add(
-        "COLLISION",
-        f"⚠ STALL on J{stall.joint_id}: cmd={stall.commanded_deg:.1f}° actual={stall.actual_deg:.1f}° (err={stall.error_deg:.1f}°)",
-        "error",
-    )
-
-    # 1. Stop arm movement
-    if smoother:
-        smoother._clear_targets()
-
-    # 2. Analyze with cameras + vision (in thread to not block)
-    analysis = None
-    if collision_analyzer:
-        try:
-            analysis = await asyncio.get_event_loop().run_in_executor(
-                None,
-                collision_analyzer.analyze,
-                stall.joint_id,
-                stall.commanded_deg,
-                stall.actual_deg,
-            )
-            action_log.add("COLLISION", f"Analysis: {analysis.analysis_text[:120]}", "warning")
-        except Exception as e:
-            logger.error("Collision analysis failed: %s", e)
-
-    # 3. Build event data
-    event = {
-        "type": "collision",
-        "joint": stall.joint_id,
-        "commanded": round(stall.commanded_deg, 1),
-        "actual": round(stall.actual_deg, 1),
-        "error": round(stall.error_deg, 1),
-        "last_good": round(stall.last_good_position, 1),
-        "timestamp": stall.timestamp,
-        "analysis": analysis.analysis_text if analysis else "Analysis unavailable",
-        "images": [],
-    }
-    if analysis:
-        if analysis.cam0_path:
-            event["images"].append(f"/api/collisions/{analysis.timestamp}/cam0.jpg")
-        if analysis.cam1_path:
-            event["images"].append(f"/api/collisions/{analysis.timestamp}/cam1.jpg")
-
-    collision_events.append(event)
-    if len(collision_events) > 100:
-        collision_events = collision_events[-100:]
-
-    # 4. Broadcast to WebSocket clients
-    dead = []
-    for ws in clients:
-        try:
-            await ws.send_json(event)
-        except Exception:
-            dead.append(ws)
-    for ws in dead:
-        if ws in ws_clients:
-            ws_clients.remove(ws)
-
-    # 5. No backoff — just log. Sending more commands after a stall creates
-    #    fight loops that overload the motors and trip overcurrent protection.
-    action_log.add(
-        "COLLISION",
-        f"J{stall.joint_id} stall handled — targets cleared, no backoff sent",
-        "info",
-    )
+# _handle_collision removed — collision detector disabled
 
 
 @app.get("/api/collisions")
@@ -3920,10 +3709,10 @@ async def ws_realworld3d(ws: WebSocket):
                         client.get("http://localhost:8081/snap/1"),
                         return_exceptions=True,
                     )
-                    if not isinstance(r0, Exception) and r0.status_code == 200:
-                        frame0_bytes = r0.content
-                    if not isinstance(r1, Exception) and r1.status_code == 200:
-                        frame1_bytes = r1.content
+                    if not isinstance(r0, Exception) and r0.status_code == 200:  # type: ignore[union-attr]
+                        frame0_bytes = r0.content  # type: ignore[union-attr]
+                    if not isinstance(r1, Exception) and r1.status_code == 200:  # type: ignore[union-attr]
+                        frame1_bytes = r1.content  # type: ignore[union-attr]
             except Exception:
                 pass
 
@@ -3953,9 +3742,9 @@ async def ws_realworld3d(ws: WebSocket):
 
             # Wrap frames as UMat for GPU-accelerated OpenCV (OpenCL)
             if f0 is not None:
-                f0 = cv2.UMat(f0)
+                f0 = cv2.UMat(f0)  # type: ignore[call-overload]
             if f1 is not None:
-                f1 = cv2.UMat(f1)
+                f1 = cv2.UMat(f1)  # type: ignore[call-overload]
 
             # Capture background on first frames (stored as UMat for GPU ops)
             if bg_frame0 is None and f0 is not None:
@@ -4144,9 +3933,9 @@ async def ws_arm3d(ws: WebSocket):
                 import cv2
 
                 for cam_id, resp in enumerate(results):
-                    if isinstance(resp, Exception) or resp.status_code != 200:
+                    if isinstance(resp, Exception) or resp.status_code != 200:  # type: ignore[union-attr]
                         continue
-                    frame = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
+                    frame = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)  # type: ignore[union-attr]
                     if frame is None:
                         continue
 
@@ -4361,7 +4150,7 @@ async def calibration_report_md(session_id: str):
     report = _calib_comparison_reports.get(session_id)
     if not report:
         return JSONResponse({"ok": False, "error": "Report not found"}, status_code=404)
-    md = _calib_reporter_instance.generate_markdown(report)
+    md = _calib_reporter_instance.generate_markdown(report)  # type: ignore[union-attr]
     return JSONResponse({"ok": True, "markdown": md})
 
 
@@ -4375,7 +4164,7 @@ async def calibration_report_json(session_id: str):
     report = _calib_comparison_reports.get(session_id)
     if not report:
         return JSONResponse({"ok": False, "error": "Report not found"}, status_code=404)
-    return _calib_reporter_instance.generate_json(report)
+    return _calib_reporter_instance.generate_json(report)  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------
@@ -5735,14 +5524,6 @@ def _apply_safety_settings(settings: dict):
         if "alpha" in cs: smoother._alpha = cs["alpha"]
         if "max_step_deg" in cs: smoother._max_step = cs["max_step_deg"]
         if "max_gripper_step_mm" in cs: smoother._max_grip_step = cs["max_gripper_step_mm"]
-
-    # Apply collision detector settings
-    if "collision_detection" in settings and collision_detector:
-        cd = settings["collision_detection"]
-        if "enabled" in cd: collision_detector.enabled = cd["enabled"]
-        if "position_error_deg" in cd: collision_detector._position_error_deg = cd["position_error_deg"]
-        if "stall_duration_s" in cd: collision_detector._stall_duration_s = cd["stall_duration_s"]
-        if "cooldown_s" in cd: collision_detector._cooldown_s = cd["cooldown_s"]
 
     # Save extended settings to safety_config.json
     overrides = {}

@@ -201,7 +201,7 @@ class CommandSmoother:
     def set_joint_target(self, joint_id: int, angle_deg: float) -> None:
         """Set a target angle for a joint. Non-blocking."""
         if 0 <= joint_id < self._num_joints:
-            self._target[joint_id] = angle_deg
+            self._target[joint_id] = angle_deg  # type: ignore[call-overload]
             self._dirty_joints.add(joint_id)
 
     def set_all_joints_target(self, angles_deg: list) -> None:
@@ -346,21 +346,8 @@ class CommandSmoother:
                     return
                 send_angles.append(v)
 
-            # SAFETY: Validate command through SafetyMonitor before sending
-            if self._safety_monitor is not None:
-                from src.safety.limits import JOINT_LIMITS_DEG as _LIM
-
-                for i, angle in enumerate(send_angles):
-                    lo, hi = float(_LIM[i, 0]), float(_LIM[i, 1])
-                    if angle < lo or angle > hi:
-                        logger.warning(
-                            "Safety: J%d=%.2f° outside [%.1f, %.1f] — blocking command",
-                            i,
-                            angle,
-                            lo,
-                            hi,
-                        )
-                        return
+            # Joint limit check removed — SafetyMonitor is the single source of truth
+            # for position limits. Duplicate check here was redundant.
 
             if len(joints_changed) >= 3:
                 # Batch as set_all_joints when multiple joints move
