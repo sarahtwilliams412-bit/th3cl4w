@@ -15,6 +15,8 @@ from typing import Any, Dict, List, Optional
 import cv2
 import numpy as np
 
+from src.config.camera_config import CAMERA_SERVER_URL as _DEFAULT_CAMERA_URL
+
 logger = logging.getLogger(__name__)
 
 # Scan data directory
@@ -89,7 +91,7 @@ class ScanManager:
         self,
         arm_command_fn=None,
         get_state_fn=None,
-        camera_url: str = "http://localhost:8081",
+        camera_url: str = None,
         poses: Optional[List[Dict[str, float]]] = None,
     ):
         """
@@ -104,7 +106,7 @@ class ScanManager:
         """
         self.arm_command_fn = arm_command_fn
         self.get_state_fn = get_state_fn
-        self.camera_url = camera_url
+        self.camera_url = camera_url or _DEFAULT_CAMERA_URL
         self.poses = poses or SCAN_POSES
         self.status = ScanStatus()
         self._abort = False

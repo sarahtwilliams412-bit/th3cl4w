@@ -25,8 +25,7 @@ from src.config.pick_config import get_pick_config as _get_pick_config
 
 logger = logging.getLogger("th3cl4w.location.tracker")
 
-# Camera server base URL
-CAMERA_SERVER = "http://localhost:8081"
+from src.config.camera_config import CAMERA_SERVER_URL as CAMERA_SERVER, latest_url
 
 # Camera IDs
 CAMERA_IDS = [0, 1, 2]  # overhead, side, arm

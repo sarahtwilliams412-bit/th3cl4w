@@ -19,7 +19,7 @@ import httpx
 logger = logging.getLogger("th3cl4w.collision_analyzer")
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "collisions"
-CAMERA_BASE = "http://localhost:8081"
+from src.config.camera_config import CAMERA_SERVER_URL as CAMERA_BASE
 
 
 @dataclass

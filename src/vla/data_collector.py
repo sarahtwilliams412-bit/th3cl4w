@@ -22,6 +22,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from src.config.camera_config import CAMERA_SERVER_URL as _CAM_API_DEFAULT
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "demonstrations"
@@ -59,7 +61,7 @@ class DataCollector:
     """Records teleoperation demonstrations for VLA training."""
 
     ARM_API = "http://localhost:8080"
-    CAM_API = "http://localhost:8081"
+    CAM_API = _CAM_API_DEFAULT
 
     def __init__(self, data_dir: Optional[Path] = None):
         self._data_dir = data_dir or DEFAULT_DATA_DIR

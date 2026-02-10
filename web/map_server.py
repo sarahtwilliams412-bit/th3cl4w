@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 MAP_SERVER_PORT = int(os.getenv("MAP_SERVER_PORT", "8083"))
 MAIN_SERVER_URL = os.getenv("MAIN_SERVER_URL", "http://localhost:8080")
-CAMERA_SERVER_URL = os.getenv("CAMERA_SERVER_URL", "http://localhost:8081")
+from src.config.camera_config import CAMERA_SERVER_URL
 LOCATION_SERVER_URL = os.getenv("LOCATION_SERVER_URL", "http://localhost:8082")
 
 ARM_POLL_HZ = float(os.getenv("ARM_POLL_HZ", "2"))

@@ -195,9 +195,11 @@ class MapScanManager:
         env_map: EnvMap,
         arm_command_fn=None,
         get_state_fn=None,
-        camera_url: str = "http://localhost:8081",
+        camera_url: str = None,
     ):
         from src.vision.scan_manager import ScanManager, ScanStatus
+        from src.config.camera_config import CAMERA_SERVER_URL
+        camera_url = camera_url or CAMERA_SERVER_URL
 
         self._env_map = env_map
         self._scanner = ScanManager(

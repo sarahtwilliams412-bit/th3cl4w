@@ -24,7 +24,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 ARM_API = "http://localhost:8080"
-CAM_API = "http://localhost:8081"
+from src.config.camera_config import CAMERA_SERVER_URL as CAM_API
 
 # Image dimensions
 IMG_W, IMG_H = 1920, 1080

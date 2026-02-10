@@ -23,7 +23,7 @@ from src.kinematics.kinematics import D1Kinematics
 logger = logging.getLogger(__name__)
 
 ARM_API = "http://localhost:8080"
-CAM_API = "http://localhost:8081"
+from src.config.camera_config import CAMERA_SERVER_URL as CAM_API
 
 
 class ServoState(str, Enum):

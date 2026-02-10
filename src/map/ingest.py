@@ -20,7 +20,7 @@ class IngestConfig:
     def __init__(
         self,
         main_server_url: str = "http://localhost:8080",
-        camera_server_url: str = "http://localhost:8081",
+        camera_server_url: str = None,
         location_server_url: str = "http://localhost:8082",
         arm_poll_hz: float = 2,
         depth_poll_hz: float = 3,
@@ -29,7 +29,8 @@ class IngestConfig:
         use_ws: bool = True,
     ):
         self.main_server_url = main_server_url
-        self.camera_server_url = camera_server_url
+        from src.config.camera_config import CAMERA_SERVER_URL
+        self.camera_server_url = camera_server_url or CAMERA_SERVER_URL
         self.location_server_url = location_server_url
         self.arm_poll_hz = arm_poll_hz
         self.depth_poll_hz = depth_poll_hz

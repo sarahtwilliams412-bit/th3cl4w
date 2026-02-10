@@ -47,7 +47,8 @@ MAX_ANGLE = 45  # maximum angle to reach
 CONVERGENCE_THRESHOLD = 50.0  # average px residual to consider "good"
 STABLE_ROUNDS_NEEDED = 2  # rounds residual must be stable to stop
 
-CAMERA_URL = "http://localhost:8081/snap/1"
+from src.config.camera_config import snap_url as _snap_url
+CAMERA_URL = _snap_url(1)
 ARM_API = "http://localhost:8080"
 SETTLE_TIME = 2.0  # seconds to wait after moving
 MOVE_STEP_DEG = 10.0  # max degrees per increment

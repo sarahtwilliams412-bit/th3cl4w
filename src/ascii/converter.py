@@ -15,9 +15,9 @@ from src.vision.ascii_converter import (
     CHARSET_MINIMAL,
 )
 
-logger = logging.getLogger("th3cl4w.ascii.converter")
+from src.config.camera_config import CAMERA_SERVER_URL, latest_url
 
-CAMERA_SERVER_URL = "http://localhost:8081"
+logger = logging.getLogger("th3cl4w.ascii.converter")
 
 CHARSETS = {
     "standard": CHARSET_STANDARD,
@@ -29,7 +29,7 @@ CHARSETS = {
 
 def fetch_jpeg(cam_id: int, timeout: float = 2.0) -> Optional[bytes]:
     """Fetch a JPEG snapshot from the camera server."""
-    url = f"{CAMERA_SERVER_URL}/snap/{cam_id}"
+    url = latest_url(cam_id)
     try:
         with urlopen(url, timeout=timeout) as resp:
             return resp.read()

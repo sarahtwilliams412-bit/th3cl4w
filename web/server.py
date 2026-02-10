@@ -710,7 +710,7 @@ _validate_env()
 # Centralized camera server access
 # ---------------------------------------------------------------------------
 
-CAM_SERVER = "http://localhost:8081"
+from src.config.camera_config import CAMERA_SERVER_URL as CAM_SERVER
 
 
 async def cam_snap(client, cam_id: int):

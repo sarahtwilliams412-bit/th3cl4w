@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CALIBRATION_RESULTS_DIR = PROJECT_ROOT / "calibration_results"
 DATA_DIR = PROJECT_ROOT / "data"
 
-CAMERA_SERVER_URL = "http://localhost:8081"
+from src.config.camera_config import CAMERA_SERVER_URL
 
 # Board sizes to try if primary detection fails
 FALLBACK_BOARD_SIZES = [(7, 4), (9, 6), (8, 6), (7, 5)]
