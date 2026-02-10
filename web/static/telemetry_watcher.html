@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>th3cl4w — Telemetry Watcher</title>
+<style>
+:root {
+  --bg: #111827;
+  --card: #1f2937;
+  --card-border: #374151;
+  --primary: #3b82f6;
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #eab308;
+  --text: #e5e7eb;
+  --text-dim: #9ca3af;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+.topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--card); border-bottom: 1px solid var(--card-border); }
+.logo { font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 2px; color: var(--danger); }
+.logo-sub { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+.conn-dot { width: 10px; height: 10px; border-radius: 50%; background: #666; }
+.conn-dot.on { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.conn-dot.off { background: var(--danger); }
+.topbar-spacer { flex: 1; }
+.btn { font-family: var(--mono); font-size: 11px; padding: 5px 12px; border: 1px solid var(--card-border); border-radius: 4px; cursor: pointer; background: var(--card); color: var(--text); text-decoration: none; }
+.btn:hover { background: var(--primary); border-color: var(--primary); }
+
+.main { max-width: 1200px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Feedback section */
+.feedback-section { display: flex; gap: 16px; align-items: stretch; }
+.feedback-buttons { display: flex; gap: 12px; flex: 0 0 auto; }
+.fb-btn { font-family: var(--mono); font-size: 16px; font-weight: 700; padding: 20px 36px; border: 2px solid var(--card-border); border-radius: 12px; cursor: pointer; background: var(--card); color: var(--text); transition: all 0.15s; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 140px; }
+.fb-btn .icon { font-size: 36px; }
+.fb-btn.good:hover, .fb-btn.good.active { background: rgba(34, 197, 94, 0.2); border-color: var(--success); color: var(--success); }
+.fb-btn.bad:hover, .fb-btn.bad.active { background: rgba(239, 68, 68, 0.2); border-color: var(--danger); color: var(--danger); }
+.fb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.fb-btn .sub { font-size: 9px; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; }
+
+.feedback-status { flex: 1; background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 16px 20px; display: flex; flex-direction: column; justify-content: center; }
+.fb-status-label { font-family: var(--mono); font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.fb-status-value { font-family: var(--mono); font-size: 14px; }
+.fb-status-value.good { color: var(--success); }
+.fb-status-value.bad { color: var(--danger); }
+.fb-status-value.neutral { color: var(--text-dim); }
+.fb-counts { display: flex; gap: 20px; margin-top: 8px; }
+.fb-count { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+.fb-count .num { font-weight: 700; font-size: 16px; }
+.fb-count.good .num { color: var(--success); }
+.fb-count.bad .num { color: var(--danger); }
+
+/* Note input */
+.note-row { display: flex; gap: 8px; align-items: center; }
+.note-input { flex: 1; font-family: var(--mono); font-size: 11px; padding: 8px 12px; border: 1px solid var(--card-border); border-radius: 6px; background: var(--bg); color: var(--text); outline: none; }
+.note-input:focus { border-color: var(--primary); }
+.note-input::placeholder { color: #4b5563; }
+
+/* Analysis panel */
+.analysis-panel { background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; overflow: hidden; }
+.panel-header { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; padding: 10px 16px; border-bottom: 1px solid var(--card-border); display: flex; align-items: center; gap: 8px; }
+.panel-header .badge { font-size: 9px; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+.badge.good { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+.badge.bad { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+.badge.neutral { background: rgba(156, 163, 175, 0.2); color: var(--text-dim); }
+
+.analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.analysis-col { padding: 12px 16px; }
+.analysis-col + .analysis-col { border-left: 1px solid var(--card-border); }
+.analysis-col-header { font-family: var(--mono); font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.metric-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-family: var(--mono); font-size: 11px; }
+.metric-label { color: var(--text-dim); }
+.metric-value { font-weight: 700; }
+
+/* Problem indicators */
+.indicators { padding: 12px 16px; border-top: 1px solid var(--card-border); }
+.indicator { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin-bottom: 6px; border-radius: 6px; font-family: var(--mono); font-size: 11px; }
+.indicator.high { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); }
+.indicator.medium { background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.3); }
+.indicator-icon { font-size: 14px; }
+.indicator-icon.high { color: var(--danger); }
+.indicator-icon.medium { color: var(--warning); }
+.indicator-text { flex: 1; }
+.indicator-metric { font-weight: 700; }
+.indicator-detail { color: var(--text-dim); font-size: 10px; }
+.no-data { color: var(--text-dim); font-family: var(--mono); font-size: 11px; padding: 12px 16px; text-align: center; }
+
+/* Timeline */
+.timeline-panel { background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; overflow: hidden; }
+.timeline-scroll { max-height: 400px; overflow-y: auto; }
+.timeline-entry { display: flex; align-items: flex-start; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--card-border); cursor: pointer; transition: background 0.1s; }
+.timeline-entry:hover { background: rgba(59, 130, 246, 0.05); }
+.timeline-entry:last-child { border-bottom: none; }
+.timeline-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 3px; flex-shrink: 0; }
+.timeline-dot.good { background: var(--success); }
+.timeline-dot.bad { background: var(--danger); }
+.timeline-content { flex: 1; min-width: 0; }
+.timeline-time { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+.timeline-rating { font-family: var(--mono); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.timeline-rating.good { color: var(--success); }
+.timeline-rating.bad { color: var(--danger); }
+.timeline-note { font-family: var(--mono); font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.timeline-metrics { display: flex; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
+.timeline-metric { font-family: var(--mono); font-size: 9px; color: var(--text-dim); }
+.timeline-metric .val { color: var(--text); }
+
+/* Snapshot detail */
+.snapshot-panel { background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; overflow: hidden; display: none; }
+.snapshot-panel.visible { display: block; }
+.snapshot-close { cursor: pointer; margin-left: auto; color: var(--text-dim); }
+.snapshot-close:hover { color: var(--text); }
+.snapshot-tables { padding: 0 16px 16px; }
+.snapshot-table-title { font-family: var(--mono); font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin: 12px 0 6px; }
+.snapshot-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 10px; }
+.snapshot-table th { text-align: left; padding: 4px 8px; color: var(--text-dim); border-bottom: 1px solid var(--card-border); font-weight: 600; font-size: 9px; text-transform: uppercase; }
+.snapshot-table td { padding: 3px 8px; border-bottom: 1px solid rgba(55, 65, 81, 0.3); }
+.snapshot-table tr:hover { background: rgba(59, 130, 246, 0.05); }
+.snapshot-table .err { color: var(--danger); }
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">th3cl4w</div>
+  <span class="logo-sub">TELEMETRY WATCHER</span>
+  <div class="conn-dot" id="connDot"></div>
+  <span id="connLabel" style="font-size:11px;font-family:var(--mono);color:var(--text-dim)">CONNECTING</span>
+  <div class="topbar-spacer"></div>
+  <a href="/static/telemetry.html" class="btn">TELEMETRY</a>
+  <a href="/" class="btn">DASHBOARD</a>
+</div>
+
+<div class="main">
+  <!-- Feedback controls -->
+  <div class="feedback-section">
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div class="feedback-buttons">
+        <button class="fb-btn good" id="btnGood" onclick="submitFeedback('good')">
+          <span class="icon">&#x25B2;</span>
+          <span>GOOD</span>
+          <span class="sub">arm is working well</span>
+        </button>
+        <button class="fb-btn bad" id="btnBad" onclick="submitFeedback('bad')">
+          <span class="icon">&#x25BC;</span>
+          <span>BAD</span>
+          <span class="sub">arm is not working</span>
+        </button>
+      </div>
+      <div class="note-row">
+        <input class="note-input" id="noteInput" type="text" placeholder="Optional note (e.g. 'jerky movement', 'gripper stuck')...">
+      </div>
+    </div>
+    <div class="feedback-status">
+      <div class="fb-status-label">Last Feedback</div>
+      <div class="fb-status-value neutral" id="lastFeedback">No feedback yet</div>
+      <div class="fb-counts">
+        <div class="fb-count good"><span class="num" id="goodCount">0</span> good</div>
+        <div class="fb-count bad"><span class="num" id="badCount">0</span> bad</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analysis -->
+  <div class="analysis-panel" id="analysisPanel">
+    <div class="panel-header">
+      Comparative Analysis
+      <span class="badge neutral" id="analysisBadge">needs data</span>
+      <div style="flex:1"></div>
+      <button class="btn" onclick="refreshAnalysis()">REFRESH</button>
+    </div>
+    <div id="analysisContent">
+      <div class="no-data" id="analysisEmpty">Submit feedback using the buttons above. The watcher will capture telemetry snapshots and compare good vs bad periods.</div>
+      <div id="analysisData" style="display:none;">
+        <div class="analysis-grid">
+          <div class="analysis-col">
+            <div class="analysis-col-header"><span class="timeline-dot good" style="width:8px;height:8px;margin:0;"></span> When arm is GOOD</div>
+            <div id="goodMetrics"></div>
+          </div>
+          <div class="analysis-col">
+            <div class="analysis-col-header"><span class="timeline-dot bad" style="width:8px;height:8px;margin:0;"></span> When arm is BAD</div>
+            <div id="badMetrics"></div>
+          </div>
+        </div>
+        <div class="indicators" id="indicators"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Snapshot detail -->
+  <div class="snapshot-panel" id="snapshotPanel">
+    <div class="panel-header">
+      Telemetry Snapshot
+      <span id="snapshotLabel"></span>
+      <span class="snapshot-close" onclick="closeSnapshot()">CLOSE</span>
+    </div>
+    <div class="snapshot-tables" id="snapshotContent"></div>
+  </div>
+
+  <!-- Timeline -->
+  <div class="timeline-panel">
+    <div class="panel-header">Feedback Timeline</div>
+    <div class="timeline-scroll" id="timeline">
+      <div class="no-data">No feedback recorded yet.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const API_BASE = window.location.origin;
+let ws = null;
+let goodCount = 0;
+let badCount = 0;
+
+// ---- WebSocket ----
+function connectWs() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/watcher`);
+  ws.onopen = () => {
+    document.getElementById('connDot').className = 'conn-dot on';
+    document.getElementById('connLabel').textContent = 'CONNECTED';
+  };
+  ws.onclose = () => {
+    document.getElementById('connDot').className = 'conn-dot off';
+    document.getElementById('connLabel').textContent = 'DISCONNECTED';
+    setTimeout(connectWs, 2000);
+  };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'feedback') {
+        refreshAll();
+      }
+    } catch(err) {}
+  };
+}
+
+// ---- Feedback submission ----
+async function submitFeedback(rating) {
+  const note = document.getElementById('noteInput').value.trim();
+  const btnGood = document.getElementById('btnGood');
+  const btnBad = document.getElementById('btnBad');
+  btnGood.disabled = true;
+  btnBad.disabled = true;
+
+  // Flash the active button
+  const activeBtn = rating === 'good' ? btnGood : btnBad;
+  activeBtn.classList.add('active');
+
+  try {
+    const params = new URLSearchParams({ rating, note });
+    const resp = await fetch(`${API_BASE}/api/feedback?${params}`, { method: 'POST' });
+    const data = await resp.json();
+
+    // Update last feedback display
+    const el = document.getElementById('lastFeedback');
+    const ts = new Date(data.ts * 1000).toLocaleTimeString();
+    el.textContent = `${rating.toUpperCase()} at ${ts}`;
+    el.className = `fb-status-value ${rating}`;
+
+    document.getElementById('noteInput').value = '';
+
+    // Refresh everything
+    await refreshAll();
+  } catch (err) {
+    console.error('Feedback error:', err);
+  } finally {
+    btnGood.disabled = false;
+    btnBad.disabled = false;
+    setTimeout(() => activeBtn.classList.remove('active'), 300);
+  }
+}
+
+// ---- Refresh data ----
+async function refreshAll() {
+  await Promise.all([refreshHistory(), refreshAnalysis(), refreshStatus()]);
+}
+
+async function refreshStatus() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/status`);
+    const data = await resp.json();
+    goodCount = data.good_count || 0;
+    badCount = data.bad_count || 0;
+    document.getElementById('goodCount').textContent = goodCount;
+    document.getElementById('badCount').textContent = badCount;
+  } catch (err) {}
+}
+
+async function refreshHistory() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/feedback/history?limit=50`);
+    const entries = await resp.json();
+    renderTimeline(entries);
+  } catch (err) {}
+}
+
+async function refreshAnalysis() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/analysis`);
+    const data = await resp.json();
+    renderAnalysis(data);
+  } catch (err) {}
+}
+
+// ---- Render timeline ----
+function renderTimeline(entries) {
+  const el = document.getElementById('timeline');
+  if (!entries || entries.length === 0) {
+    el.innerHTML = '<div class="no-data">No feedback recorded yet.</div>';
+    return;
+  }
+  el.innerHTML = entries.map(e => {
+    const ts = new Date(e.ts * 1000).toLocaleTimeString();
+    const s = e.summary || {};
+    return `
+      <div class="timeline-entry" onclick="showSnapshot(${e.id})">
+        <div class="timeline-dot ${e.rating}"></div>
+        <div class="timeline-content">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="timeline-rating ${e.rating}">${esc(e.rating)}</span>
+            <span class="timeline-time">${esc(ts)}</span>
+          </div>
+          ${e.note ? `<div class="timeline-note">${esc(e.note)}</div>` : ''}
+          <div class="timeline-metrics">
+            <span class="timeline-metric">cmds: <span class="val">${s.dds_command_count ?? '?'}</span></span>
+            <span class="timeline-metric">fb rate: <span class="val">${s.dds_feedback_rate_hz ?? '?'} Hz</span></span>
+            <span class="timeline-metric">track err: <span class="val">${s.avg_tracking_error != null ? s.avg_tracking_error.toFixed(4) : '?'}</span></span>
+            <span class="timeline-metric">errors: <span class="val">${s.error_event_count ?? '?'}</span></span>
+            <span class="timeline-metric">dds errs: <span class="val">${s.dds_error_count ?? '?'}</span></span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ---- Render analysis ----
+function renderAnalysis(data) {
+  if (!data || data.total_feedback === 0) {
+    document.getElementById('analysisEmpty').style.display = '';
+    document.getElementById('analysisData').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('analysisEmpty').style.display = 'none';
+  document.getElementById('analysisData').style.display = '';
+
+  const badge = document.getElementById('analysisBadge');
+  if (data.good.count > 0 && data.bad.count > 0) {
+    const indicators = data.problem_indicators || [];
+    if (indicators.length > 0) {
+      badge.textContent = `${indicators.length} issue${indicators.length > 1 ? 's' : ''} found`;
+      badge.className = 'badge bad';
+    } else {
+      badge.textContent = 'no clear issues';
+      badge.className = 'badge good';
+    }
+  } else {
+    badge.textContent = 'needs both good & bad';
+    badge.className = 'badge neutral';
+  }
+
+  // Good metrics
+  const gm = document.getElementById('goodMetrics');
+  gm.innerHTML = renderMetricList(data.good);
+
+  // Bad metrics
+  const bm = document.getElementById('badMetrics');
+  bm.innerHTML = renderMetricList(data.bad);
+
+  // Problem indicators
+  const ind = document.getElementById('indicators');
+  const indicators = data.problem_indicators || [];
+  if (indicators.length === 0) {
+    ind.innerHTML = '<div class="no-data">No significant differences detected between good and bad periods yet. Keep providing feedback.</div>';
+  } else {
+    ind.innerHTML = '<div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Problem Indicators</div>' +
+      indicators.map(i => {
+        const arrow = i.direction === 'higher_when_bad' ? '&#x25B2;' : '&#x25BC;';
+        const detail = i.direction === 'higher_when_bad'
+          ? `${i.ratio}x higher when bad (good: ${i.good_avg}, bad: ${i.bad_avg})`
+          : `${i.ratio}x lower when bad (good: ${i.good_avg}, bad: ${i.bad_avg})`;
+        return `
+          <div class="indicator ${i.severity}">
+            <span class="indicator-icon ${i.severity}">${arrow}</span>
+            <div class="indicator-text">
+              <div class="indicator-metric">${esc(i.metric)}</div>
+              <div class="indicator-detail">${esc(detail)}</div>
+            </div>
+          </div>`;
+      }).join('');
+  }
+}
+
+function renderMetricList(agg) {
+  if (!agg || agg.count === 0) return '<div class="no-data">No data</div>';
+  const metrics = [
+    ['Samples', agg.count],
+    ['Avg tracking error', agg.avg_tracking_error],
+    ['Max tracking error', agg.avg_max_tracking_error],
+    ['Command rate (Hz)', agg.avg_dds_command_rate_hz],
+    ['Feedback rate (Hz)', agg.avg_dds_feedback_rate_hz],
+    ['Error events', agg.avg_error_event_count],
+    ['DDS errors', agg.avg_dds_error_count],
+    ['Web failures', agg.avg_web_failure_count],
+    ['Camera stalls', agg.avg_camera_stall_count],
+  ];
+  return metrics.map(([label, val]) =>
+    `<div class="metric-row"><span class="metric-label">${esc(label)}</span><span class="metric-value">${val != null ? val : '—'}</span></div>`
+  ).join('');
+}
+
+// ---- Snapshot detail ----
+async function showSnapshot(feedbackId) {
+  try {
+    const resp = await fetch(`${API_BASE}/api/snapshot/${feedbackId}`);
+    const data = await resp.json();
+    renderSnapshot(data);
+  } catch (err) {
+    console.error('Snapshot error:', err);
+  }
+}
+
+function renderSnapshot(data) {
+  const panel = document.getElementById('snapshotPanel');
+  panel.classList.add('visible');
+
+  const label = document.getElementById('snapshotLabel');
+  const start = new Date(data.window_start * 1000).toLocaleTimeString();
+  const end = new Date(data.window_end * 1000).toLocaleTimeString();
+  label.textContent = `Window: ${start} — ${end}`;
+
+  const content = document.getElementById('snapshotContent');
+  let html = '';
+
+  // Summary
+  const s = data.summary_json || {};
+  if (s && Object.keys(s).length > 0) {
+    html += '<div class="snapshot-table-title">Summary</div><table class="snapshot-table"><tbody>';
+    for (const [k, v] of Object.entries(s)) {
+      html += `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`;
+    }
+    html += '</tbody></table>';
+  }
+
+  // System events
+  const events = data.system_events || [];
+  if (events.length > 0) {
+    html += '<div class="snapshot-table-title">System Events (' + events.length + ')</div>';
+    html += '<table class="snapshot-table"><thead><tr><th>Time</th><th>Type</th><th>Source</th><th>Level</th><th>Detail</th></tr></thead><tbody>';
+    events.forEach(e => {
+      const ts = new Date(e.ts * 1000).toLocaleTimeString();
+      const cls = e.level === 'error' ? ' class="err"' : '';
+      html += `<tr${cls}><td>${esc(ts)}</td><td>${esc(e.event_type || '')}</td><td>${esc(e.source || '')}</td><td>${esc(e.level || '')}</td><td>${esc((e.detail || '').slice(0, 80))}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  }
+
+  // DDS feedback (sample — show last 10)
+  const fb = data.dds_feedback || [];
+  if (fb.length > 0) {
+    const sample = fb.slice(-10);
+    html += `<div class="snapshot-table-title">DDS Feedback (last 10 of ${fb.length})</div>`;
+    html += '<table class="snapshot-table"><thead><tr><th>Time</th><th>J0</th><th>J1</th><th>J2</th><th>J3</th><th>J4</th><th>J5</th><th>J6</th><th>Err</th></tr></thead><tbody>';
+    sample.forEach(f => {
+      const ts = new Date(f.ts * 1000).toLocaleTimeString();
+      const errCls = f.error_status ? ' class="err"' : '';
+      html += `<tr><td>${esc(ts)}</td>`;
+      for (let i = 0; i < 7; i++) {
+        const v = f['angle' + i];
+        html += `<td>${v != null ? v.toFixed(2) : '—'}</td>`;
+      }
+      html += `<td${errCls}>${f.error_status ?? '—'}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  }
+
+  // DDS commands (sample)
+  const cmds = data.dds_commands || [];
+  if (cmds.length > 0) {
+    const sample = cmds.slice(-10);
+    html += `<div class="snapshot-table-title">DDS Commands (last 10 of ${cmds.length})</div>`;
+    html += '<table class="snapshot-table"><thead><tr><th>Time</th><th>Funcode</th><th>Joint</th><th>Target</th></tr></thead><tbody>';
+    sample.forEach(c => {
+      const ts = new Date(c.ts * 1000).toLocaleTimeString();
+      html += `<tr><td>${esc(ts)}</td><td>${c.funcode ?? ''}</td><td>${c.joint_id ?? ''}</td><td>${c.target_value != null ? c.target_value.toFixed(3) : '—'}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  }
+
+  // Smoother state (sample)
+  const sm = data.smoother_state || [];
+  if (sm.length > 0) {
+    const sample = sm.slice(-14); // 2 per joint
+    html += `<div class="snapshot-table-title">Smoother State (last ${sample.length} of ${sm.length})</div>`;
+    html += '<table class="snapshot-table"><thead><tr><th>Time</th><th>Joint</th><th>Target</th><th>Current</th><th>Sent</th><th>Error</th><th>Dirty</th></tr></thead><tbody>';
+    sample.forEach(s => {
+      const ts = new Date(s.ts * 1000).toLocaleTimeString();
+      const err = s.target != null && s.current != null ? Math.abs(s.target - s.current).toFixed(4) : '—';
+      html += `<tr><td>${esc(ts)}</td><td>${s.joint_id}</td><td>${s.target?.toFixed(3) ?? '—'}</td><td>${s.current?.toFixed(3) ?? '—'}</td><td>${s.sent?.toFixed(3) ?? '—'}</td><td>${err}</td><td>${s.dirty ? 'Y' : ''}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  }
+
+  content.innerHTML = html;
+  panel.scrollIntoView({ behavior: 'smooth' });
+}
+
+function closeSnapshot() {
+  document.getElementById('snapshotPanel').classList.remove('visible');
+}
+
+// ---- Utils ----
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+// ---- Init ----
+connectWs();
+refreshAll();
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'g' || e.key === 'G') submitFeedback('good');
+  if (e.key === 'b' || e.key === 'B') submitFeedback('bad');
+});
+</script>
+</body>
+</html>
