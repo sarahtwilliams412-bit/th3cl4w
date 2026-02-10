@@ -236,15 +236,26 @@ class ObjectTracker:
         # Also run multi-color CV
         results.extend(self.detector.detect_cv(frame, cam_id))
 
-        # Deduplicate by label (keep highest confidence)
-        best: dict[str, DetectionResult] = {}
+        # Deduplicate by spatial proximity (within 40px = same object)
+        # Keeps highest confidence detection at each location
+        DEDUP_PX = 40
+        deduped: list[DetectionResult] = []
         for r in results:
-            key = r.label
-            if key not in best or r.confidence > best[key].confidence:
-                best[key] = r
+            merged = False
+            for i, existing in enumerate(deduped):
+                dx = r.centroid_px[0] - existing.centroid_px[0]
+                dy = r.centroid_px[1] - existing.centroid_px[1]
+                if (dx * dx + dy * dy) < DEDUP_PX * DEDUP_PX:
+                    # Same location — keep higher confidence, prefer specific labels
+                    if r.confidence > existing.confidence:
+                        deduped[i] = r
+                    merged = True
+                    break
+            if not merged:
+                deduped.append(r)
 
         h, w = frame.shape[:2]
-        for det in best.values():
+        for det in deduped:
             position = self._detection_to_position(det, cam_id, w, h)
             dims = self._estimate_dimensions(det, cam_id, w, h)
             graspable = min(dims[0], dims[2]) <= 65.0 and min(dims[0], dims[2]) > 3.0

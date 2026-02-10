@@ -195,15 +195,24 @@ class LocationWorldModel:
         return obj
 
     def _find_match(self, label: str, position_mm: np.ndarray) -> Optional[str]:
-        """Find an existing object matching this label within proximity threshold."""
+        """Find an existing object matching by label+proximity or tight proximity alone.
+
+        Two matching strategies:
+        1. Same label within MATCH_DISTANCE_MM (80mm) — standard match
+        2. Any label within 30mm — same physical object detected with different color/method
+        """
+        CROSS_LABEL_DISTANCE_MM = 30.0
         best_id = None
         best_dist = MATCH_DISTANCE_MM
 
         for obj_id, obj in self._objects.items():
-            if obj.label != label:
-                continue
             dist = float(np.linalg.norm(obj.position_mm - position_mm))
-            if dist < best_dist:
+            if obj.label == label and dist < best_dist:
+                # Same label, within threshold
+                best_dist = dist
+                best_id = obj_id
+            elif dist < CROSS_LABEL_DISTANCE_MM and dist < best_dist:
+                # Different label but very close — same physical object
                 best_dist = dist
                 best_id = obj_id
 
