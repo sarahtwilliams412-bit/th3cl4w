@@ -62,7 +62,7 @@ trap cleanup EXIT INT TERM
 (
     while true; do
         echo "[$(date)] Starting camera server..."
-        python3.12 web/camera_server.py 2>&1 | tee -a /tmp/th3cl4w-cam.log &
+        python3.12 web/camera_server.py --cam2 6 2>&1 | tee -a /tmp/th3cl4w-cam.log &
         echo $! > "$CAM_PIDFILE"
         wait $!
         echo "[$(date)] Camera server exited ($?), restarting in 3s..."

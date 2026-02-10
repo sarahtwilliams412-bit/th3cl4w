@@ -252,18 +252,29 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <div class="camera-header">
         <span class="section-title" style="margin:0">Cameras</span>
         <button class="btn cam-toggle" id="btnCamToggle" title="Toggle cameras">👁 HIDE</button>
+        <button class="btn" id="btnCamSettings" title="Camera settings" style="font-size:10px;padding:3px 8px">⚙ SETTINGS</button>
       </div>
       <div class="camera-feeds" id="cameraFeeds">
         <div class="cam-feed">
-          <div class="cam-label"><span class="cam-live">● LIVE</span> Camera 1 (Left)</div>
-          <img class="cam-img" id="camImg0" src="http://localhost:8081/cam/0" alt="Camera 1">
+          <div class="cam-label"><span class="cam-live">● LIVE</span> <span class="cam-label-text" id="camLabel0">Camera 0</span></div>
+          <img class="cam-img" id="camImg0" src="http://localhost:8081/cam/0" alt="Camera 0">
           <button class="btn cam-snap" onclick="window.open('http://localhost:8081/snap/0','_blank')">📷 Snap</button>
         </div>
         <div class="cam-feed">
-          <div class="cam-label"><span class="cam-live">● LIVE</span> Camera 2 (Right)</div>
-          <img class="cam-img" id="camImg1" src="http://localhost:8081/cam/1" alt="Camera 2">
+          <div class="cam-label"><span class="cam-live">● LIVE</span> <span class="cam-label-text" id="camLabel1">Camera 1</span></div>
+          <img class="cam-img" id="camImg1" src="http://localhost:8081/cam/1" alt="Camera 1">
           <button class="btn cam-snap" onclick="window.open('http://localhost:8081/snap/1','_blank')">📷 Snap</button>
         </div>
+        <div class="cam-feed">
+          <div class="cam-label"><span class="cam-live">● LIVE</span> <span class="cam-label-text" id="camLabel2">Camera 2</span></div>
+          <img class="cam-img" id="camImg2" src="http://localhost:8081/cam/2" alt="Camera 2">
+          <button class="btn cam-snap" onclick="window.open('http://localhost:8081/snap/2','_blank')">📷 Snap</button>
+        </div>
+      </div>
+      <div id="cameraSettings" style="display:none; padding:8px 12px; border-top:1px solid var(--card-border);">
+        <div class="section-title" style="margin-bottom:6px">Camera Settings</div>
+        <div id="camSettingsRows"></div>
+        <button class="btn" id="btnSaveCamConfig" style="margin-top:6px">💾 SAVE</button>
       </div>
     </div>
   </div>
@@ -1275,6 +1286,68 @@ document.getElementById('btnCamToggle').addEventListener('click', () => {
   });
   setTimeout(resizeCanvas, 50);
 });
+
+// ============================================================
+//  CAMERA SETTINGS
+// ============================================================
+
+const PERSPECTIVES = ['overhead', 'side', 'front', 'arm-mounted', 'custom'];
+
+document.getElementById('btnCamSettings').addEventListener('click', () => {
+  const panel = document.getElementById('cameraSettings');
+  const visible = panel.style.display !== 'none';
+  panel.style.display = visible ? 'none' : 'block';
+  if (!visible) loadCameraConfig();
+});
+
+async function loadCameraConfig() {
+  try {
+    const resp = await fetch('/api/cameras/config');
+    const config = await resp.json();
+    const container = document.getElementById('camSettingsRows');
+    container.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const cfg = config[String(i)] || { label: `Camera ${i}`, perspective: 'custom' };
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:4px;';
+      row.innerHTML = `
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);width:30px">C${i}</span>
+        <input type="text" class="cam-cfg-label" data-cam="${i}" value="${cfg.label}"
+          style="flex:1;font-family:var(--mono);font-size:11px;padding:4px 6px;background:#0d1525;border:1px solid var(--card-border);border-radius:3px;color:var(--text)">
+        <select class="cam-cfg-persp" data-cam="${i}"
+          style="font-family:var(--mono);font-size:11px;padding:4px;background:#0d1525;border:1px solid var(--card-border);border-radius:3px;color:var(--text)">
+          ${PERSPECTIVES.map(p => `<option value="${p}" ${p === cfg.perspective ? 'selected' : ''}>${p}</option>`).join('')}
+        </select>`;
+      container.appendChild(row);
+      // Update live label
+      const labelEl = document.getElementById(`camLabel${i}`);
+      if (labelEl) labelEl.textContent = cfg.label;
+    }
+  } catch (e) { console.warn('Failed to load camera config:', e); }
+}
+
+document.getElementById('btnSaveCamConfig').addEventListener('click', async () => {
+  const labels = document.querySelectorAll('.cam-cfg-label');
+  const persps = document.querySelectorAll('.cam-cfg-persp');
+  for (let i = 0; i < labels.length; i++) {
+    const camId = parseInt(labels[i].dataset.cam);
+    const label = labels[i].value.trim() || `Camera ${camId}`;
+    const perspective = persps[i].value;
+    try {
+      await fetch('/api/cameras/config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ camera_id: camId, label, perspective })
+      });
+      const labelEl = document.getElementById(`camLabel${camId}`);
+      if (labelEl) labelEl.textContent = label;
+    } catch (e) { console.warn(`Failed to save camera ${camId} config:`, e); }
+  }
+  document.getElementById('cameraSettings').style.display = 'none';
+});
+
+// Load camera labels on startup
+loadCameraConfig();
 
 // ============================================================
 //  DEBUG TELEMETRY PANEL

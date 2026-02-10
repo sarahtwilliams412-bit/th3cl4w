@@ -687,21 +687,88 @@ async def api_secrets_status():
     }
 
 
+## Camera config storage
+CAMERA_CONFIG_PATH = Path(_project_root) / "data" / "camera_config.json"
+VALID_PERSPECTIVES = ["overhead", "side", "front", "arm-mounted", "custom"]
+
+def _load_camera_config() -> dict:
+    """Load camera config from JSON file, return defaults if missing."""
+    defaults = {
+        str(i): {"label": f"Camera {i}", "perspective": "custom"}
+        for i in range(3)
+    }
+    if CAMERA_CONFIG_PATH.exists():
+        try:
+            with open(CAMERA_CONFIG_PATH) as f:
+                saved = json.load(f)
+            # Merge with defaults so new cameras get defaults
+            for k, v in defaults.items():
+                if k not in saved:
+                    saved[k] = v
+            return saved
+        except Exception:
+            pass
+    return defaults
+
+def _save_camera_config(config: dict):
+    """Save camera config to JSON file."""
+    CAMERA_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CAMERA_CONFIG_PATH, "w") as f:
+        json.dump(config, f, indent=2)
+
+
 @app.get("/api/cameras")
 async def api_cameras():
-    """Proxy camera status from the camera server."""
+    """Proxy camera status from the camera server, enriched with labels/perspectives."""
     import httpx
 
+    cam_config = _load_camera_config()
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             resp = await client.get("http://localhost:8081/status")
-            return resp.json()
+            status = resp.json()
     except Exception:
-        return {
+        status = {
             "error": "Camera server unavailable",
             "0": {"connected": False},
             "1": {"connected": False},
         }
+
+    # Enrich each camera entry with label and perspective
+    for cam_id in list(status.keys()):
+        if cam_id.isdigit() and isinstance(status[cam_id], dict):
+            cfg = cam_config.get(cam_id, {"label": f"Camera {cam_id}", "perspective": "custom"})
+            status[cam_id]["label"] = cfg.get("label", f"Camera {cam_id}")
+            status[cam_id]["perspective"] = cfg.get("perspective", "custom")
+
+    return status
+
+
+@app.get("/api/cameras/config")
+async def api_cameras_config_get():
+    """Return camera label/perspective configuration."""
+    return _load_camera_config()
+
+
+class CameraConfigRequest(BaseModel):
+    camera_id: int = Field(ge=0, le=2)
+    label: str = Field(min_length=1, max_length=50)
+    perspective: str
+
+
+@app.post("/api/cameras/config")
+async def api_cameras_config_set(req: CameraConfigRequest):
+    """Set label and perspective for a camera."""
+    if req.perspective not in VALID_PERSPECTIVES:
+        return JSONResponse(
+            {"ok": False, "error": f"Invalid perspective. Must be one of: {VALID_PERSPECTIVES}"},
+            status_code=400,
+        )
+    config = _load_camera_config()
+    config[str(req.camera_id)] = {"label": req.label, "perspective": req.perspective}
+    _save_camera_config(config)
+    action_log.add("CAMERA_CONFIG", f"Camera {req.camera_id}: label={req.label!r}, perspective={req.perspective}", "info")
+    return {"ok": True, "config": config}
 
 
 @app.get("/api/state")

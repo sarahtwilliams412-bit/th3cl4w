@@ -415,6 +415,9 @@ def main():
     parser.add_argument(
         "--cam1", type=int, default=4, help="Device index for camera 1 (default: 4)"
     )
+    parser.add_argument(
+        "--cam2", type=int, default=6, help="Device index for camera 2 (default: 6)"
+    )
     parser.add_argument("--port", type=int, default=8081, help="HTTP port (default: 8081)")
     parser.add_argument("--width", type=int, default=1920, help="Capture width (default: 1920)")
     parser.add_argument("--height", type=int, default=1080, help="Capture height (default: 1080)")
@@ -431,14 +434,25 @@ def main():
     cameras[0] = CameraThread(args.cam0, args.width, args.height, args.fps, args.jpeg_quality)
     cameras[1] = CameraThread(args.cam1, args.width, args.height, args.fps, args.jpeg_quality)
 
+    # Try to open cam2 — don't crash if it fails
+    try:
+        cam2 = CameraThread(args.cam2, args.width, args.height, args.fps, args.jpeg_quality)
+        cameras[2] = cam2
+    except Exception as e:
+        logger.warning("Failed to create camera 2 (dev %d): %s — continuing with 2 cameras", args.cam2, e)
+
     for cam in cameras.values():
         cam.start()
 
-    logger.info("Cameras started: cam0=/dev/video%d, cam1=/dev/video%d", args.cam0, args.cam1)
+    cam_list = ", ".join(f"cam{i}=/dev/video{cameras[i].device_id}" for i in sorted(cameras))
+    logger.info("Cameras started: %s", cam_list)
 
     # Launch startup scanner — immediately begins assessing the environment
     if _HAS_SCANNER and not args.no_scan:
-        startup_scanner = StartupScanner(cam0=cameras[0], cam1=cameras[1])
+        scanner_kwargs = {"cam0": cameras[0], "cam1": cameras[1]}
+        if 2 in cameras:
+            scanner_kwargs["cam2"] = cameras[2]
+        startup_scanner = StartupScanner(**{k: v for k, v in scanner_kwargs.items() if k in ("cam0", "cam1")})
         startup_scanner.on_model_ready(_on_world_model_ready)
         startup_scanner.start()
         logger.info("Startup scanner launched — building world model from camera feeds")
@@ -448,8 +462,9 @@ def main():
     # Start HTTP server
     server = ThreadedHTTPServer(("0.0.0.0", args.port), CameraHandler)
     logger.info("Camera server listening on http://0.0.0.0:%d", args.port)
-    logger.info("  MJPEG streams: /cam/0, /cam/1")
-    logger.info("  Snapshots:     /snap/0, /snap/1")
+    cam_ids = sorted(cameras.keys())
+    logger.info("  MJPEG streams: %s", ", ".join(f"/cam/{i}" for i in cam_ids))
+    logger.info("  Snapshots:     %s", ", ".join(f"/snap/{i}" for i in cam_ids))
     logger.info("  Status:        /status")
     logger.info("  World model:   /world")
     logger.info("  Scan report:   /scan")
