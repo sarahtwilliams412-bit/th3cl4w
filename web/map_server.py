@@ -19,6 +19,9 @@ from typing import Any, Dict, List, Optional
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+
+# Suppress noisy httpx request logging (depth/location polls at high frequency)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -46,7 +49,7 @@ MAIN_SERVER_URL = os.getenv("MAIN_SERVER_URL", "http://localhost:8080")
 CAMERA_SERVER_URL = os.getenv("CAMERA_SERVER_URL", "http://localhost:8081")
 LOCATION_SERVER_URL = os.getenv("LOCATION_SERVER_URL", "http://localhost:8082")
 
-ARM_POLL_HZ = float(os.getenv("ARM_POLL_HZ", "30"))
+ARM_POLL_HZ = float(os.getenv("ARM_POLL_HZ", "2"))
 DEPTH_POLL_HZ = float(os.getenv("DEPTH_POLL_HZ", "3"))
 LOCATION_POLL_HZ = float(os.getenv("LOCATION_POLL_HZ", "5"))
 WS_BROADCAST_HZ = float(os.getenv("WS_BROADCAST_HZ", "15"))

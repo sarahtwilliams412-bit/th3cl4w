@@ -79,10 +79,10 @@ class VisualServo:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY required")
 
-        import google.generativeai as genai
+        from google import genai as _genai
 
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel("gemini-2.0-flash")
+        self._client = _genai.Client(api_key=self.api_key)
+        self._model_name = "gemini-2.0-flash"
 
         self.max_steps = max_steps
         self.close_enough_px = close_enough_px
@@ -134,11 +134,13 @@ class VisualServo:
         )
 
         try:
-            response = self.model.generate_content(
-                [
-                    {"mime_type": "image/jpeg", "data": b64},
+            from google.genai import types as _gtypes
+            response = self._client.models.generate_content(
+                model=self._model_name,
+                contents=[
+                    _gtypes.Part.from_bytes(data=jpeg, mime_type="image/jpeg"),
                     prompt,
-                ]
+                ],
             )
             text = response.text.strip()
             # Strip markdown code fences if present

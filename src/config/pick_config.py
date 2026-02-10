@@ -104,8 +104,8 @@ DEFAULTS: dict[str, Any] = {
         "collision_cooldown_s": 5.0,
     },
     "tracker": {
-        "fast_scan_interval_s": 1.0,
-        "deep_scan_interval_s": 30.0,
+        "fast_scan_interval_s": 2.0,
+        "deep_scan_interval_s": 180.0,
         "verify_interval_s": 5.0,
         "stale_sweep_interval_s": 10.0,
         "overhead_mm_per_px": 0.4167,

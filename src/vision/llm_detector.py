@@ -14,9 +14,11 @@ import time
 from dataclasses import dataclass, field
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
 except ImportError:
     genai = None  # type: ignore[assignment]
+    genai_types = None
 
 from .ascii_converter import AsciiConverter, CHARSET_DETAILED
 
@@ -70,7 +72,7 @@ class LLMJointDetector:
     ):
         if genai is None:
             raise RuntimeError(
-                "google-generativeai package required: pip install google-generativeai"
+                "google-genai package required: pip install google-genai"
             )
 
         self.model_name = model
@@ -90,14 +92,11 @@ class LLMJointDetector:
         if not resolved_key:
             raise ValueError("No Gemini API key: set GEMINI_API_KEY env var or pass api_key")
 
-        genai.configure(api_key=resolved_key)
-        self.model = genai.GenerativeModel(
-            model,
-            generation_config=genai.GenerationConfig(
-                temperature=0.1,
-                max_output_tokens=400,
-                response_mime_type="application/json",
-            ),
+        self._client = genai.Client(api_key=resolved_key)
+        self._config = genai_types.GenerateContentConfig(
+            temperature=0.1,
+            max_output_tokens=400,
+            response_mime_type="application/json",
         )
 
         self.total_tokens = 0
@@ -238,7 +237,12 @@ Use confidence "high", "medium", or "low". Report all 5 joints — use your best
 
         for attempt in range(self.MAX_RETRIES + 1):
             try:
-                response = await asyncio.to_thread(self.model.generate_content, prompt)
+                response = await asyncio.to_thread(
+                    self._client.models.generate_content,
+                    model=self.model_name,
+                    contents=prompt,
+                    config=self._config,
+                )
                 break
             except Exception as e:
                 if attempt == self.MAX_RETRIES:

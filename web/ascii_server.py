@@ -41,6 +41,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("th3cl4w.ascii_server")
 
 # Globals
+_start_time = time.time()
 streamer: Optional[AsciiStreamer] = None
 session_mgr = SessionManager()
 analyst = None  # Lazy-loaded to avoid import error if no API key
@@ -104,6 +105,24 @@ class ConfigRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # REST endpoints
 # ---------------------------------------------------------------------------
+
+@app.get("/api/ascii/status")
+async def get_status():
+    """Health/status endpoint for heartbeat checks."""
+    uptime = time.time() - _start_time
+    status = {
+        "service": "ascii_server",
+        "status": "ok" if streamer is not None else "starting",
+        "port": 8084,
+        "uptime_seconds": round(uptime, 1),
+    }
+    if streamer is not None:
+        status["cameras"] = streamer.cam_ids
+        status["config"] = streamer.config.to_dict()
+        a = _get_analyst()
+        status["analyst_available"] = a is not None
+    return status
+
 
 @app.get("/api/ascii/stream/{cam_id}")
 async def get_ascii_frame(cam_id: int):

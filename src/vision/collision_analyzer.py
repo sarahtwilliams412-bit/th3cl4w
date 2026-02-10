@@ -43,22 +43,24 @@ class CollisionAnalyzer:
     def __init__(self, gemini_api_key: Optional[str] = None, camera_base: str = CAMERA_BASE):
         self._camera_base = camera_base
         self._api_key = gemini_api_key or os.environ.get("GEMINI_API_KEY")
-        self._model = None
+        self._client = None
+        self._model_name = None
 
         if self._api_key:
             try:
-                import google.generativeai as genai
+                from google import genai as _genai
 
-                genai.configure(api_key=self._api_key)
-                self._model = genai.GenerativeModel("gemini-2.0-flash")
+                self._client = _genai.Client(api_key=self._api_key)
+                self._model_name = "gemini-2.0-flash"
                 logger.info("Gemini vision model initialized")
             except Exception as e:
                 logger.warning("Failed to initialize Gemini: %s", e)
-                self._model = None
+                self._client = None
+                self._model_name = None
 
     @property
     def vision_available(self) -> bool:
-        return self._model is not None
+        return self._client is not None
 
     def analyze(
         self,
@@ -95,7 +97,7 @@ class CollisionAnalyzer:
         analysis_text = "Vision analysis unavailable — images saved for manual review"
         vision_used = False
 
-        if self._model and (cam0_bytes or cam1_bytes):
+        if self._client and (cam0_bytes or cam1_bytes):
             try:
                 analysis_text = self._analyze_with_gemini(
                     joint_id,
@@ -162,15 +164,17 @@ class CollisionAnalyzer:
             f"Be concise (2-3 sentences max)."
         )
 
+        from google.genai import types as _gtypes
+
         parts = [prompt]
         for img_bytes in [cam0_bytes, cam1_bytes]:
             if img_bytes:
                 parts.append(
-                    {
-                        "mime_type": "image/jpeg",
-                        "data": img_bytes,
-                    }
+                    _gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
                 )
 
-        response = self._model.generate_content(parts)
+        response = self._client.models.generate_content(
+            model=self._model_name,
+            contents=parts,
+        )
         return response.text

@@ -22,10 +22,11 @@ class IngestConfig:
         main_server_url: str = "http://localhost:8080",
         camera_server_url: str = "http://localhost:8081",
         location_server_url: str = "http://localhost:8082",
-        arm_poll_hz: float = 30,
+        arm_poll_hz: float = 2,
         depth_poll_hz: float = 3,
         location_poll_hz: float = 5,
         camera_id: int = 0,
+        use_ws: bool = True,
     ):
         self.main_server_url = main_server_url
         self.camera_server_url = camera_server_url
@@ -34,6 +35,7 @@ class IngestConfig:
         self.depth_poll_hz = depth_poll_hz
         self.location_poll_hz = location_poll_hz
         self.camera_id = camera_id
+        self.use_ws = use_ws
 
 
 class IngestStats:
@@ -94,12 +96,16 @@ class DataIngest:
         if self._running:
             return
         self._running = True
+        if self.config.use_ws:
+            arm_task = asyncio.create_task(self._arm_ws_loop())
+        else:
+            arm_task = asyncio.create_task(self._arm_loop())
         self._tasks = [
-            asyncio.create_task(self._arm_loop()),
+            arm_task,
             asyncio.create_task(self._depth_loop()),
             asyncio.create_task(self._location_loop()),
         ]
-        logger.info("Data ingest started")
+        logger.info("Data ingest started (arm via %s)", "WebSocket" if self.config.use_ws else "polling")
 
     async def stop(self) -> None:
         """Stop all ingest loops."""
@@ -110,8 +116,53 @@ class DataIngest:
         self._tasks = []
         logger.info("Data ingest stopped")
 
+    async def _arm_ws_loop(self) -> None:
+        """Subscribe to main server /ws/state WebSocket for arm state.
+
+        Falls back to polling if WebSocket connection fails.
+        """
+        import json
+        try:
+            import websockets
+        except ImportError:
+            logger.warning("websockets package not installed, falling back to polling")
+            return await self._arm_loop()
+
+        ws_url = self.config.main_server_url.replace("http://", "ws://").replace("https://", "wss://")
+        ws_url += "/ws/state"
+        retry_delay = 1.0
+
+        while self._running:
+            try:
+                async with websockets.connect(ws_url, close_timeout=2) as ws:
+                    logger.info("Connected to main server WebSocket at %s", ws_url)
+                    retry_delay = 1.0
+                    async for message in ws:
+                        if not self._running:
+                            break
+                        try:
+                            data = json.loads(message)
+                            joints = data.get("joints", data.get("joint_angles", [0] * 7))
+                            gripper = data.get("gripper_mm", data.get("gripper", 0.0))
+                            self._last_joints = joints
+                            self._last_gripper = gripper
+                            self.stats.arm_polls += 1
+                            self.stats.arm_last = time.time()
+
+                            if self.on_arm_state:
+                                await self.on_arm_state(joints, gripper)
+                        except (json.JSONDecodeError, KeyError) as e:
+                            self.stats.arm_errors += 1
+                            logger.debug("WS parse error: %s", e)
+            except Exception as e:
+                self.stats.arm_errors += 1
+                if self.stats.arm_errors <= 3 or self.stats.arm_errors % 100 == 0:
+                    logger.debug("Arm WS error (retry in %.0fs): %s", retry_delay, e)
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 1.5, 30.0)
+
     async def _arm_loop(self) -> None:
-        """Poll main server for joint state."""
+        """Poll main server for joint state (fallback when WS unavailable)."""
         import httpx
 
         interval = 1.0 / self.config.arm_poll_hz

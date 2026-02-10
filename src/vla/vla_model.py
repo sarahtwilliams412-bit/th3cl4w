@@ -107,14 +107,14 @@ class GeminiVLABackend(VLABackend):
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY required for GeminiVLABackend")
 
-        import google.generativeai as genai
+        from google import genai as _genai
+        from google.genai import types as _gtypes
 
-        genai.configure(api_key=self.api_key)
-        self._model = genai.GenerativeModel(
-            model_name,
+        self._client = _genai.Client(api_key=self.api_key)
+        self._model_name = model_name
+        self._config = _gtypes.GenerateContentConfig(
             system_instruction=self._get_system_prompt(),
         )
-        self._model_name = model_name
         logger.info("GeminiVLABackend initialized with model=%s", model_name)
 
     def _get_system_prompt(self) -> str:
@@ -200,19 +200,22 @@ class GeminiVLABackend(VLABackend):
         """Send images + prompt to Gemini and parse response."""
         t0 = time.monotonic()
 
-        cam0_b64 = base64.b64encode(obs.cam0_jpeg).decode()
-        cam1_b64 = base64.b64encode(obs.cam1_jpeg).decode()
+        from google.genai import types as _gtypes
 
         contents = [
-            {"mime_type": "image/jpeg", "data": cam0_b64},
+            _gtypes.Part.from_bytes(data=obs.cam0_jpeg, mime_type="image/jpeg"),
             "Camera 0 (front/side view) above.",
-            {"mime_type": "image/jpeg", "data": cam1_b64},
+            _gtypes.Part.from_bytes(data=obs.cam1_jpeg, mime_type="image/jpeg"),
             "Camera 1 (overhead view) above.",
             prompt,
         ]
 
         try:
-            response = self._model.generate_content(contents)
+            response = self._client.models.generate_content(
+                model=self._model_name,
+                contents=contents,
+                config=self._config,
+            )
             text = response.text.strip()
             plan = self._parse_response(text)
             plan.inference_time_ms = (time.monotonic() - t0) * 1000

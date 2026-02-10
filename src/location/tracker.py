@@ -18,7 +18,7 @@ try:
 except ImportError:
     httpx = None
 
-from .detector import UnifiedDetector, DetectionResult
+from .detector import UnifiedDetector, DetectionResult, gemini_rate_limited
 from .world_model import LocationWorldModel
 from .reachability import ARM_MAX_REACH_MM
 from src.config.pick_config import get_pick_config as _get_pick_config
@@ -158,11 +158,14 @@ class ObjectTracker:
 
         while self._running:
             try:
-                for cam_id in [0, 1]:  # overhead and side only
-                    _, jpeg = await self._grab_frame(cam_id)
-                    if jpeg is not None:
-                        await self._process_llm_detections(jpeg, cam_id)
-                self._last_deep_scan = time.time()
+                if gemini_rate_limited():
+                    logger.debug("Deep scan skipped — Gemini rate-limited")
+                else:
+                    for cam_id in [0, 1]:  # overhead and side only
+                        _, jpeg = await self._grab_frame(cam_id)
+                        if jpeg is not None:
+                            await self._process_llm_detections(jpeg, cam_id)
+                    self._last_deep_scan = time.time()
             except asyncio.CancelledError:
                 break
             except Exception:

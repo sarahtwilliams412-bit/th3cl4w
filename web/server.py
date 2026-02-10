@@ -2575,24 +2575,24 @@ async def locate_object(req: LocateRequest):
                     {"ok": False, "error": "GEMINI_API_KEY not set"}, status_code=501
                 )
 
-            import google.generativeai as genai
+            from google import genai as _genai
+            from google.genai import types as _gtypes
 
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-2.0-flash")
+            _client = _genai.Client(api_key=api_key)
 
             import base64
 
-            b64 = base64.b64encode(jpeg_bytes).decode()
             prompt = (
                 f"Find the {req.target} in this 1920x1080 image. "
                 f"Return ONLY the pixel coordinates of its center as JSON: "
                 f'{{"u": <x_pixel>, "v": <y_pixel>}}'
             )
-            response = model.generate_content(
-                [
-                    {"mime_type": "image/jpeg", "data": b64},
+            response = _client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=[
+                    _gtypes.Part.from_bytes(data=jpeg_bytes, mime_type="image/jpeg"),
                     prompt,
-                ]
+                ],
             )
 
             import re

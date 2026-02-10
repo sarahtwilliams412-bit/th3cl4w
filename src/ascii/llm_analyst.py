@@ -14,10 +14,12 @@ from typing import Optional
 logger = logging.getLogger("th3cl4w.ascii.llm_analyst")
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
     _HAS_GENAI = True
 except ImportError:
     genai = None
+    genai_types = None
     _HAS_GENAI = False
 
 CAMERA_PERSPECTIVES = {
@@ -58,13 +60,13 @@ class AsciiAnalyst:
 
     def __init__(self, api_key: Optional[str] = None):
         if not _HAS_GENAI:
-            raise RuntimeError("google-generativeai required: pip install google-generativeai")
+            raise RuntimeError("google-genai required: pip install google-genai")
 
         resolved_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not resolved_key:
             raise ValueError("No Gemini API key: set GEMINI_API_KEY or pass api_key")
 
-        genai.configure(api_key=resolved_key)
+        self._client = genai.Client(api_key=resolved_key)
         self._model_name = self.MODEL
         self.total_tokens = 0
         self.total_calls = 0
@@ -75,14 +77,11 @@ class AsciiAnalyst:
             width=width, height=height, charset=charset, perspective=perspective
         )
 
-    def _create_model(self, system_prompt: str):
-        return genai.GenerativeModel(
-            self._model_name,
+    def _create_config(self, system_prompt: str):
+        return genai_types.GenerateContentConfig(
             system_instruction=system_prompt,
-            generation_config=genai.GenerationConfig(
-                temperature=0.3,
-                max_output_tokens=1500,
-            ),
+            temperature=0.3,
+            max_output_tokens=1500,
         )
 
     async def analyze(
@@ -110,24 +109,26 @@ class AsciiAnalyst:
         """
         t0 = time.monotonic()
         system_prompt = self._build_system_prompt(width, height, charset, cam_id)
-        model = self._create_model(system_prompt)
+        config = self._create_config(system_prompt)
 
         # Build the user message with the ASCII frame
         user_msg = f"Here is the current ASCII frame from camera {cam_id}:\n\n```\n{ascii_text}\n```\n\nQuestion: {question}"
 
         # Build chat history if provided
-        chat_history = []
+        contents = []
         if history:
             for msg in history[-self.MAX_HISTORY:]:
                 role = "user" if msg["role"] == "user" else "model"
-                chat_history.append({"role": role, "parts": [msg["text"]]})
+                contents.append(genai_types.Content(role=role, parts=[genai_types.Part.from_text(text=msg["text"])]))
+        contents.append(genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=user_msg)]))
 
         try:
-            if chat_history:
-                chat = model.start_chat(history=chat_history)
-                response = await asyncio.to_thread(chat.send_message, user_msg)
-            else:
-                response = await asyncio.to_thread(model.generate_content, user_msg)
+            response = await asyncio.to_thread(
+                self._client.models.generate_content,
+                model=self._model_name,
+                contents=contents,
+                config=config,
+            )
 
             answer = response.text or ""
             tokens = 0
