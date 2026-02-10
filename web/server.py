@@ -3877,6 +3877,32 @@ async def pick_calibrate_camera_arm():
 
 
 # ---------------------------------------------------------------------------
+# Pick Episode Telemetry endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/pick/episodes")
+async def pick_episodes(limit: int = 50):
+    """List recent pick episodes."""
+    from src.telemetry.pick_episode import PickEpisodeRecorder
+    recorder = PickEpisodeRecorder()
+    episodes = recorder.load_episodes(limit=limit)
+    return {"ok": True, "episodes": episodes, "count": len(episodes)}
+
+
+@app.get("/api/pick/episodes/{episode_id}")
+async def pick_episode_detail(episode_id: str):
+    """Get a single pick episode by ID."""
+    from src.telemetry.pick_episode import PickEpisodeRecorder
+    recorder = PickEpisodeRecorder()
+    episodes = recorder.load_episodes(limit=1000)
+    for ep in episodes:
+        if ep.get("episode_id") == episode_id:
+            return {"ok": True, "episode": ep}
+    return JSONResponse({"ok": False, "error": "Episode not found"}, status_code=404)
+
+
+# ---------------------------------------------------------------------------
 # Vision Task Planning endpoints — look at camera, build a plan
 # ---------------------------------------------------------------------------
 
