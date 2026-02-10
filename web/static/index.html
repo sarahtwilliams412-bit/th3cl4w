@@ -316,6 +316,22 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   max-width: 300px; white-space: normal; pointer-events: none;
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
+/* Comprehensive Safety Panel */
+.safety-section { border:1px solid var(--card-border); border-radius:8px; margin-bottom:8px; background:var(--card-bg); }
+.safety-section[open] { border-color:var(--accent); }
+.safety-section-title { padding:10px 14px; cursor:pointer; font-size:13px; font-weight:bold; display:flex; align-items:center; gap:8px; user-select:none; }
+.safety-section-title:hover { background:rgba(255,255,255,0.03); }
+.safety-section-body { padding:8px 14px 14px; border-top:1px solid var(--card-border); }
+.safety-badge { font-size:10px; padding:2px 8px; border-radius:10px; font-weight:normal; margin-left:auto; }
+.safety-badge.green { background:#1a5c2a; color:#6bff8d; }
+.safety-badge.yellow { background:#5c4a1a; color:#ffd06b; }
+.safety-badge.red { background:#5c1a1a; color:#ff6b6b; }
+.safety-input { width:80px; background:var(--bg-darker); color:var(--text-primary); border:1px solid var(--card-border); padding:3px 6px; border-radius:4px; font-size:12px; }
+.safety-field { font-size:12px; display:flex; align-items:center; gap:6px; cursor:help; }
+.safety-risk { display:inline-block; width:12px; height:12px; border-radius:50%; }
+.safety-risk.green { background:#27ae60; }
+.safety-risk.yellow { background:#f39c12; }
+.safety-risk.red { background:#e74c3c; }
 </style>
 </head>
 <body>
@@ -1335,6 +1351,252 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   </div>
 </div>
 
+<!-- ============================================================ -->
+<!-- PANEL: Safety Settings (Comprehensive)                        -->
+<!-- ============================================================ -->
+<div class="panel" id="panel-safety">
+  <div class="panel-body">
+    <div class="panel-header">🛡️ Comprehensive Safety Settings</div>
+
+    <!-- Presets & Actions Bar -->
+    <div class="panel-card" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-weight:bold;font-size:13px;margin-right:8px">Presets:</span>
+        <button class="btn" onclick="safetyPreset('conservative')" style="background:#27ae60;color:#fff" title="Tighter limits, slower motion, collision detection ON">🟢 Conservative</button>
+        <button class="btn" onclick="safetyPreset('normal')" style="background:#f39c12;color:#fff" title="Default settings — balanced safety and usability">🟡 Normal</button>
+        <button class="btn" onclick="safetyPreset('aggressive')" style="background:#e74c3c;color:#fff" title="Wider limits, faster motion, most checks disabled. USE WITH CAUTION.">🔴 Aggressive</button>
+        <span style="flex:1"></span>
+        <button class="btn primary" onclick="safetyLoad()">📥 Load</button>
+        <button class="btn" onclick="safetySave()">💾 Save All</button>
+        <button class="btn" onclick="safetyPreset('normal')" style="background:#c0392b;color:#fff">↺ Reset Defaults</button>
+      </div>
+      <div class="result-box" id="safetyResult" style="margin-top:8px;display:none;"></div>
+    </div>
+
+    <!-- E-Stop Status -->
+    <div class="panel-card" id="safetyEstopCard" style="margin-bottom:12px;display:none">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:24px">🚨</span>
+        <div>
+          <div style="font-weight:bold;color:#e74c3c;font-size:14px">EMERGENCY STOP ACTIVE</div>
+          <div style="font-size:12px;color:var(--text-secondary)">All commands blocked. Power cycle to reset.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="safetyContainer" style="display:none">
+
+    <!-- Joint Position Limits -->
+    <details class="safety-section" open>
+      <summary class="safety-section-title">📐 Joint Position Limits <span class="safety-badge" id="badge-jpl">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          Per-joint min/max angles in degrees. Hardware limits shown for reference. ⚠️ Exceeding hardware limits may damage motors.
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px" id="safetyJointTable">
+          <thead><tr style="color:var(--text-secondary)">
+            <th style="text-align:left;padding:4px">Joint</th>
+            <th style="text-align:center;padding:4px">Min (°)</th>
+            <th style="text-align:center;padding:4px">Max (°)</th>
+            <th style="text-align:center;padding:4px">HW Limit</th>
+            <th style="text-align:center;padding:4px">Risk</th>
+          </tr></thead>
+          <tbody id="safetyJointBody"></tbody>
+        </table>
+      </div>
+    </details>
+
+    <!-- Torque Proxy -->
+    <details class="safety-section">
+      <summary class="safety-section-title">💪 Torque Proxy <span class="safety-badge" id="badge-tp">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          Estimates torque load from joint angles: |J1| + |J2| × factor. Rejects commands that would overload motors.
+          <br>🔧 <b>Software safety layer</b> — not a D1 hardware feature.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center">
+          <label class="safety-field" title="Maximum torque proxy value before rejection. ↑ = more permissive, ↓ = stricter. Default: 150">
+            Limit: <input type="number" id="sf_tp_limit" step="5" class="safety-input">
+          </label>
+          <label class="safety-field" title="Weight factor for J2 (elbow). ↑ = stricter on elbow extension. Default: 0.7">
+            J2 Factor: <input type="number" id="sf_tp_j2" step="0.05" class="safety-input">
+          </label>
+          <label class="safety-field" title="When OFF, torque proxy check is skipped entirely.">
+            <input type="checkbox" id="sf_tp_enabled"> Enabled
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <!-- Stall Detection -->
+    <details class="safety-section">
+      <summary class="safety-section-title">🔍 Stall Detection <span class="safety-badge" id="badge-sd">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          Checks if joints reached their target after a delay. Logs warning if error exceeds threshold.
+          <br>🔧 <b>Software safety layer</b>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center">
+          <label class="safety-field" title="Seconds to wait before checking. ↑ for slow movements. Default: 5.0s">
+            Delay (s): <input type="number" id="sf_sd_delay" step="0.5" class="safety-input">
+          </label>
+          <label class="safety-field" title="Degrees of error allowed. ↑ = fewer false positives. Default: 15.0°">
+            Threshold (°): <input type="number" id="sf_sd_thresh" step="1" class="safety-input">
+          </label>
+          <label class="safety-field" title="When OFF, stall detection is skipped.">
+            <input type="checkbox" id="sf_sd_enabled"> Enabled
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <!-- Collision Detection -->
+    <details class="safety-section">
+      <summary class="safety-section-title">💥 Collision Detection <span class="safety-badge" id="badge-cd">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          Monitors commanded vs actual positions in real-time. Fires stall event if error persists.
+          <br>⚠️ Disabled by default — 3° threshold triggers on normal motion lag.
+          <br>🔧 <b>Software safety layer</b>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center">
+          <label class="safety-field" title="Position error to enter error state. ↓ = more sensitive. Default: 3.0°">
+            Error Threshold (°): <input type="number" id="sf_cd_error" step="0.5" class="safety-input">
+          </label>
+          <label class="safety-field" title="Error must persist this long before stall fires. ↓ = faster response. Default: 0.5s">
+            Duration (s): <input type="number" id="sf_cd_dur" step="0.1" class="safety-input">
+          </label>
+          <label class="safety-field" title="Min time between stall events per joint. Default: 5.0s">
+            Cooldown (s): <input type="number" id="sf_cd_cool" step="1" class="safety-input">
+          </label>
+          <label class="safety-field" title="Enable real-time collision detection. May cause false positives.">
+            <input type="checkbox" id="sf_cd_enabled"> Enabled
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <!-- Command Smoother -->
+    <details class="safety-section">
+      <summary class="safety-section-title">🔄 Command Smoother <span class="safety-badge" id="badge-cs">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          Interpolates between current and target positions to prevent jerky motion. Runs at fixed rate.
+          <br>🔧 <b>Software safety layer</b> — changes apply immediately.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center">
+          <label class="safety-field" title="Exponential smoothing factor. 0.1=very smooth/slow, 1.0=instant/no smoothing. Default: 0.35">
+            Alpha (smoothing): <input type="number" id="sf_cs_alpha" step="0.05" min="0.05" max="1.0" class="safety-input">
+          </label>
+          <label class="safety-field" title="Max degrees per tick. Safety velocity cap. ↑ = faster motion. Default: 10.0°">
+            Max Step (°/tick): <input type="number" id="sf_cs_step" step="1" class="safety-input">
+          </label>
+          <label class="safety-field" title="Max gripper change per tick. Default: 5.0mm">
+            Max Gripper Step (mm): <input type="number" id="sf_cs_grip" step="1" class="safety-input">
+          </label>
+          <label class="safety-field" title="Refuse commands if feedback is older than this. Default: 0.5s">
+            Feedback Staleness (s): <input type="number" id="sf_cs_stale" step="0.1" class="safety-input">
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <!-- Velocity Limits -->
+    <details class="safety-section">
+      <summary class="safety-section-title">⚡ Velocity Limits <span class="safety-badge" id="badge-vl">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          Maximum joint velocities for SafetyMonitor validation and motion planner.
+          <br>🔧 <b>Software safety layer</b> — validated before sending to D1.
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="color:var(--text-secondary)">
+            <th style="text-align:left;padding:4px">Joint</th>
+            <th style="text-align:center;padding:4px">Max (rad/s)</th>
+            <th style="text-align:center;padding:4px">Max (°/s)</th>
+          </tr></thead>
+          <tbody id="safetyVelBody"></tbody>
+        </table>
+      </div>
+    </details>
+
+    <!-- Torque Limits -->
+    <details class="safety-section">
+      <summary class="safety-section-title">🏋️ Torque Limits <span class="safety-badge" id="badge-tl">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          Maximum torque per joint (Nm). Used by SafetyMonitor for command validation.
+          <br>🔧 <b>Software safety layer</b>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="color:var(--text-secondary)">
+            <th style="text-align:left;padding:4px">Joint</th>
+            <th style="text-align:center;padding:4px">Max Torque (Nm)</th>
+          </tr></thead>
+          <tbody id="safetyTorqueBody"></tbody>
+        </table>
+      </div>
+    </details>
+
+    <!-- Workspace Bounds -->
+    <details class="safety-section">
+      <summary class="safety-section-title">🌐 Workspace Bounds <span class="safety-badge" id="badge-wb">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          Spherical workspace limit from base. Rejects state if estimated reach exceeds radius.
+          <br>🔧 <b>Software safety layer</b>
+        </div>
+        <label class="safety-field" title="Max reach from base in mm. ↓ = smaller safe zone. Default: 550mm">
+          Max Radius (mm): <input type="number" id="sf_wb_radius" step="10" class="safety-input">
+        </label>
+      </div>
+    </details>
+
+    <!-- Ramp Control -->
+    <details class="safety-section">
+      <summary class="safety-section-title">📈 Ramp Control <span class="safety-badge" id="badge-rc">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          Large movements are broken into incremental steps to avoid motor overload.
+          <br>🔧 <b>Software safety layer</b>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center">
+          <label class="safety-field" title="Movements larger than this are ramped. Default: 20°">
+            Threshold (°): <input type="number" id="sf_rc_thresh" step="5" class="safety-input">
+          </label>
+          <label class="safety-field" title="Size of each ramp increment. Default: 10°">
+            Step (°): <input type="number" id="sf_rc_step" step="1" class="safety-input">
+          </label>
+          <label class="safety-field" title="Delay between ramp steps. Default: 0.3s">
+            Delay (s): <input type="number" id="sf_rc_delay" step="0.05" class="safety-input">
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <!-- Emergency Stop & Recovery -->
+    <details class="safety-section">
+      <summary class="safety-section-title">🚨 Emergency Stop & Recovery <span class="safety-badge" id="badge-es">—</span></summary>
+      <div class="safety-section-body">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+          E-Stop disables motors and powers off. Auto-recovery attempts safe enable after power loss.
+          <br>🔧 <b>Software safety layer</b>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center">
+          <label class="safety-field" title="Auto-recover from power loss. Default: enabled">
+            <input type="checkbox" id="sf_es_auto"> Auto-Recovery Enabled
+          </label>
+          <label class="safety-field" title="Seconds to wait before auto-recovery. Default: 3.0s">
+            Recovery Delay (s): <input type="number" id="sf_es_delay" step="0.5" class="safety-input">
+          </label>
+        </div>
+      </div>
+    </details>
+
+    </div><!-- /safetyContainer -->
+  </div>
+</div>
+
 </div><!-- /content -->
 </div><!-- /app-layout -->
 
@@ -1380,6 +1642,7 @@ function showPanel(navItem) {
     if (panelId === 'realworld' && typeof rw_activate === 'function') rw_activate();
     if (panelId === 'simulator' && typeof sim_activate === 'function') sim_activate();
     if (panelId === 'cameras') refreshCameraPanel();
+    if (panelId === 'safety') safetyLoad();
     if (panelId === 'debug' && debugOn) pollDebug();
   }, 100);
 }
@@ -2522,6 +2785,216 @@ async function limitsReset() {
     if (d.ok) { limitsLoad(); showLimitsResult('Reset to defaults ✓', false); }
     else showLimitsResult(d.error || 'Reset failed', true);
   } catch (e) { showLimitsResult('Reset failed: ' + e, true); }
+}
+
+// --- Comprehensive Safety Panel ---
+const SAFETY_JOINT_INFO = [
+  { name:'J0', label:'Base Yaw', hw:135 },
+  { name:'J1', label:'Shoulder Pitch', hw:85 },
+  { name:'J2', label:'Elbow Pitch', hw:85 },
+  { name:'J3', label:'Elbow Roll', hw:135 },
+  { name:'J4', label:'Wrist Pitch', hw:85 },
+  { name:'J5', label:'Wrist Roll', hw:135 },
+];
+let _safetyData = null;
+
+function showSafetyResult(msg, isErr) {
+  const el = document.getElementById('safetyResult');
+  el.style.display = 'block';
+  el.style.background = isErr ? '#3a1a1a' : '#1a3a1a';
+  el.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
+  setTimeout(() => el.style.display = 'none', 4000);
+}
+
+function _riskColor(val, lo, hi) {
+  // lo = conservative boundary, hi = aggressive boundary
+  if (val <= lo) return 'green';
+  if (val >= hi) return 'red';
+  return 'yellow';
+}
+
+function _setBadge(id, color, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'safety-badge ' + color;
+  el.textContent = text || (color === 'green' ? 'Safe' : color === 'yellow' ? 'Moderate' : 'Aggressive');
+}
+
+function _populateSafetyUI(s) {
+  _safetyData = s;
+  const container = document.getElementById('safetyContainer');
+  container.style.display = 'block';
+
+  // E-Stop
+  document.getElementById('safetyEstopCard').style.display = s.emergency_stop.active ? 'block' : 'none';
+
+  // Joint Position Limits
+  const jBody = document.getElementById('safetyJointBody');
+  jBody.innerHTML = '';
+  const jl = s.joint_position_limits.limits_deg;
+  const hwl = s.joint_position_limits.hardware_limits_deg;
+  let jplWorst = 'green';
+  for (let i = 0; i < 6; i++) {
+    const ji = SAFETY_JOINT_INFO[i];
+    const range = jl[i][1] - jl[i][0];
+    const hwRange = hwl[i][1] - hwl[i][0];
+    const ratio = range / hwRange;
+    const color = ratio < 0.75 ? 'green' : ratio < 0.95 ? 'yellow' : 'red';
+    if (color === 'red') jplWorst = 'red';
+    else if (color === 'yellow' && jplWorst !== 'red') jplWorst = 'yellow';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="padding:4px">${ji.name} — ${ji.label}</td>
+      <td style="padding:4px;text-align:center"><input type="number" id="sf_j${i}_min" value="${jl[i][0]}" step="5" class="safety-input" style="width:60px"></td>
+      <td style="padding:4px;text-align:center"><input type="number" id="sf_j${i}_max" value="${jl[i][1]}" step="5" class="safety-input" style="width:60px"></td>
+      <td style="padding:4px;text-align:center;font-size:11px;color:var(--text-secondary)">±${ji.hw}°</td>
+      <td style="padding:4px;text-align:center"><span class="safety-risk ${color}"></span></td>`;
+    jBody.appendChild(tr);
+  }
+  _setBadge('badge-jpl', jplWorst);
+
+  // Torque Proxy
+  document.getElementById('sf_tp_limit').value = s.torque_proxy.limit;
+  document.getElementById('sf_tp_j2').value = s.torque_proxy.j2_factor;
+  document.getElementById('sf_tp_enabled').checked = s.torque_proxy.enabled;
+  _setBadge('badge-tp', s.torque_proxy.enabled ? (s.torque_proxy.limit <= 120 ? 'green' : s.torque_proxy.limit <= 180 ? 'yellow' : 'red') : 'red', s.torque_proxy.enabled ? undefined : 'Disabled');
+
+  // Stall Detection
+  document.getElementById('sf_sd_delay').value = s.stall_detection.delay_s;
+  document.getElementById('sf_sd_thresh').value = s.stall_detection.threshold_deg;
+  document.getElementById('sf_sd_enabled').checked = s.stall_detection.enabled;
+  _setBadge('badge-sd', s.stall_detection.enabled ? 'green' : 'red', s.stall_detection.enabled ? 'Active' : 'Disabled');
+
+  // Collision Detection
+  document.getElementById('sf_cd_error').value = s.collision_detection.position_error_deg;
+  document.getElementById('sf_cd_dur').value = s.collision_detection.stall_duration_s;
+  document.getElementById('sf_cd_cool').value = s.collision_detection.cooldown_s;
+  document.getElementById('sf_cd_enabled').checked = s.collision_detection.enabled;
+  _setBadge('badge-cd', s.collision_detection.enabled ? 'green' : 'yellow', s.collision_detection.enabled ? 'Active' : 'Disabled');
+
+  // Command Smoother
+  document.getElementById('sf_cs_alpha').value = s.command_smoother.alpha;
+  document.getElementById('sf_cs_step').value = s.command_smoother.max_step_deg;
+  document.getElementById('sf_cs_grip').value = s.command_smoother.max_gripper_step_mm;
+  document.getElementById('sf_cs_stale').value = s.command_smoother.feedback_staleness_s;
+  _setBadge('badge-cs', s.command_smoother.alpha <= 0.3 ? 'green' : s.command_smoother.alpha <= 0.5 ? 'yellow' : 'red');
+
+  // Velocity Limits (read-only display)
+  const vBody = document.getElementById('safetyVelBody');
+  vBody.innerHTML = '';
+  const vr = s.velocity_limits.max_rad_s;
+  const vd = s.velocity_limits.max_deg_s;
+  for (let i = 0; i < Math.min(vr.length, 7); i++) {
+    const tr = document.createElement('tr');
+    const label = i < 6 ? SAFETY_JOINT_INFO[i].name + ' — ' + SAFETY_JOINT_INFO[i].label : 'J6 — Gripper';
+    tr.innerHTML = `<td style="padding:4px">${label}</td>
+      <td style="padding:4px;text-align:center">${vr[i].toFixed(1)}</td>
+      <td style="padding:4px;text-align:center">${i < vd.length ? vd[i].toFixed(0) : (vr[i]*57.296).toFixed(0)}</td>`;
+    vBody.appendChild(tr);
+  }
+  _setBadge('badge-vl', 'green', 'Read-only');
+
+  // Torque Limits (read-only display)
+  const tBody = document.getElementById('safetyTorqueBody');
+  tBody.innerHTML = '';
+  const tm = s.torque_limits.max_nm;
+  for (let i = 0; i < tm.length; i++) {
+    const tr = document.createElement('tr');
+    const label = i < 6 ? SAFETY_JOINT_INFO[i].name + ' — ' + SAFETY_JOINT_INFO[i].label : 'J6 — Gripper';
+    tr.innerHTML = `<td style="padding:4px">${label}</td><td style="padding:4px;text-align:center">${tm[i].toFixed(1)}</td>`;
+    tBody.appendChild(tr);
+  }
+  _setBadge('badge-tl', 'green', 'Read-only');
+
+  // Workspace
+  document.getElementById('sf_wb_radius').value = s.workspace_bounds.max_radius_mm;
+  _setBadge('badge-wb', s.workspace_bounds.max_radius_mm <= 480 ? 'green' : s.workspace_bounds.max_radius_mm <= 560 ? 'yellow' : 'red');
+
+  // Ramp
+  document.getElementById('sf_rc_thresh').value = s.ramp_control.threshold_deg;
+  document.getElementById('sf_rc_step').value = s.ramp_control.step_deg;
+  document.getElementById('sf_rc_delay').value = s.ramp_control.delay_s;
+  _setBadge('badge-rc', s.ramp_control.step_deg <= 7 ? 'green' : s.ramp_control.step_deg <= 12 ? 'yellow' : 'red');
+
+  // Emergency Stop / Recovery
+  document.getElementById('sf_es_auto').checked = s.emergency_stop.auto_recovery_enabled;
+  document.getElementById('sf_es_delay').value = s.emergency_stop.auto_recovery_delay_s;
+  _setBadge('badge-es', s.emergency_stop.active ? 'red' : 'green', s.emergency_stop.active ? 'E-STOP!' : 'OK');
+}
+
+function _gatherSafetyPayload() {
+  const jl = [];
+  for (let i = 0; i < 6; i++) {
+    jl.push([parseFloat(document.getElementById(`sf_j${i}_min`).value),
+             parseFloat(document.getElementById(`sf_j${i}_max`).value)]);
+  }
+  return {
+    joint_position_limits: { limits_deg: jl },
+    torque_proxy: {
+      limit: parseFloat(document.getElementById('sf_tp_limit').value),
+      j2_factor: parseFloat(document.getElementById('sf_tp_j2').value),
+      enabled: document.getElementById('sf_tp_enabled').checked,
+    },
+    stall_detection: {
+      delay_s: parseFloat(document.getElementById('sf_sd_delay').value),
+      threshold_deg: parseFloat(document.getElementById('sf_sd_thresh').value),
+      enabled: document.getElementById('sf_sd_enabled').checked,
+    },
+    collision_detection: {
+      position_error_deg: parseFloat(document.getElementById('sf_cd_error').value),
+      stall_duration_s: parseFloat(document.getElementById('sf_cd_dur').value),
+      cooldown_s: parseFloat(document.getElementById('sf_cd_cool').value),
+      enabled: document.getElementById('sf_cd_enabled').checked,
+    },
+    command_smoother: {
+      alpha: parseFloat(document.getElementById('sf_cs_alpha').value),
+      max_step_deg: parseFloat(document.getElementById('sf_cs_step').value),
+      max_gripper_step_mm: parseFloat(document.getElementById('sf_cs_grip').value),
+      feedback_staleness_s: parseFloat(document.getElementById('sf_cs_stale').value),
+    },
+    workspace_bounds: {
+      max_radius_mm: parseFloat(document.getElementById('sf_wb_radius').value),
+    },
+    ramp_control: {
+      threshold_deg: parseFloat(document.getElementById('sf_rc_thresh').value),
+      step_deg: parseFloat(document.getElementById('sf_rc_step').value),
+      delay_s: parseFloat(document.getElementById('sf_rc_delay').value),
+    },
+    emergency_stop: {
+      auto_recovery_enabled: document.getElementById('sf_es_auto').checked,
+      auto_recovery_delay_s: parseFloat(document.getElementById('sf_es_delay').value),
+    },
+  };
+}
+
+async function safetyLoad() {
+  try {
+    const resp = await fetch('/api/config/safety/all');
+    const d = await resp.json();
+    if (d.ok) { _populateSafetyUI(d.settings); showSafetyResult('Loaded ✓', false); }
+    else showSafetyResult(d.error || 'Load failed', true);
+  } catch (e) { showSafetyResult('Load failed: ' + e, true); }
+}
+
+async function safetySave() {
+  try {
+    const payload = _gatherSafetyPayload();
+    const resp = await fetch('/api/config/safety/all', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    const d = await resp.json();
+    if (d.ok) { _populateSafetyUI(d.settings); showSafetyResult('Saved ✓', false); }
+    else showSafetyResult(d.error || 'Save failed', true);
+  } catch (e) { showSafetyResult('Save failed: ' + e, true); }
+}
+
+async function safetyPreset(name) {
+  if (name !== 'normal' || confirm('Apply preset? This will overwrite current settings.')) {
+    try {
+      const resp = await fetch('/api/config/safety/preset', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({preset:name}) });
+      const d = await resp.json();
+      if (d.ok) { _populateSafetyUI(d.settings); showSafetyResult(`Preset "${name}" applied ✓`, false); }
+      else showSafetyResult(d.error || 'Preset failed', true);
+    } catch (e) { showSafetyResult('Preset failed: ' + e, true); }
+  }
 }
 
 // --- Settings ---
