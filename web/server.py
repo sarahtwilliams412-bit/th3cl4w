@@ -1140,7 +1140,30 @@ async def cmd_set_joint(req: SetJointRequest):
             resp_data["correlation_id"] = cid
         return JSONResponse(resp_data, status_code=400)
 
-    if smoother and smoother.running:
+    # Ramp large movements in 10° increments to avoid motor overload
+    current_angle = current_joints[req.id]
+    delta = req.angle - current_angle
+    RAMP_THRESHOLD_DEG = 20.0
+    RAMP_STEP_DEG = 10.0
+    RAMP_DELAY_S = 0.3
+
+    if abs(delta) > RAMP_THRESHOLD_DEG and smoother and smoother.running:
+        # Break into incremental steps
+        n_steps = int(abs(delta) / RAMP_STEP_DEG)
+        for i in range(1, n_steps + 1):
+            intermediate = current_angle + (delta / abs(delta)) * RAMP_STEP_DEG * i
+            # Clamp toward target
+            if delta > 0:
+                intermediate = min(intermediate, req.angle)
+            else:
+                intermediate = max(intermediate, req.angle)
+            smoother.set_joint_target(req.id, intermediate)
+            if intermediate != req.angle:
+                await asyncio.sleep(RAMP_DELAY_S)
+        # Ensure final target is set
+        smoother.set_joint_target(req.id, req.angle)
+        ok = True
+    elif smoother and smoother.running:
         smoother.set_joint_target(req.id, req.angle)
         ok = True
     else:
@@ -3485,20 +3508,13 @@ async def _handle_collision(stall: "StallEvent", clients: list):
         if ws in ws_clients:
             ws_clients.remove(ws)
 
-    # 5. Back off: move stalled joint 10° toward last good position
-    if smoother and smoother.arm_enabled and arm:
-        backoff_angle = stall.actual_deg + (
-            10.0 if stall.last_good_position > stall.actual_deg else -10.0
-        )
-        # Clamp to last good
-        if abs(backoff_angle - stall.actual_deg) > abs(stall.last_good_position - stall.actual_deg):
-            backoff_angle = stall.last_good_position
-        smoother.set_joint_target(stall.joint_id, backoff_angle)
-        action_log.add(
-            "COLLISION",
-            f"Backing off J{stall.joint_id} to {backoff_angle:.1f}°",
-            "info",
-        )
+    # 5. No backoff — just log. Sending more commands after a stall creates
+    #    fight loops that overload the motors and trip overcurrent protection.
+    action_log.add(
+        "COLLISION",
+        f"J{stall.joint_id} stall handled — targets cleared, no backoff sent",
+        "info",
+    )
 
 
 @app.get("/api/collisions")
@@ -5268,6 +5284,26 @@ async def joint_mapping_current():
 # ---------------------------------------------------------------------------
 # Pick Config API
 # ---------------------------------------------------------------------------
+
+@app.get("/api/config/safety")
+async def get_safety_config_api():
+    """Return current safety config values."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+    safety = cfg.get("safety")
+    return JSONResponse({"safety": safety})
+
+
+@app.post("/api/config/safety")
+async def update_safety_config_api(req: dict):
+    """Update safety config values (e.g. stall_check_delay_s, stall_threshold_deg)."""
+    from src.config.pick_config import get_pick_config
+    cfg = get_pick_config()
+    cfg.update({"safety": req})
+    safety = cfg.get("safety")
+    action_log.add("CONFIG", f"Safety config updated: {req}", "info")
+    return JSONResponse({"ok": True, "safety": safety})
+
 
 @app.get("/api/config/pick")
 async def get_pick_config_api():

@@ -97,8 +97,8 @@ DEFAULTS: dict[str, Any] = {
     "safety": {
         "torque_proxy_limit": 100.0,
         "torque_j2_factor": 0.7,
-        "stall_check_delay_s": 3.0,
-        "stall_threshold_deg": 5.0,
+        "stall_check_delay_s": 5.0,
+        "stall_threshold_deg": 15.0,
         "collision_position_error_deg": 3.0,
         "collision_stall_duration_s": 0.5,
         "collision_cooldown_s": 5.0,
