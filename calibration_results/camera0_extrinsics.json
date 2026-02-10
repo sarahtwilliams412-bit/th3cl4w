@@ -29,14 +29,14 @@
   ],
   "K": [
     [
-      1101.5,
+      1401.18,
       0.0,
-      960.0
+      1007.16
     ],
     [
       0.0,
-      1101.5,
-      540.0
+      1381.24,
+      568.13
     ],
     [
       0.0,
@@ -45,10 +45,11 @@
     ]
   ],
   "dist": [
-    0.0,
-    0.0,
-    0.0,
-    0.0
+    0.480481,
+    -0.379178,
+    -0.002917,
+    -0.050334,
+    -2.209344
   ],
   "camera_position_world_m": [
     -0.5095492794433485,
@@ -59,5 +60,7 @@
   "reprojection_error_median_px": 119.9006450401197,
   "num_correspondences": 100,
   "method": "EPnP + Levenberg-Marquardt refinement",
-  "source": "LLM (Gemini 2.0 Flash) joint detection + FK, 20 poses, cam0"
+  "source": "LLM (Gemini 2.0 Flash) joint detection + FK, 20 poses, cam0",
+  "intrinsics_source": "checkerboard_calibration_2026-02-09",
+  "note": "Extrinsics from EPnP still using old correspondences \u2014 should re-solve with corrected intrinsics for better accuracy"
 }

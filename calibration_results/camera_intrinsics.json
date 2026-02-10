@@ -10,22 +10,22 @@
         1080
       ],
       "camera_matrix": {
-        "fx": 1101.5,
-        "fy": 1101.5,
-        "cx": 960.0,
-        "cy": 540.0
+        "fx": 1401.18,
+        "fy": 1381.24,
+        "cx": 1007.16,
+        "cy": 568.13
       },
       "distortion_coefficients": {
-        "k1": -0.15,
-        "k2": 0.06,
-        "p1": 0.0,
-        "p2": 0.0,
-        "k3": 0.0
+        "k1": 0.480481,
+        "k2": -0.379178,
+        "p1": -0.002917,
+        "p2": -0.050334,
+        "k3": -2.209344
       },
-      "fov_diagonal_deg": 90,
-      "fov_horizontal_deg": 82.1,
-      "fov_vertical_deg": 52.2,
-      "confidence": "medium",
+      "fov_diagonal_deg": 76.7,
+      "fov_horizontal_deg": 68.8,
+      "fov_vertical_deg": 42.7,
+      "confidence": "high",
       "v4l2": {
         "focus_absolute": 10,
         "focus_auto": 1,
@@ -37,7 +37,9 @@
         "pan_absolute": 0,
         "tilt_absolute": 0
       },
-      "notes": "Logitech BRIO at widest FOV setting (90\u00b0 diagonal). No zoom control available via V4L2. Distortion coefficients estimated \u2014 k1=-0.15 typical for BRIO barrel distortion. Needs checkerboard calibration for sub-10px accuracy."
+      "notes": "Checkerboard calibrated (8x5 corners, 19mm squares, 10 frames). FOV is 78\u00b0 NOT 90\u00b0 \u2014 BRIO is in middle FOV mode. Reprojection: 0.085px.",
+      "calibration_method": "checkerboard_19mm_10frames",
+      "rms_reprojection_px": 0.085
     },
     "cam1": {
       "label": "arm-mounted",
