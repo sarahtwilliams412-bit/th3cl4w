@@ -1,6 +1,7 @@
 # th3cl4w V1 Server — Stable Base
 #!/usr/bin/env python3.12
-from dotenv import load_dotenv # type: ignore[import-not-found]
+from dotenv import load_dotenv  # type: ignore[import-not-found]
+
 load_dotenv()  # Load .env file before anything else
 """
 th3cl4w — Web Control Panel for Unitree D1 Arm.
@@ -177,8 +178,12 @@ parser.add_argument("--simulate", action="store_true", help="Run with simulated 
 parser.add_argument("--interface", default="eno1", help="Network interface for DDS (default: eno1)")
 parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
 parser.add_argument("--port", type=int, default=8080, help="Bind port (default: 8080)")
-parser.add_argument("--debug", action="store_true", help="Enable DEBUG-level logging to logs/web.log")
-parser.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
+parser.add_argument(
+    "--debug", action="store_true", help="Enable DEBUG-level logging to logs/web.log"
+)
+parser.add_argument(
+    "--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)"
+)
 
 # Only parse if running as main (not under test)
 if "pytest" not in sys.modules:
@@ -187,6 +192,7 @@ else:
     args = parser.parse_args(["--simulate"])
 
 from src.utils.logging_config import setup_logging
+
 setup_logging(server_name="web", debug=args.debug, log_dir=args.log_dir)
 logger = logging.getLogger("th3cl4w.web")
 
@@ -204,6 +210,7 @@ def get_runtime_joint_limits() -> dict:
     """Return joint limits from pick_config (runtime-configurable)."""
     try:
         from src.config.pick_config import get_pick_config
+
         cfg = get_pick_config()
         limits = cfg.get("safety", "joint_limits_deg")
         if limits and len(limits) == 6:
@@ -211,6 +218,7 @@ def get_runtime_joint_limits() -> dict:
     except Exception:
         pass
     return JOINT_LIMITS_DEG
+
 
 GRIPPER_RANGE = (GRIPPER_MIN_MM, GRIPPER_MAX_MM)
 
@@ -402,9 +410,7 @@ async def lifespan(app: FastAPI):
     global object_detector
     if _HAS_OBJECT_DETECT:
         object_detector = ObjectDetector()
-        action_log.add(
-            "SYSTEM", "Object detector initialized (disabled by default)", "info"
-        )
+        action_log.add("SYSTEM", "Object detector initialized (disabled by default)", "info")
 
     # Initialize claw position predictor
     global claw_predictor
@@ -485,7 +491,9 @@ async def request_logging_middleware(request, call_next):
     t0 = time.monotonic()
     response = await call_next(request)
     elapsed_ms = (time.monotonic() - t0) * 1000
-    logger.info("%s %s -> %d (%.1fms)", request.method, request.url.path, response.status_code, elapsed_ms)
+    logger.info(
+        "%s %s -> %d (%.1fms)", request.method, request.url.path, response.status_code, elapsed_ms
+    )
     return response
 
 
@@ -621,7 +629,9 @@ def get_arm_state() -> Dict[str, Any]:
             action_log.add("STATE", f"Power: {'ON' if state['power'] else 'OFF'}", "warning")
             # Detect power loss transition (True -> False) and trigger auto-recovery
             if _prev_state.get("power") and not state["power"]:
-                action_log.add("STATE", "Power loss detected — scheduling auto-recovery in 3s", "error")
+                action_log.add(
+                    "STATE", "Power loss detected — scheduling auto-recovery in 3s", "error"
+                )
                 if _power_loss_recovery_task is None or _power_loss_recovery_task.done():
                     _power_loss_recovery_task = asyncio.create_task(_auto_recover_power())
         if _prev_state.get("enabled") != state["enabled"]:
@@ -684,6 +694,7 @@ async def broadcast_ack(action: str, success: bool):
 # Startup validation
 # ---------------------------------------------------------------------------
 
+
 def _validate_env():
     """Check required env vars at startup and warn if missing."""
     if not os.environ.get("GEMINI_API_KEY"):
@@ -691,6 +702,7 @@ def _validate_env():
             "GEMINI_API_KEY not set — Gemini vision/LLM features will be unavailable. "
             "Add it to .env or set the environment variable."
         )
+
 
 _validate_env()
 
@@ -704,8 +716,10 @@ _validate_env()
 async def api_secrets_status():
     """Return which secret keys are configured (True/False) without revealing values."""
     return {
-        "GEMINI_API_KEY": bool(os.environ.get("GEMINI_API_KEY")
-                               and os.environ.get("GEMINI_API_KEY") != "your-gemini-api-key-here"),
+        "GEMINI_API_KEY": bool(
+            os.environ.get("GEMINI_API_KEY")
+            and os.environ.get("GEMINI_API_KEY") != "your-gemini-api-key-here"
+        ),
     }
 
 
@@ -713,12 +727,10 @@ async def api_secrets_status():
 CAMERA_CONFIG_PATH = Path(_project_root) / "data" / "camera_config.json"
 VALID_PERSPECTIVES = ["overhead", "side", "front", "arm-mounted", "custom"]
 
+
 def _load_camera_config() -> dict:
     """Load camera config from JSON file, return defaults if missing."""
-    defaults = {
-        str(i): {"label": f"Camera {i}", "perspective": "custom"}
-        for i in range(3)
-    }
+    defaults = {str(i): {"label": f"Camera {i}", "perspective": "custom"} for i in range(3)}
     if CAMERA_CONFIG_PATH.exists():
         try:
             with open(CAMERA_CONFIG_PATH) as f:
@@ -731,6 +743,7 @@ def _load_camera_config() -> dict:
         except Exception:
             pass
     return defaults
+
 
 def _save_camera_config(config: dict):
     """Save camera config to JSON file."""
@@ -789,11 +802,16 @@ async def api_cameras_config_set(req: CameraConfigRequest):
     config = _load_camera_config()
     config[str(req.camera_id)] = {"label": req.label, "perspective": req.perspective}
     _save_camera_config(config)
-    action_log.add("CAMERA_CONFIG", f"Camera {req.camera_id}: label={req.label!r}, perspective={req.perspective}", "info")
+    action_log.add(
+        "CAMERA_CONFIG",
+        f"Camera {req.camera_id}: label={req.label!r}, perspective={req.perspective}",
+        "info",
+    )
     return {"ok": True, "config": config}
 
 
 # ── Camera Orientation endpoints ──────────────────────────────
+
 
 class CameraOrientationRequest(BaseModel):
     camera_id: int = Field(ge=0, le=2)
@@ -844,7 +862,9 @@ async def api_cameras_extrinsics(camera_id: int):
     """Return calibration extrinsics for a camera if available."""
     ext_path = Path(_project_root) / "calibration_results" / f"camera{camera_id}_extrinsics.json"
     if not ext_path.exists():
-        return JSONResponse({"ok": False, "error": f"No extrinsics for camera {camera_id}"}, status_code=404)
+        return JSONResponse(
+            {"ok": False, "error": f"No extrinsics for camera {camera_id}"}, status_code=404
+        )
     with open(ext_path) as f:
         data = json.load(f)
     return {"ok": True, "extrinsics": data}
@@ -874,7 +894,10 @@ async def api_cameras_gemini_assess(req: GeminiAssessRequest):
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return JSONResponse(
-            {"ok": False, "error": "GEMINI_API_KEY not set. Set it in your environment to use this feature."},
+            {
+                "ok": False,
+                "error": "GEMINI_API_KEY not set. Set it in your environment to use this feature.",
+            },
             status_code=400,
         )
 
@@ -901,9 +924,7 @@ async def api_cameras_gemini_assess(req: GeminiAssessRequest):
         for cam_id in sorted(req.images.keys()):
             img_b64 = req.images[cam_id]
             img_bytes = base64.b64decode(img_b64)
-            contents.append(
-                _gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-            )
+            contents.append(_gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
             label = cam_labels.get(cam_id, f"Camera {cam_id}")
             contents.append(f"The image above is rendered from {label}.")
 
@@ -1009,7 +1030,10 @@ Respond in JSON format:
 
     except ImportError:
         return JSONResponse(
-            {"ok": False, "error": "google-generativeai package not installed. Run: pip install google-generativeai"},
+            {
+                "ok": False,
+                "error": "google-generativeai package not installed. Run: pip install google-generativeai",
+            },
             status_code=500,
         )
     except Exception as e:
@@ -1136,14 +1160,11 @@ async def api_sim_preview_fk(req: SetAllJointsRequest):
             "ok": True,
             "ee_position": {"x": ee_pos[0], "y": ee_pos[1], "z": ee_pos[2]},
             "joint_positions": [
-                {"x": float(p[0]), "y": float(p[1]), "z": float(p[2])}
-                for p in joint_positions
+                {"x": float(p[0]), "y": float(p[1]), "z": float(p[2])} for p in joint_positions
             ],
         }
     except Exception as e:
-        return JSONResponse(
-            {"ok": False, "error": str(e)}, status_code=500
-        )
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 @app.get("/api/sim/joint-limits")
@@ -1299,7 +1320,11 @@ async def cmd_reset_enable():
         gripper = arm.get_gripper_position() if hasattr(arm, "get_gripper_position") else 0.0
         if angles is not None and len(angles) >= 6:
             smoother.sync_from_feedback([float(a) for a in angles[:6]], float(gripper))
-            action_log.add("RESET_ENABLE", f"Smoother synced to current pos: {[round(float(a),1) for a in angles[:6]]}", "info")
+            action_log.add(
+                "RESET_ENABLE",
+                f"Smoother synced to current pos: {[round(float(a),1) for a in angles[:6]]}",
+                "info",
+            )
 
     action_log.add("RESET_ENABLE", "Safe enable complete — arm holding current position", "info")
     resp = cmd_response(True, "RESET_ENABLE", "Enabled at current position (no reset)", cid)
@@ -1332,7 +1357,9 @@ async def cmd_hard_reset_enable():
         f"reset={'OK' if ok_reset else 'FAIL'} enable={'OK' if ok_enable else 'FAIL'}",
         "info" if ok_enable else "error",
     )
-    resp = cmd_response(ok_enable, "HARD_RESET_ENABLE", f"reset=OK enable={'OK' if ok_enable else 'FAIL'}", cid)
+    resp = cmd_response(
+        ok_enable, "HARD_RESET_ENABLE", f"reset=OK enable={'OK' if ok_enable else 'FAIL'}", cid
+    )
     await broadcast_ack("HARD_RESET_ENABLE", ok_enable)
     return resp
 
@@ -1353,7 +1380,14 @@ async def cmd_enable_here():
 
     state = arm.get_status() or {}
     if not state.get("power_status"):
-        return JSONResponse({"ok": False, "action": "ENABLE_HERE", "error": "Power must be on first", "state": get_arm_state()})
+        return JSONResponse(
+            {
+                "ok": False,
+                "action": "ENABLE_HERE",
+                "error": "Power must be on first",
+                "state": get_arm_state(),
+            }
+        )
 
     # Read current positions BEFORE enabling
     angles = arm.get_joint_angles()
@@ -1377,7 +1411,9 @@ async def cmd_enable_here():
             smoother.sync_from_feedback(angles_list, float(gripper))
             # Set targets to current so smoother doesn't try to move
             smoother.set_all_joints_target(angles_list)
-        action_log.add("ENABLE_HERE", f"Enabled and holding at {[round(a,1) for a in angles_list]}", "info")
+        action_log.add(
+            "ENABLE_HERE", f"Enabled and holding at {[round(a,1) for a in angles_list]}", "info"
+        )
     else:
         if smoother:
             smoother.set_arm_enabled(True)
@@ -1402,7 +1438,9 @@ async def cmd_safe_home():
     if arm is None:
         return cmd_response(False, "SAFE_HOME", "No arm connected", cid)
     if not (smoother and smoother._arm_enabled):
-        return JSONResponse({"ok": False, "action": "SAFE_HOME", "error": "Arm not enabled"}, status_code=409)
+        return JSONResponse(
+            {"ok": False, "action": "SAFE_HOME", "error": "Arm not enabled"}, status_code=409
+        )
 
     action_log.add("SAFE_HOME", "Starting safe home sequence", "info")
 
@@ -1422,15 +1460,25 @@ async def cmd_safe_home():
             # Verify
             new_angles = _get_current_joints()
             if abs(new_angles[j]) > POSITION_TOLERANCE_DEG:
-                action_log.add("SAFE_HOME", f"J{j} didn't reach target (at {new_angles[j]:.1f}°), continuing anyway", "warning")
+                action_log.add(
+                    "SAFE_HOME",
+                    f"J{j} didn't reach target (at {new_angles[j]:.1f}°), continuing anyway",
+                    "warning",
+                )
 
     # Phase 2: High-torque pitch joints — move in small increments
-    high_torque_joints = [4, 2, 1]  # J4=wrist pitch, J2=elbow, J1=shoulder (reverse order: distal first)
+    high_torque_joints = [
+        4,
+        2,
+        1,
+    ]  # J4=wrist pitch, J2=elbow, J1=shoulder (reverse order: distal first)
     for j in high_torque_joints:
         current_angle = float(_get_current_joints()[j])
         if abs(current_angle) <= POSITION_TOLERANCE_DEG:
             continue
-        action_log.add("SAFE_HOME", f"Ramping J{j}: {current_angle:.1f}° → 0° in {STEP_DEG}° steps", "info")
+        action_log.add(
+            "SAFE_HOME", f"Ramping J{j}: {current_angle:.1f}° → 0° in {STEP_DEG}° steps", "info"
+        )
 
         # Move in increments toward 0
         while abs(current_angle) > POSITION_TOLERANCE_DEG:
@@ -1464,7 +1512,9 @@ _power_loss_recovery_task: Optional[asyncio.Task] = None
 async def _auto_recover_power():
     """Wait 3s then attempt safe enable after power loss (no reset_to_zero)."""
     await asyncio.sleep(3.0)
-    action_log.add("AUTO_RECOVERY", "Attempting safe enable after power loss (no reset_to_zero)", "warning")
+    action_log.add(
+        "AUTO_RECOVERY", "Attempting safe enable after power loss (no reset_to_zero)", "warning"
+    )
     if arm is None:
         action_log.add("AUTO_RECOVERY", "No arm connected, aborting", "error")
         return
@@ -1944,6 +1994,7 @@ import cv2
 @dataclass
 class Overlay:
     """A single overlay element for client-side rendering."""
+
     type: str  # 'rect', 'circle', 'line', 'crosshair', 'text'
     data: dict = field(default_factory=dict)
 
@@ -1954,6 +2005,7 @@ class Overlay:
 @dataclass
 class ProcessedFrame:
     """Result of running frame processors on a camera frame."""
+
     cam_id: int
     timestamp: float
     raw_jpeg: bytes
@@ -1976,8 +2028,7 @@ class FrameProcessorBase(ABC):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
 
 class CrosshairOverlay(FrameProcessorBase):
@@ -2034,12 +2085,12 @@ class FrameProcessingPipeline:
                 logger.warning("Frame processor %s failed: %s", proc.name, e)
 
         # Encode
-        _, raw_buf = cv2.imencode('.jpg', raw_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        _, raw_buf = cv2.imencode(".jpg", raw_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         raw_jpeg = raw_buf.tobytes()
 
         annotated_jpeg = None
         if annotated is not raw_frame:
-            _, ann_buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            _, ann_buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
             annotated_jpeg = ann_buf.tobytes()
 
         return ProcessedFrame(
@@ -2086,7 +2137,9 @@ async def ws_camera_feed(websocket: WebSocket, cam_id: int):
     target_fps = min(int(query.get("fps", "15")), 30)
     interval = 1.0 / target_fps
 
-    logger.info("WebSocket camera feed started: cam=%d overlay=%s fps=%d", cam_id, use_overlay, target_fps)
+    logger.info(
+        "WebSocket camera feed started: cam=%d overlay=%s fps=%d", cam_id, use_overlay, target_fps
+    )
 
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
@@ -2109,11 +2162,13 @@ async def ws_camera_feed(websocket: WebSocket, cam_id: int):
                             # Send overlays as JSON if any
                             if result.overlays:
                                 try:
-                                    overlay_msg = json.dumps({
-                                        "type": "overlays",
-                                        "cam_id": cam_id,
-                                        "overlays": [o.to_dict() for o in result.overlays],
-                                    })
+                                    overlay_msg = json.dumps(
+                                        {
+                                            "type": "overlays",
+                                            "cam_id": cam_id,
+                                            "overlays": [o.to_dict() for o in result.overlays],
+                                        }
+                                    )
                                     await websocket.send_text(overlay_msg)
                                 except Exception:
                                     pass
@@ -2229,12 +2284,14 @@ async def debug_smoother():
         return {"available": False, "error": "Command smoother not initialized"}
     current = []
     for i in range(smoother._num_joints):
-        current.append({
-            "joint": i,
-            "current": smoother._current[i],
-            "target": smoother._target[i],
-            "dirty": i in smoother._dirty_joints,
-        })
+        current.append(
+            {
+                "joint": i,
+                "current": smoother._current[i],
+                "target": smoother._target[i],
+                "dirty": i in smoother._dirty_joints,
+            }
+        )
     result = {
         "available": True,
         "running": smoother.running,
@@ -2611,7 +2668,9 @@ class CalibScaleRequest(BaseModel):
 async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
     """Calibrate real-world scale using a checkerboard pattern."""
     if not _HAS_BIFOCAL or workspace_mapper is None:
-        return JSONResponse({"ok": False, "error": "Workspace mapper not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Workspace mapper not available"}, status_code=501
+        )
 
     import httpx, cv2
 
@@ -2627,7 +2686,9 @@ async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
 
         result = workspace_mapper.calibrate_scale_from_checkerboard(left, right, req.square_size_mm)
         if result["ok"]:
-            action_log.add("CALIBRATION", f"Scale calibrated: factor={result['scale_factor']}", "info")
+            action_log.add(
+                "CALIBRATION", f"Scale calibrated: factor={result['scale_factor']}", "info"
+            )
         else:
             action_log.add(
                 "CALIBRATION", f"Scale calibration failed: {result.get('error', '?')}", "warning"
@@ -2650,7 +2711,9 @@ class TapeMeasureRequest(BaseModel):
 async def bifocal_calibrate_tape(req: TapeMeasureRequest):
     """Calibrate scale using two points on a tape measure."""
     if not _HAS_BIFOCAL or workspace_mapper is None:
-        return JSONResponse({"ok": False, "error": "Workspace mapper not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Workspace mapper not available"}, status_code=501
+        )
 
     import httpx, cv2
 
@@ -2668,7 +2731,9 @@ async def bifocal_calibrate_tape(req: TapeMeasureRequest):
             left, right, req.known_length_mm, (req.x1, req.y1), (req.x2, req.y2)
         )
         if result["ok"]:
-            action_log.add("CALIBRATION", f"Tape calibration: factor={result['scale_factor']}", "info")
+            action_log.add(
+                "CALIBRATION", f"Tape calibration: factor={result['scale_factor']}", "info"
+            )
         return result
 
     except Exception as e:
@@ -2705,7 +2770,9 @@ async def bifocal_preview():
 async def objects_toggle():
     """Toggle the object detector on/off."""
     if not _HAS_OBJECT_DETECT or object_detector is None:
-        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
     enabled = object_detector.toggle()
     action_log.add("OBJECTS", f"Object detector {'enabled' if enabled else 'disabled'}", "info")
     return {"ok": True, "enabled": enabled}
@@ -2725,7 +2792,9 @@ async def objects_status():
 async def objects_detect():
     """Trigger object detection from current camera frames."""
     if not _HAS_OBJECT_DETECT or object_detector is None:
-        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
     if not object_detector.enabled:
         return JSONResponse({"ok": False, "error": "Detector not enabled"}, status_code=409)
 
@@ -2733,7 +2802,9 @@ async def objects_detect():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp_overhead = await client.get("http://localhost:8081/snap/0")  # overhead (cam0=video0)
+            resp_overhead = await client.get(
+                "http://localhost:8081/snap/0"
+            )  # overhead (cam0=video0)
             resp_side = None
             try:
                 resp_side = await client.get("http://localhost:8081/snap/2")  # side (cam2=video6)
@@ -2741,11 +2812,17 @@ async def objects_detect():
                 pass
 
         if resp_overhead.status_code != 200:
-            return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
+            return JSONResponse(
+                {"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502
+            )
 
-        overhead_frame = cv2.imdecode(np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR)
+        overhead_frame = cv2.imdecode(
+            np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR
+        )
         if overhead_frame is None:
-            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode overhead frame"}, status_code=502
+            )
 
         side_frame = None
         if resp_side is not None and resp_side.status_code == 200:
@@ -2768,7 +2845,9 @@ async def objects_detect_snapshot():
     from starlette.responses import Response
 
     if not _HAS_OBJECT_DETECT or object_detector is None:
-        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
     if not object_detector.enabled:
         return JSONResponse({"ok": False, "error": "Detector not enabled"}, status_code=409)
 
@@ -2776,7 +2855,9 @@ async def objects_detect_snapshot():
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp_overhead = await client.get("http://localhost:8081/snap/0")  # overhead (cam0=video0)
+            resp_overhead = await client.get(
+                "http://localhost:8081/snap/0"
+            )  # overhead (cam0=video0)
             resp_side = None
             try:
                 resp_side = await client.get("http://localhost:8081/snap/2")  # side (cam2=video6)
@@ -2784,11 +2865,17 @@ async def objects_detect_snapshot():
                 pass
 
         if resp_overhead.status_code != 200:
-            return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
+            return JSONResponse(
+                {"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502
+            )
 
-        overhead_frame = cv2.imdecode(np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR)
+        overhead_frame = cv2.imdecode(
+            np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR
+        )
         if overhead_frame is None:
-            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode overhead frame"}, status_code=502
+            )
 
         side_frame = None
         if resp_side is not None and resp_side.status_code == 200:
@@ -2801,7 +2888,7 @@ async def objects_detect_snapshot():
         annotated = object_detector.annotate_frame(overhead_frame)
 
         # Encode as JPEG
-        _, jpeg_buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        _, jpeg_buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
         return Response(content=jpeg_buf.tobytes(), media_type="image/jpeg")
 
     except Exception as e:
@@ -2817,25 +2904,35 @@ async def objects_snapshot():
     from starlette.responses import Response
 
     if not _HAS_OBJECT_DETECT or object_detector is None:
-        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
 
     import httpx
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp_overhead = await client.get("http://localhost:8081/snap/0")  # overhead (cam0=video0)
+            resp_overhead = await client.get(
+                "http://localhost:8081/snap/0"
+            )  # overhead (cam0=video0)
 
         if resp_overhead.status_code != 200:
-            return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
+            return JSONResponse(
+                {"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502
+            )
 
-        overhead_frame = cv2.imdecode(np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR)
+        overhead_frame = cv2.imdecode(
+            np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR
+        )
         if overhead_frame is None:
-            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode overhead frame"}, status_code=502
+            )
 
         # Annotate with existing detections (no new detection run)
         annotated = object_detector.annotate_frame(overhead_frame)
 
-        _, jpeg_buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        _, jpeg_buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
         return Response(content=jpeg_buf.tobytes(), media_type="image/jpeg")
 
     except Exception as e:
@@ -2847,6 +2944,7 @@ async def objects_ontology_get():
     """Return the object ontology."""
     import json as _json
     from pathlib import Path as _Path
+
     ont_path = _Path(__file__).resolve().parent.parent / "data" / "object_ontology.json"
     try:
         with open(ont_path, "r") as f:
@@ -2860,6 +2958,7 @@ async def objects_ontology_post(request: Request):
     """Add or update an entry in the object ontology."""
     import json as _json
     from pathlib import Path as _Path
+
     ont_path = _Path(__file__).resolve().parent.parent / "data" / "object_ontology.json"
     try:
         body = await request.json()
@@ -2911,7 +3010,9 @@ async def objects_reachable():
 async def objects_clear():
     """Clear all detected objects."""
     if not _HAS_OBJECT_DETECT or object_detector is None:
-        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
     object_detector.clear()
     action_log.add("OBJECTS", "Detected objects cleared", "info")
     return {"ok": True}
@@ -2921,7 +3022,9 @@ async def objects_clear():
 async def objects_config_get():
     """Return current object detection configuration."""
     if not _HAS_OBJECT_DETECT or object_detector is None:
-        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
     return {"ok": True, "config": object_detector.get_config()}
 
 
@@ -2929,7 +3032,9 @@ async def objects_config_get():
 async def objects_config_set(request: Request):
     """Update object detection configuration."""
     if not _HAS_OBJECT_DETECT or object_detector is None:
-        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
     try:
         body = await request.json()
         object_detector.set_config(body)
@@ -2948,7 +3053,9 @@ async def objects_scan():
     import base64
 
     if not _HAS_OBJECT_DETECT or object_detector is None:
-        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
 
     # Auto-enable if needed
     if not object_detector.enabled:
@@ -2966,11 +3073,17 @@ async def objects_scan():
                 pass
 
         if resp_overhead.status_code != 200:
-            return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
+            return JSONResponse(
+                {"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502
+            )
 
-        overhead_frame = cv2.imdecode(np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR)
+        overhead_frame = cv2.imdecode(
+            np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR
+        )
         if overhead_frame is None:
-            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode overhead frame"}, status_code=502
+            )
 
         side_frame = None
         if resp_side is not None and resp_side.status_code == 200:
@@ -2981,14 +3094,14 @@ async def objects_scan():
 
         # Generate annotated overhead image
         annotated_overhead = object_detector.annotate_frame(overhead_frame)
-        _, oh_buf = cv2.imencode('.jpg', annotated_overhead, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        overhead_b64 = base64.b64encode(oh_buf.tobytes()).decode('ascii')
+        _, oh_buf = cv2.imencode(".jpg", annotated_overhead, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        overhead_b64 = base64.b64encode(oh_buf.tobytes()).decode("ascii")
 
         # Side image as-is (with raw frame for review)
         side_b64 = None
         if side_frame is not None:
-            _, side_buf = cv2.imencode('.jpg', side_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            side_b64 = base64.b64encode(side_buf.tobytes()).decode('ascii')
+            _, side_buf = cv2.imencode(".jpg", side_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            side_b64 = base64.b64encode(side_buf.tobytes()).decode("ascii")
 
         objects = [o.to_dict() for o in object_detector.get_objects()]
 
@@ -3073,7 +3186,9 @@ async def start_visual_servo(req: OverheadServoRequest):
     """Start overhead visual servo to move gripper to detected object."""
     global _vs_task
     if not _HAS_OVERHEAD_SERVO:
-        return JSONResponse({"ok": False, "error": "Visual servo module not available"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "Visual servo module not available"}, status_code=501
+        )
     ctrl = _get_vs_controller()
     if ctrl.state == ServoState.RUNNING:
         return JSONResponse({"ok": False, "error": "Visual servo already running"}, status_code=409)
@@ -3202,8 +3317,8 @@ async def locate_object(req: LocateRequest):
                     {"ok": False, "error": "GEMINI_API_KEY not set"}, status_code=501
                 )
 
-            from google import genai as _genai # type: ignore[import-untyped]
-            from google.genai import types as _gtypes # type: ignore[import-untyped]
+            from google import genai as _genai  # type: ignore[import-untyped]
+            from google.genai import types as _gtypes  # type: ignore[import-untyped]
 
             _client = _genai.Client(api_key=api_key)
 
@@ -3373,7 +3488,11 @@ async def pick_status():
         return {"available": False, "error": "Visual pick module not available"}
     status = pick_executor.get_status()
     status["available"] = True
-    status["calibrated"] = getattr(getattr(arm_tracker, 'calibrator', None), 'is_calibrated', False) if arm_tracker else False
+    status["calibrated"] = (
+        getattr(getattr(arm_tracker, "calibrator", None), "is_calibrated", False)
+        if arm_tracker
+        else False
+    )
     return status
 
 
@@ -4033,7 +4152,6 @@ async def run_viz_calibration():
         _viz_calib_running = False
 
 
-
 # ---------------------------------------------------------------------------
 # Telemetry viewer page route
 # ---------------------------------------------------------------------------
@@ -4673,7 +4791,7 @@ async def calibration_results(session_id: str):
                 "timestamp": c.timestamp,
                 "has_cam0": len(c.cam0_jpeg) > 0,
                 "has_cam1": len(c.cam1_jpeg) > 0,
-                "has_cam2": len(c.cam2_jpeg) > 0 if hasattr(c, 'cam2_jpeg') else False,
+                "has_cam2": len(c.cam2_jpeg) > 0 if hasattr(c, "cam2_jpeg") else False,
             }
             for c in _calibration_session.captures
         ],
@@ -4760,7 +4878,7 @@ async def get_calibration_frame(session_id: str, pose_index: int, camera_id: str
         jpeg = cap.cam0_jpeg
     elif camera_id == "cam1":
         jpeg = cap.cam1_jpeg
-    elif camera_id == "cam2" and hasattr(cap, 'cam2_jpeg'):
+    elif camera_id == "cam2" and hasattr(cap, "cam2_jpeg"):
         jpeg = cap.cam2_jpeg
     else:
         jpeg = b""
@@ -4837,7 +4955,13 @@ async def charuco_calibration_start():
             status_code=409,
         )
 
-    _charuco_state = {"status": "starting", "progress": 0, "total": 25, "error": None, "result": None}
+    _charuco_state = {
+        "status": "starting",
+        "progress": 0,
+        "total": 25,
+        "error": None,
+        "result": None,
+    }
 
     import time as _time_mod
 
@@ -4971,6 +5095,7 @@ async def charuco_calibration_start():
             _charuco_state["error"] = str(e)
             action_log.add("CHARUCO_CALIB", f"Failed: {e}", "error")
             import traceback
+
             logger.error(f"ChArUco calibration error: {traceback.format_exc()}")
 
     _charuco_task = asyncio.create_task(_run_charuco())
@@ -5048,48 +5173,64 @@ async def calibration_compare():
     old_avail = comparison["old_pipeline"]["available"]
     new_avail = comparison["charuco_pipeline"]["available"]
 
-    comparison["assessment"].append({
-        "category": "Calibration Target",
-        "old": "Gripper tip (gold HSV detection on matte-black arm)",
-        "new": "ChArUco board (ArUco + checkerboard hybrid, partial occlusion OK)",
-        "verdict": "ChArUco is categorically more reliable",
-    })
-    comparison["assessment"].append({
-        "category": "Detection Method",
-        "old": "HSV thresholding + contour detection for single end-effector point",
-        "new": "ArUco marker detection + sub-pixel corner refinement (6-24 corners per frame)",
-        "verdict": "ChArUco provides 10-100x more correspondences per frame",
-    })
-    comparison["assessment"].append({
-        "category": "Solver",
-        "old": "solvePnP (maps N end-effector positions to camera extrinsics)",
-        "new": "calibrateHandEye with all 5 methods cross-checked (AX=XB formulation)",
-        "verdict": "Hand-eye is the correct formulation for arm-mounted cameras",
-    })
-    comparison["assessment"].append({
-        "category": "Fixed Camera Method",
-        "old": "Same PnP as arm camera (treats fixed camera same as moving)",
-        "new": "calibrateRobotWorldHandEye (AX=ZB) + global anchor fallback",
-        "verdict": "AX=ZB is the correct formulation for fixed cameras observing a moving target",
-    })
-    comparison["assessment"].append({
-        "category": "Rotation Validation",
-        "old": "None",
-        "new": "det(R) ~ 1.0 check + orthogonality error + cross-solver consistency",
-        "verdict": "New pipeline catches degenerate solutions the old one would silently accept",
-    })
+    comparison["assessment"].append(
+        {
+            "category": "Calibration Target",
+            "old": "Gripper tip (gold HSV detection on matte-black arm)",
+            "new": "ChArUco board (ArUco + checkerboard hybrid, partial occlusion OK)",
+            "verdict": "ChArUco is categorically more reliable",
+        }
+    )
+    comparison["assessment"].append(
+        {
+            "category": "Detection Method",
+            "old": "HSV thresholding + contour detection for single end-effector point",
+            "new": "ArUco marker detection + sub-pixel corner refinement (6-24 corners per frame)",
+            "verdict": "ChArUco provides 10-100x more correspondences per frame",
+        }
+    )
+    comparison["assessment"].append(
+        {
+            "category": "Solver",
+            "old": "solvePnP (maps N end-effector positions to camera extrinsics)",
+            "new": "calibrateHandEye with all 5 methods cross-checked (AX=XB formulation)",
+            "verdict": "Hand-eye is the correct formulation for arm-mounted cameras",
+        }
+    )
+    comparison["assessment"].append(
+        {
+            "category": "Fixed Camera Method",
+            "old": "Same PnP as arm camera (treats fixed camera same as moving)",
+            "new": "calibrateRobotWorldHandEye (AX=ZB) + global anchor fallback",
+            "verdict": "AX=ZB is the correct formulation for fixed cameras observing a moving target",
+        }
+    )
+    comparison["assessment"].append(
+        {
+            "category": "Rotation Validation",
+            "old": "None",
+            "new": "det(R) ~ 1.0 check + orthogonality error + cross-solver consistency",
+            "verdict": "New pipeline catches degenerate solutions the old one would silently accept",
+        }
+    )
 
     if old_avail:
         old_cams = comparison["old_pipeline"].get("cameras", {})
         for cam_id, cam_data in old_cams.items():
             reproj = cam_data.get("reprojection_error_mean", 999)
             if reproj > 50:
-                comparison["assessment"].append({
-                    "category": f"{cam_id} Quality",
-                    "old": f"Reprojection error: {reproj:.1f}px (POOR — target is <5px)",
-                    "new": "Not yet measured (run ChArUco calibration first)" if not new_avail else "See ChArUco result",
-                    "verdict": "Old calibration is unreliable for this camera",
-                })
+                comparison["assessment"].append(
+                    {
+                        "category": f"{cam_id} Quality",
+                        "old": f"Reprojection error: {reproj:.1f}px (POOR — target is <5px)",
+                        "new": (
+                            "Not yet measured (run ChArUco calibration first)"
+                            if not new_avail
+                            else "See ChArUco result"
+                        ),
+                        "verdict": "Old calibration is unreliable for this camera",
+                    }
+                )
 
     return comparison
 
@@ -5611,6 +5752,7 @@ def _get_auto_calibrator(**kwargs):
     global _auto_calibrator
     if _auto_calibrator is None:
         from src.calibration.auto_calibrator import AutoCalibrator
+
         _auto_calibrator = AutoCalibrator(**kwargs)
     else:
         # Update params if provided
@@ -5641,6 +5783,7 @@ async def intrinsics_start(req: dict = {}):
 
     async def _run():
         import asyncio
+
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, cal.calibrate_camera, cam_id)
 
@@ -5659,6 +5802,7 @@ async def intrinsics_status():
 async def intrinsics_result(cam_id: int):
     """Get latest calibration result for a camera."""
     from src.calibration.auto_calibrator import CALIBRATION_RESULTS_DIR
+
     cam_file = CALIBRATION_RESULTS_DIR / f"cam{cam_id}_checkerboard_calibration.json"
     if not cam_file.exists():
         return JSONResponse({"error": f"No calibration for cam{cam_id}"}, status_code=404)
@@ -5686,6 +5830,7 @@ async def intrinsics_all(req: dict = {}):
 
     async def _run():
         import asyncio
+
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, cal.calibrate_all, camera_ids)
 
@@ -5698,6 +5843,7 @@ async def intrinsics_validate(cam_id: int):
     """Validate existing calibration with a fresh frame."""
     cal = _get_auto_calibrator()
     import asyncio
+
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, cal.validate, cam_id)
     return result
@@ -5708,7 +5854,10 @@ async def intrinsics_validate(cam_id: int):
 # ---------------------------------------------------------------------------
 
 from src.calibration.joint_mapper import get_joint_mapper
-from src.calibration.joint_mapping_calibrator import JointMappingCalibrator, CalibrationState as JMCalibState
+from src.calibration.joint_mapping_calibrator import (
+    JointMappingCalibrator,
+    CalibrationState as JMCalibState,
+)
 
 _jm_calibrator: Optional[JointMappingCalibrator] = None
 _jm_task: Optional[asyncio.Task] = None
@@ -5719,7 +5868,9 @@ async def joint_mapping_start():
     """Start joint mapping calibration — moves each joint one at a time."""
     global _jm_calibrator, _jm_task
     if _jm_task and not _jm_task.done():
-        return JSONResponse({"ok": False, "error": "Joint mapping calibration already running"}, status_code=409)
+        return JSONResponse(
+            {"ok": False, "error": "Joint mapping calibration already running"}, status_code=409
+        )
     if not (smoother and smoother._arm_enabled):
         return JSONResponse({"ok": False, "error": "Arm must be enabled"}, status_code=409)
 
@@ -5754,7 +5905,13 @@ async def joint_mapping_start():
 async def joint_mapping_status():
     """Get joint mapping calibration progress and results."""
     if _jm_calibrator is None:
-        return {"state": "idle", "current_joint": -1, "total_joints": 6, "results": [], "error": None}
+        return {
+            "state": "idle",
+            "current_joint": -1,
+            "total_joints": 6,
+            "results": [],
+            "error": None,
+        }
     return _jm_calibrator.progress
 
 
@@ -5770,7 +5927,7 @@ async def joint_mapping_stop():
 
 class JointMappingApplyRequest(BaseModel):
     mapping: dict  # {"0": 2, "1": 0, ...} — ui_joint_id -> dds_joint_id
-    labels: dict   # {"0": "J0 — base yaw", ...}
+    labels: dict  # {"0": "J0 — base yaw", ...}
 
 
 @app.post("/api/calibration/joint-mapping/apply")
@@ -5895,10 +6052,12 @@ async def calibration_health():
 # Pick Config API
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/config/safety")
 async def get_safety_config_api():
     """Return current safety config values."""
     from src.config.pick_config import get_pick_config
+
     cfg = get_pick_config()
     safety = cfg.get("safety")
     return JSONResponse({"safety": safety})
@@ -5908,6 +6067,7 @@ async def get_safety_config_api():
 async def update_safety_config_api(req: dict):
     """Update safety config values (e.g. stall_check_delay_s, stall_threshold_deg)."""
     from src.config.pick_config import get_pick_config
+
     cfg = get_pick_config()
     cfg.update({"safety": req})
     safety = cfg.get("safety")
@@ -5919,27 +6079,30 @@ async def update_safety_config_api(req: dict):
 async def get_limits_config_api():
     """Return current joint limits, torque proxy, and stall detection settings."""
     from src.config.pick_config import get_pick_config
+
     cfg = get_pick_config()
     safety = cfg.get("safety")
     defaults = cfg.get_defaults().get("safety", {})
-    return JSONResponse({
-        "joint_limits_deg": safety.get("joint_limits_deg", defaults.get("joint_limits_deg")),
-        "torque_proxy_limit": safety.get("torque_proxy_limit", 150.0),
-        "torque_proxy_enabled": safety.get("torque_proxy_enabled", True),
-        "torque_j2_factor": safety.get("torque_j2_factor", 0.7),
-        "stall_check_delay_s": safety.get("stall_check_delay_s", 5.0),
-        "stall_threshold_deg": safety.get("stall_threshold_deg", 15.0),
-        "stall_detection_enabled": safety.get("stall_detection_enabled", True),
-        "defaults": {
-            "joint_limits_deg": defaults.get("joint_limits_deg"),
-            "torque_proxy_limit": defaults.get("torque_proxy_limit"),
-            "torque_proxy_enabled": defaults.get("torque_proxy_enabled"),
-            "torque_j2_factor": defaults.get("torque_j2_factor"),
-            "stall_check_delay_s": defaults.get("stall_check_delay_s"),
-            "stall_threshold_deg": defaults.get("stall_threshold_deg"),
-            "stall_detection_enabled": defaults.get("stall_detection_enabled"),
-        },
-    })
+    return JSONResponse(
+        {
+            "joint_limits_deg": safety.get("joint_limits_deg", defaults.get("joint_limits_deg")),
+            "torque_proxy_limit": safety.get("torque_proxy_limit", 150.0),
+            "torque_proxy_enabled": safety.get("torque_proxy_enabled", True),
+            "torque_j2_factor": safety.get("torque_j2_factor", 0.7),
+            "stall_check_delay_s": safety.get("stall_check_delay_s", 5.0),
+            "stall_threshold_deg": safety.get("stall_threshold_deg", 15.0),
+            "stall_detection_enabled": safety.get("stall_detection_enabled", True),
+            "defaults": {
+                "joint_limits_deg": defaults.get("joint_limits_deg"),
+                "torque_proxy_limit": defaults.get("torque_proxy_limit"),
+                "torque_proxy_enabled": defaults.get("torque_proxy_enabled"),
+                "torque_j2_factor": defaults.get("torque_j2_factor"),
+                "stall_check_delay_s": defaults.get("stall_check_delay_s"),
+                "stall_threshold_deg": defaults.get("stall_threshold_deg"),
+                "stall_detection_enabled": defaults.get("stall_detection_enabled"),
+            },
+        }
+    )
 
 
 @app.post("/api/config/limits")
@@ -5953,12 +6116,17 @@ async def update_limits_config_api(req: dict):
     Set persist=false for temporary (apply without save).
     """
     from src.config.pick_config import get_pick_config
+
     cfg = get_pick_config()
 
     persist = req.pop("persist", True)
     allowed_keys = {
-        "joint_limits_deg", "torque_proxy_limit", "torque_proxy_enabled",
-        "torque_j2_factor", "stall_check_delay_s", "stall_threshold_deg",
+        "joint_limits_deg",
+        "torque_proxy_limit",
+        "torque_proxy_enabled",
+        "torque_j2_factor",
+        "stall_check_delay_s",
+        "stall_threshold_deg",
         "stall_detection_enabled",
     }
     updates = {}
@@ -5968,13 +6136,24 @@ async def update_limits_config_api(req: dict):
         # Validate joint_limits_deg
         if k == "joint_limits_deg":
             if not isinstance(v, list) or len(v) != 6:
-                return JSONResponse({"ok": False, "error": "joint_limits_deg must be array of 6 [min,max] pairs"}, status_code=400)
+                return JSONResponse(
+                    {"ok": False, "error": "joint_limits_deg must be array of 6 [min,max] pairs"},
+                    status_code=400,
+                )
             hw_limits = [135, 85, 85, 135, 85, 135]
             for i, pair in enumerate(v):
                 if not isinstance(pair, list) or len(pair) != 2:
-                    return JSONResponse({"ok": False, "error": f"J{i}: must be [min, max]"}, status_code=400)
+                    return JSONResponse(
+                        {"ok": False, "error": f"J{i}: must be [min, max]"}, status_code=400
+                    )
                 if pair[0] < -hw_limits[i] or pair[1] > hw_limits[i] or pair[0] >= pair[1]:
-                    return JSONResponse({"ok": False, "error": f"J{i}: limits out of hardware range ±{hw_limits[i]}°"}, status_code=400)
+                    return JSONResponse(
+                        {
+                            "ok": False,
+                            "error": f"J{i}: limits out of hardware range ±{hw_limits[i]}°",
+                        },
+                        status_code=400,
+                    )
         updates[k] = v
 
     if persist:
@@ -5982,13 +6161,16 @@ async def update_limits_config_api(req: dict):
     else:
         # Apply in memory only (no save to disk)
         import copy
+
         with cfg._lock:
             if "safety" not in cfg._data:
                 cfg._data["safety"] = {}
             for k2, v2 in updates.items():
                 cfg._data["safety"][k2] = v2
 
-    action_log.add("CONFIG", f"Limits config updated (persist={persist}): {list(updates.keys())}", "info")
+    action_log.add(
+        "CONFIG", f"Limits config updated (persist={persist}): {list(updates.keys())}", "info"
+    )
     safety = cfg.get("safety")
     return JSONResponse({"ok": True, "safety": safety})
 
@@ -5997,14 +6179,18 @@ async def update_limits_config_api(req: dict):
 async def get_pick_config_api():
     """Return full pick config."""
     from src.config.pick_config import get_pick_config
+
     cfg = get_pick_config()
-    return JSONResponse({"config": cfg.get_all(), "defaults": cfg.get_defaults(), "diff": cfg.diff()})
+    return JSONResponse(
+        {"config": cfg.get_all(), "defaults": cfg.get_defaults(), "diff": cfg.diff()}
+    )
 
 
 @app.post("/api/config/pick")
 async def update_pick_config_api(req: dict):
     """Update pick config values (deep merge)."""
     from src.config.pick_config import get_pick_config
+
     cfg = get_pick_config()
     cfg.update(req)
     return JSONResponse({"ok": True, "config": cfg.get_all()})
@@ -6014,6 +6200,7 @@ async def update_pick_config_api(req: dict):
 async def reset_pick_config_api():
     """Reset pick config to defaults."""
     from src.config.pick_config import get_pick_config
+
     cfg = get_pick_config()
     cfg.reset()
     return JSONResponse({"ok": True, "config": cfg.get_all()})
@@ -6025,15 +6212,23 @@ async def reset_pick_config_api():
 
 SAFETY_CONFIG_PATH = Path(_project_root) / "data" / "safety_config.json"
 
+
 def _get_all_safety_settings() -> dict:
     """Gather ALL safety settings from all sources into one dict."""
     from src.config.pick_config import get_pick_config
     from src.safety.limits import (
         JOINT_LIMITS_DEG as _JL,
-        VELOCITY_MAX_RAD, MAX_JOINT_SPEED_DEG, MAX_JOINT_ACCEL_DEG,
-        TORQUE_MAX_NM, MAX_WORKSPACE_RADIUS_MM, FEEDBACK_MAX_AGE_S,
-        MAX_STEP_DEG as _MSD, GRIPPER_MIN_MM as _GMN, GRIPPER_MAX_MM as _GMX,
+        VELOCITY_MAX_RAD,
+        MAX_JOINT_SPEED_DEG,
+        MAX_JOINT_ACCEL_DEG,
+        TORQUE_MAX_NM,
+        MAX_WORKSPACE_RADIUS_MM,
+        FEEDBACK_MAX_AGE_S,
+        MAX_STEP_DEG as _MSD,
+        GRIPPER_MIN_MM as _GMN,
+        GRIPPER_MAX_MM as _GMX,
     )
+
     cfg = get_pick_config()
     safety = cfg.get("safety")
 
@@ -6054,7 +6249,12 @@ def _get_all_safety_settings() -> dict:
         "joint_position_limits": {
             "limits_deg": safety.get("joint_limits_deg", _JL.tolist()),
             "hardware_limits_deg": [
-                [-135, 135], [-85, 85], [-85, 85], [-135, 135], [-85, 85], [-135, 135]
+                [-135, 135],
+                [-85, 85],
+                [-85, 85],
+                [-135, 135],
+                [-85, 85],
+                [-135, 135],
             ],
             "gripper_min_mm": _GMN,
             "gripper_max_mm": _GMX,
@@ -6114,28 +6314,49 @@ def _get_all_safety_settings() -> dict:
 
 _SAFETY_PRESETS = {
     "conservative": {
-        "joint_position_limits": {"limits_deg": [[-100,100],[-70,70],[-70,70],[-100,100],[-70,70],[-100,100]]},
+        "joint_position_limits": {
+            "limits_deg": [[-100, 100], [-70, 70], [-70, 70], [-100, 100], [-70, 70], [-100, 100]]
+        },
         "torque_proxy": {"limit": 100.0, "j2_factor": 0.8, "enabled": True},
         "stall_detection": {"delay_s": 3.0, "threshold_deg": 10.0, "enabled": True},
-        "collision_detection": {"position_error_deg": 2.0, "stall_duration_s": 0.3, "cooldown_s": 3.0, "enabled": True},
+        "collision_detection": {
+            "position_error_deg": 2.0,
+            "stall_duration_s": 0.3,
+            "cooldown_s": 3.0,
+            "enabled": True,
+        },
         "command_smoother": {"alpha": 0.2, "max_step_deg": 5.0, "max_gripper_step_mm": 3.0},
         "workspace_bounds": {"max_radius_mm": 450.0},
         "ramp_control": {"threshold_deg": 15.0, "step_deg": 5.0, "delay_s": 0.5},
     },
     "normal": {
-        "joint_position_limits": {"limits_deg": [[-135,135],[-90,90],[-90,90],[-135,135],[-90,90],[-135,135]]},
+        "joint_position_limits": {
+            "limits_deg": [[-135, 135], [-90, 90], [-90, 90], [-135, 135], [-90, 90], [-135, 135]]
+        },
         "torque_proxy": {"limit": 150.0, "j2_factor": 0.7, "enabled": True},
         "stall_detection": {"delay_s": 5.0, "threshold_deg": 15.0, "enabled": True},
-        "collision_detection": {"position_error_deg": 3.0, "stall_duration_s": 0.5, "cooldown_s": 5.0, "enabled": False},
+        "collision_detection": {
+            "position_error_deg": 3.0,
+            "stall_duration_s": 0.5,
+            "cooldown_s": 5.0,
+            "enabled": False,
+        },
         "command_smoother": {"alpha": 0.35, "max_step_deg": 10.0, "max_gripper_step_mm": 5.0},
         "workspace_bounds": {"max_radius_mm": 550.0},
         "ramp_control": {"threshold_deg": 20.0, "step_deg": 10.0, "delay_s": 0.3},
     },
     "aggressive": {
-        "joint_position_limits": {"limits_deg": [[-135,135],[-85,85],[-85,85],[-135,135],[-85,85],[-135,135]]},
+        "joint_position_limits": {
+            "limits_deg": [[-135, 135], [-85, 85], [-85, 85], [-135, 135], [-85, 85], [-135, 135]]
+        },
         "torque_proxy": {"limit": 200.0, "j2_factor": 0.5, "enabled": False},
         "stall_detection": {"delay_s": 8.0, "threshold_deg": 25.0, "enabled": False},
-        "collision_detection": {"position_error_deg": 5.0, "stall_duration_s": 1.0, "cooldown_s": 10.0, "enabled": False},
+        "collision_detection": {
+            "position_error_deg": 5.0,
+            "stall_duration_s": 1.0,
+            "cooldown_s": 10.0,
+            "enabled": False,
+        },
         "command_smoother": {"alpha": 0.6, "max_step_deg": 20.0, "max_gripper_step_mm": 10.0},
         "workspace_bounds": {"max_radius_mm": 600.0},
         "ramp_control": {"threshold_deg": 30.0, "step_deg": 15.0, "delay_s": 0.15},
@@ -6146,6 +6367,7 @@ _SAFETY_PRESETS = {
 def _apply_safety_settings(settings: dict):
     """Apply safety settings to running system and persist to safety_config.json."""
     from src.config.pick_config import get_pick_config
+
     cfg = get_pick_config()
 
     # Update pick_config safety section
@@ -6156,19 +6378,28 @@ def _apply_safety_settings(settings: dict):
             safety_updates["joint_limits_deg"] = jpl["limits_deg"]
     if "torque_proxy" in settings:
         tp = settings["torque_proxy"]
-        if "limit" in tp: safety_updates["torque_proxy_limit"] = tp["limit"]
-        if "j2_factor" in tp: safety_updates["torque_j2_factor"] = tp["j2_factor"]
-        if "enabled" in tp: safety_updates["torque_proxy_enabled"] = tp["enabled"]
+        if "limit" in tp:
+            safety_updates["torque_proxy_limit"] = tp["limit"]
+        if "j2_factor" in tp:
+            safety_updates["torque_j2_factor"] = tp["j2_factor"]
+        if "enabled" in tp:
+            safety_updates["torque_proxy_enabled"] = tp["enabled"]
     if "stall_detection" in settings:
         sd = settings["stall_detection"]
-        if "delay_s" in sd: safety_updates["stall_check_delay_s"] = sd["delay_s"]
-        if "threshold_deg" in sd: safety_updates["stall_threshold_deg"] = sd["threshold_deg"]
-        if "enabled" in sd: safety_updates["stall_detection_enabled"] = sd["enabled"]
+        if "delay_s" in sd:
+            safety_updates["stall_check_delay_s"] = sd["delay_s"]
+        if "threshold_deg" in sd:
+            safety_updates["stall_threshold_deg"] = sd["threshold_deg"]
+        if "enabled" in sd:
+            safety_updates["stall_detection_enabled"] = sd["enabled"]
     if "collision_detection" in settings:
         cd = settings["collision_detection"]
-        if "position_error_deg" in cd: safety_updates["collision_position_error_deg"] = cd["position_error_deg"]
-        if "stall_duration_s" in cd: safety_updates["collision_stall_duration_s"] = cd["stall_duration_s"]
-        if "cooldown_s" in cd: safety_updates["collision_cooldown_s"] = cd["cooldown_s"]
+        if "position_error_deg" in cd:
+            safety_updates["collision_position_error_deg"] = cd["position_error_deg"]
+        if "stall_duration_s" in cd:
+            safety_updates["collision_stall_duration_s"] = cd["stall_duration_s"]
+        if "cooldown_s" in cd:
+            safety_updates["collision_cooldown_s"] = cd["cooldown_s"]
 
     if safety_updates:
         cfg.update({"safety": safety_updates})
@@ -6176,15 +6407,26 @@ def _apply_safety_settings(settings: dict):
     # Apply smoother settings at runtime
     if "command_smoother" in settings and smoother:
         cs = settings["command_smoother"]
-        if "alpha" in cs: smoother._alpha = cs["alpha"]
-        if "max_step_deg" in cs: smoother._max_step = cs["max_step_deg"]
-        if "max_gripper_step_mm" in cs: smoother._max_grip_step = cs["max_gripper_step_mm"]
+        if "alpha" in cs:
+            smoother._alpha = cs["alpha"]
+        if "max_step_deg" in cs:
+            smoother._max_step = cs["max_step_deg"]
+        if "max_gripper_step_mm" in cs:
+            smoother._max_grip_step = cs["max_gripper_step_mm"]
 
     # Save extended settings to safety_config.json
     overrides = {}
-    for cat in ["velocity_limits", "acceleration_limits", "torque_limits",
-                "command_smoother", "collision_detection", "emergency_stop",
-                "workspace_bounds", "ramp_control", "feedback_freshness"]:
+    for cat in [
+        "velocity_limits",
+        "acceleration_limits",
+        "torque_limits",
+        "command_smoother",
+        "collision_detection",
+        "emergency_stop",
+        "workspace_bounds",
+        "ramp_control",
+        "feedback_freshness",
+    ]:
         if cat in settings:
             overrides[cat] = settings[cat]
 
@@ -6206,11 +6448,13 @@ def _apply_safety_settings(settings: dict):
 @app.get("/api/config/safety/all")
 async def get_all_safety_config():
     """Return ALL safety settings from all sources."""
-    return JSONResponse({
-        "ok": True,
-        "settings": _get_all_safety_settings(),
-        "presets": list(_SAFETY_PRESETS.keys()),
-    })
+    return JSONResponse(
+        {
+            "ok": True,
+            "settings": _get_all_safety_settings(),
+            "presets": list(_SAFETY_PRESETS.keys()),
+        }
+    )
 
 
 @app.post("/api/config/safety/all")
@@ -6230,7 +6474,10 @@ async def apply_safety_preset(req: dict):
     preset_name = req.get("preset", "").lower()
     if preset_name not in _SAFETY_PRESETS:
         return JSONResponse(
-            {"ok": False, "error": f"Unknown preset: {preset_name}. Available: {list(_SAFETY_PRESETS.keys())}"},
+            {
+                "ok": False,
+                "error": f"Unknown preset: {preset_name}. Available: {list(_SAFETY_PRESETS.keys())}",
+            },
             status_code=400,
         )
     _apply_safety_settings(_SAFETY_PRESETS[preset_name])
