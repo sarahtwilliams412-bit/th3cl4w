@@ -312,9 +312,20 @@ class ObjectDetector:
                 cy_px = y + bh / 2.0
                 ws_x, ws_y = self._pixel_to_workspace(cx_px, cy_px, rw, rh)
 
+                # Determine shape descriptor from aspect ratio
+                aspect = bw / max(bh, 1)
+                if aspect > 1.5:
+                    shape = "bar"
+                elif aspect < 0.67:
+                    shape = "tall object"
+                elif min(bw, bh) / max(bw, bh) > 0.85:
+                    shape = "cube"
+                else:
+                    shape = "block"
+
                 obj = DetectedObject(
                     obj_id=self._next_id,
-                    label=label,
+                    label=f"{label} {shape}",
                     x_mm=ws_x,
                     y_mm=ws_y,
                     z_mm=_DEFAULT_OBJECT_HEIGHT_MM / 2.0,
@@ -359,13 +370,26 @@ class ObjectDetector:
             obj_mask = fg_mask[y:y+bh, x:x+bw]
             color_bgr = self._get_dominant_color(obj_region, obj_mask)
 
+            # Derive a color name from the dominant BGR color
+            bg_label = self._color_name_from_bgr(color_bgr)
+            # Determine shape descriptor from aspect ratio
+            aspect = bw / max(bh, 1)
+            if aspect > 1.5:
+                shape = "bar"
+            elif aspect < 0.67:
+                shape = "tall object"
+            elif min(bw, bh) / max(bw, bh) > 0.85:
+                shape = "cube"
+            else:
+                shape = "block"
+
             cx_px = x + bw / 2.0
             cy_px = y + bh / 2.0
             ws_x, ws_y = self._pixel_to_workspace(cx_px, cy_px, rw, rh)
 
             obj = DetectedObject(
                 obj_id=self._next_id,
-                label="object",
+                label=f"{bg_label} {shape}",
                 x_mm=ws_x,
                 y_mm=ws_y,
                 z_mm=_DEFAULT_OBJECT_HEIGHT_MM / 2.0,
@@ -482,8 +506,40 @@ class ObjectDetector:
         median = np.median(pixels, axis=0).astype(int)
         return (int(median[0]), int(median[1]), int(median[2]))
 
+    @staticmethod
+    def _color_name_from_bgr(bgr: tuple[int, int, int]) -> str:
+        """Derive a human-readable color name from a BGR tuple using HSV."""
+        pixel = np.uint8([[list(bgr)]])
+        hsv = cv2.cvtColor(pixel, cv2.COLOR_BGR2HSV)[0][0]
+        h, s, v = int(hsv[0]), int(hsv[1]), int(hsv[2])
+
+        if v < 40:
+            return "dark"
+        if s < 40:
+            return "white" if v > 180 else "gray"
+        # Hue-based naming (OpenCV hue range 0-179)
+        if h < 8 or h >= 165:
+            return "red"
+        if h < 22:
+            return "orange"
+        if h < 35:
+            return "yellow"
+        if h < 80:
+            return "green"
+        if h < 100:
+            return "teal"
+        if h < 130:
+            return "blue"
+        if h < 150:
+            return "purple"
+        return "pink"
+
     def annotate_frame(self, frame: np.ndarray) -> np.ndarray:
-        """Draw detection overlays on a camera frame for visualization."""
+        """Draw detection overlays on a camera frame for visualization.
+
+        Draws bounding boxes, enclosing circles, crosshairs, labels with
+        object name, position, and reachability status.
+        """
         annotated = frame.copy()
         with self._lock:
             objects = list(self._objects)
@@ -494,28 +550,84 @@ class ObjectDetector:
             # Color based on reachability
             if obj.within_reach:
                 box_color = (0, 255, 100)  # green
-                label_prefix = "[REACH]"
+                label_tag = "REACHABLE"
             else:
                 box_color = (0, 140, 255)  # orange
-                label_prefix = "[FAR]"
+                label_tag = "OUT OF REACH"
 
-            # Draw bounding box
+            # Semi-transparent fill for bounding box
+            overlay = annotated.copy()
+            cv2.rectangle(overlay, (bx, by), (bx + bw, by + bh), box_color, -1)
+            cv2.addWeighted(overlay, 0.12, annotated, 0.88, 0, annotated)
+
+            # Draw bounding box border
             cv2.rectangle(annotated, (bx, by), (bx + bw, by + bh), box_color, 2)
 
-            # Draw center cross
+            # Draw enclosing circle around the object
             cx = bx + bw // 2
             cy = by + bh // 2
-            cv2.drawMarker(
-                annotated, (cx, cy), box_color,
-                cv2.MARKER_CROSS, 12, 1
+            radius = int(max(bw, bh) * 0.65)
+            cv2.circle(annotated, (cx, cy), radius, box_color, 2, cv2.LINE_AA)
+
+            # Draw crosshair at center
+            cross_size = 8
+            cv2.line(annotated, (cx - cross_size, cy), (cx + cross_size, cy), box_color, 1, cv2.LINE_AA)
+            cv2.line(annotated, (cx, cy - cross_size), (cx, cy + cross_size), box_color, 1, cv2.LINE_AA)
+
+            # Draw a small filled circle at center
+            cv2.circle(annotated, (cx, cy), 3, box_color, -1, cv2.LINE_AA)
+
+            # Label background for readability
+            name_text = obj.label.upper()
+            pos_text = f"({obj.x_mm:.0f}, {obj.y_mm:.0f}) mm  d={obj.distance_from_base_mm:.0f}mm"
+            tag_text = label_tag
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale_name = 0.5
+            font_scale_info = 0.38
+            thickness = 1
+
+            # Measure text sizes
+            (nw, nh), _ = cv2.getTextSize(name_text, font, font_scale_name, thickness)
+            (pw, ph), _ = cv2.getTextSize(pos_text, font, font_scale_info, thickness)
+            (tw, th), _ = cv2.getTextSize(tag_text, font, font_scale_info, thickness)
+
+            label_w = max(nw, pw, tw) + 10
+            label_h = nh + ph + th + 18
+            label_x = bx
+            label_y = max(0, by - label_h - 4)
+
+            # Dark background behind label
+            cv2.rectangle(
+                annotated,
+                (label_x, label_y),
+                (label_x + label_w, label_y + label_h),
+                (0, 0, 0), -1
+            )
+            cv2.rectangle(
+                annotated,
+                (label_x, label_y),
+                (label_x + label_w, label_y + label_h),
+                box_color, 1
             )
 
-            # Label
-            text = f"{label_prefix} {obj.label} d={obj.distance_from_base_mm:.0f}mm"
-            cv2.putText(
-                annotated, text, (bx, by - 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, box_color, 1
-            )
+            # Draw label text
+            y_off = label_y + nh + 4
+            cv2.putText(annotated, name_text, (label_x + 5, y_off), font, font_scale_name, (255, 255, 255), thickness, cv2.LINE_AA)
+            y_off += ph + 6
+            cv2.putText(annotated, pos_text, (label_x + 5, y_off), font, font_scale_info, (200, 200, 200), thickness, cv2.LINE_AA)
+            y_off += th + 4
+            cv2.putText(annotated, tag_text, (label_x + 5, y_off), font, font_scale_info, box_color, thickness, cv2.LINE_AA)
+
+        # Draw legend in corner
+        if objects:
+            legend_y = 20
+            cv2.putText(annotated, f"Detected: {len(objects)} objects", (10, legend_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+            n_reach = sum(1 for o in objects if o.within_reach)
+            legend_y += 20
+            cv2.putText(annotated, f"Reachable: {n_reach}", (10, legend_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 100), 1, cv2.LINE_AA)
 
         return annotated
 

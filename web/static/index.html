@@ -887,41 +887,73 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
 <div class="panel" id="panel-object-detect">
   <div class="panel-body">
     <div class="panel-header">Object Detection & Mapping</div>
-    <div class="panel-grid">
-      <div class="panel-card">
-        <h3>Detection Control</h3>
-        <div class="status-indicator stopped" id="objDetectPanelStatus">OFF</div>
-        <div class="btn-row" style="margin-top:8px;">
+
+    <!-- Top row: Controls -->
+    <div class="panel-card" style="margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <h3 style="margin:0;">Detection Control</h3>
+        <div class="status-indicator stopped" id="objDetectPanelStatus" style="margin:0;">OFF</div>
+        <div class="btn-row" style="margin:0;">
           <button class="btn primary" id="objPanelEnable" onclick="objPanelToggle()">ENABLE</button>
           <button class="btn primary" id="objPanelDetect" onclick="objPanelRunDetect()" disabled>DETECT NOW</button>
           <button class="btn" onclick="objPanelClear()">CLEAR</button>
         </div>
-        <p style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:8px;line-height:1.5;">
-          Detects objects from the overhead camera (cam1) using color segmentation
-          and background subtraction. Objects within the arm's 550mm reach are
-          highlighted and mapped into the 3D simulator for pick practice.
-        </p>
-      </div>
-      <div class="panel-card">
-        <h3>Detected Objects</h3>
-        <div style="font-family:var(--mono);font-size:11px;margin-bottom:8px;">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">
           Total: <span id="objPanelTotal">0</span> |
           Reachable: <span id="objPanelReachable" style="color:var(--success)">0</span>
-        </div>
-        <div class="result-box" id="objPanelList" style="max-height:300px;">No objects detected</div>
+        </span>
       </div>
+    </div>
+
+    <!-- Main content: Camera overlay + Workspace map side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+
+      <!-- Camera Overlay View -->
       <div class="panel-card">
-        <h3>Simulator Integration</h3>
-        <p style="font-family:var(--mono);font-size:10px;color:var(--text-dim);line-height:1.5;">
-          Detected objects within arm reach are automatically shown in the
-          3D Simulator panel. Open the simulator to see objects rendered at their
-          estimated positions and practice pick operations.<br><br>
-          <strong style="color:var(--success)">Green</strong> = within reach (can be picked)<br>
+        <h3>Camera Detection View</h3>
+        <div id="objDetectCamView" style="position:relative;background:#0a0f1a;border-radius:4px;overflow:hidden;min-height:300px;display:flex;align-items:center;justify-content:center;">
+          <div id="objDetectCamPlaceholder" style="text-align:center;color:#445;font-family:var(--mono);font-size:11px;padding:20px;">
+            Enable detection and click DETECT NOW<br>to see camera overlay with detected objects
+          </div>
+          <img id="objDetectCamImg" style="width:100%;display:none;border-radius:4px;" alt="Detection overlay">
+        </div>
+        <p style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:6px;line-height:1.4;">
+          Overhead camera (cam1) with bounding boxes, circles, and labels for each detected object.
+          <strong style="color:var(--success)">Green</strong> = within reach |
           <strong style="color:var(--warning)">Orange</strong> = out of reach
         </p>
-        <div class="btn-row" style="margin-top:8px;">
-          <button class="btn primary" onclick="showPanel(document.querySelector('[data-panel=simulator]'))">Open Simulator</button>
+      </div>
+
+      <!-- 2D Workspace Map -->
+      <div class="panel-card">
+        <h3>Workspace Map</h3>
+        <div style="position:relative;background:#0a0f1a;border-radius:4px;overflow:hidden;">
+          <canvas id="objDetectWorkspaceCanvas" width="400" height="400" style="width:100%;display:block;"></canvas>
         </div>
+        <p style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:6px;line-height:1.4;">
+          Top-down workspace view. Circle = arm reach (550mm).
+          Objects shown at their detected positions with labels and distances.
+        </p>
+      </div>
+    </div>
+
+    <!-- Object list -->
+    <div class="panel-card">
+      <h3>Detected Objects</h3>
+      <div class="result-box" id="objPanelList" style="max-height:200px;">No objects detected</div>
+    </div>
+
+    <!-- Simulator Integration -->
+    <div class="panel-card" style="margin-top:10px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <h3 style="margin:0;">Simulator Integration</h3>
+        <div class="btn-row" style="margin:0;">
+          <button class="btn primary" onclick="objPanelSyncToSim()">Sync to 3D Simulator</button>
+          <button class="btn" onclick="showPanel(document.querySelector('[data-panel=simulator]'))">Open Simulator</button>
+        </div>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);">
+          Detected objects are synced to the 3D simulator for pick practice
+        </span>
       </div>
     </div>
   </div>
@@ -3418,8 +3450,11 @@ async function pickCfgReset() {
 <script defer src="realworld3d.js"></script>
 <script defer src="js/arm3d-overlay.js"></script>
 <script>
-// =====================================================//  Object Detection Panel Functions
-// =====================================================let _objPanelEnabled = false;
+// =====================================================
+//  Object Detection Panel Functions
+// =====================================================
+let _objPanelEnabled = false;
+let _objPanelObjects = [];
 
 async function objPanelToggle() {
   try {
@@ -3434,19 +3469,67 @@ async function objPanelToggle() {
 
 async function objPanelRunDetect() {
   if (!_objPanelEnabled) return;
+  const detectBtn = document.getElementById('objPanelDetect');
+  if (detectBtn) { detectBtn.textContent = 'DETECTING...'; detectBtn.disabled = true; }
   try {
-    await fetch('/api/objects/detect', { method: 'POST' });
-    const resp = await fetch('/api/objects/list');
-    const data = await resp.json();
-    _objPanelRenderList(data.objects || []);
-  } catch (e) { console.error('objPanelRunDetect:', e); }
+    // Run detection + get annotated snapshot (this runs detection internally)
+    const snapResp = await fetch('/api/objects/detect/snapshot', { method: 'POST' });
+
+    // Show annotated camera image
+    if (snapResp.ok) {
+      const blob = await snapResp.blob();
+      const img = document.getElementById('objDetectCamImg');
+      const placeholder = document.getElementById('objDetectCamPlaceholder');
+      if (img) {
+        img.src = URL.createObjectURL(blob);
+        img.style.display = 'block';
+      }
+      if (placeholder) placeholder.style.display = 'none';
+    }
+
+    // Now fetch the object list (detection already finished above)
+    const listResp = await fetch('/api/objects/list');
+    if (listResp.ok) {
+      const data = await listResp.json();
+      _objPanelObjects = data.objects || [];
+      _objPanelRenderList(_objPanelObjects);
+      _objPanelDrawWorkspace(_objPanelObjects);
+    }
+  } catch (e) {
+    console.error('objPanelRunDetect:', e);
+  } finally {
+    if (detectBtn) { detectBtn.textContent = 'DETECT NOW'; detectBtn.disabled = !_objPanelEnabled; }
+  }
 }
 
 async function objPanelClear() {
   try {
     await fetch('/api/objects/clear', { method: 'POST' });
+    _objPanelObjects = [];
     _objPanelRenderList([]);
+    _objPanelDrawWorkspace([]);
+    // Reset camera view
+    const img = document.getElementById('objDetectCamImg');
+    const placeholder = document.getElementById('objDetectCamPlaceholder');
+    if (img) img.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'block';
   } catch (e) { console.error('objPanelClear:', e); }
+}
+
+async function objPanelSyncToSim() {
+  // Sync current detected objects to the 3D simulator
+  try {
+    const resp = await fetch('/api/objects/list');
+    const data = await resp.json();
+    const objects = data.objects || [];
+    if (window._sim) {
+      window._sim.updateDetectedObjects(objects);
+      window._sim.toggleDetectedObjects(true);
+    }
+    // Switch to the simulator panel
+    const simNav = document.querySelector('[data-panel=simulator]');
+    if (simNav) showPanel(simNav);
+  } catch (e) { console.error('objPanelSyncToSim:', e); }
 }
 
 function _objPanelUpdateUI() {
@@ -3488,6 +3571,152 @@ function _objPanelRenderList(objects) {
     }
   }
 }
+
+/**
+ * Draw a 2D top-down workspace map on canvas showing:
+ * - Grid lines
+ * - Arm reach circle (550mm)
+ * - Arm base at center
+ * - Detected objects as colored dots with labels
+ */
+function _objPanelDrawWorkspace(objects) {
+  const canvas = document.getElementById('objDetectWorkspaceCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const W = canvas.width;
+  const H = canvas.height;
+  const cx = W / 2;
+  const cy = H / 2;
+
+  // Workspace bounds: -400 to +400 mm, canvas maps to this
+  const WS_RANGE = 800; // mm total
+  const REACH_MM = 550;
+  const scale = W / WS_RANGE; // px per mm
+
+  // Clear
+  ctx.fillStyle = '#0a0f1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines every 100mm
+  ctx.strokeStyle = '#1a2235';
+  ctx.lineWidth = 0.5;
+  for (let mm = -400; mm <= 400; mm += 100) {
+    const px = cx + mm * scale;
+    ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, px); ctx.lineTo(W, px); ctx.stroke();
+  }
+
+  // Axis lines
+  ctx.strokeStyle = '#2a3a55';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke();
+
+  // Arm reach circle
+  const reachPx = REACH_MM * scale;
+  ctx.strokeStyle = '#44ff88';
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.4;
+  ctx.beginPath();
+  ctx.arc(cx, cy, reachPx, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Fill reach area very faintly
+  ctx.fillStyle = '#44ff88';
+  ctx.globalAlpha = 0.03;
+  ctx.beginPath();
+  ctx.arc(cx, cy, reachPx, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1.0;
+
+  // Reach label
+  ctx.fillStyle = '#44ff88';
+  ctx.globalAlpha = 0.5;
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('550mm reach', cx, cy - reachPx - 4);
+  ctx.globalAlpha = 1.0;
+
+  // Arm base marker
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#aaa';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ARM BASE', cx, cy + 14);
+
+  // Draw each detected object
+  for (const obj of objects) {
+    // Convert mm to canvas px
+    // x_mm: positive = right, y_mm: positive = forward (up in top-down view)
+    const objPx = cx + obj.x_mm * scale;
+    const objPy = cy - obj.y_mm * scale; // invert Y for screen coords
+
+    const color = obj.within_reach ? '#44ff88' : '#ff8844';
+    const objColor = obj.color_hex || '#ff8800';
+
+    // Distance line from base to object
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.5;
+    ctx.globalAlpha = 0.3;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(objPx, objPy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+
+    // Object circle (size based on object dimensions)
+    const objRadius = Math.max(6, Math.max(obj.width_mm || 20, obj.depth_mm || 20) * scale * 0.5);
+
+    // Filled circle with object's actual color
+    ctx.fillStyle = objColor;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.arc(objPx, objPy, objRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+
+    // Outline
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(objPx, objPy, objRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(obj.label.toUpperCase(), objPx, objPy - objRadius - 8);
+
+    // Position + distance
+    ctx.fillStyle = '#aaa';
+    ctx.font = '9px monospace';
+    ctx.fillText(`${obj.distance_mm}mm`, objPx, objPy - objRadius - 0);
+
+    // Reach tag
+    ctx.fillStyle = color;
+    ctx.font = '8px monospace';
+    ctx.fillText(obj.within_reach ? 'REACH' : 'FAR', objPx, objPy + objRadius + 10);
+  }
+
+  // Legend
+  if (objects.length > 0) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#aaa';
+    ctx.font = '10px monospace';
+    ctx.fillText(`${objects.length} objects detected`, 8, H - 8);
+  }
+}
+
+// Draw initial empty workspace on load
+requestAnimationFrame(() => _objPanelDrawWorkspace([]));
 
 // Check status on page load
 fetch('/api/objects/status').then(r => r.json()).then(data => {
