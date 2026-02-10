@@ -829,12 +829,16 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <div class="form-row">
           <label>Prompt</label><input type="text" id="vlaPrompt" placeholder="Pick up the red object" style="flex:2">
         </div>
-        <div class="form-row">
-          <label>Camera</label>
-          <select id="vlaCam"><option value="1">Camera 1</option><option value="0">Camera 0</option><option value="2">Camera 2</option></select>
-        </div>
         <div class="btn-row" style="margin-top:6px;">
           <button class="btn primary" onclick="vlaAct()">🚀 ACT</button>
+          <button class="btn" onclick="vlaPreviewCams()">👁 PREVIEW</button>
+          <button class="btn danger" onclick="apiPost('/api/vla/abort').then(d=>showResult('vlaActResult',d))">⛔ ABORT</button>
+        </div>
+        <div id="vlaCamPreview" style="display:none;margin-top:8px;">
+          <div style="display:flex;gap:6px;">
+            <div style="flex:1;text-align:center"><span style="font-size:9px;color:var(--text-dim)">Camera 0</span><img id="vlaCam0Img" style="width:100%;border-radius:4px;border:1px solid var(--card-border)" alt="Cam 0"></div>
+            <div style="flex:1;text-align:center"><span style="font-size:9px;color:var(--text-dim)">Camera 1</span><img id="vlaCam1Img" style="width:100%;border-radius:4px;border:1px solid var(--card-border)" alt="Cam 1"></div>
+          </div>
         </div>
         <div class="result-box" id="vlaActResult" style="margin-top:8px;display:none;"></div>
       </div>
@@ -2484,11 +2488,43 @@ async function ppFromPos() { showResult('ppPlanResult', await apiPost('/api/pick
 async function ppCalibrate() { showResult('ppCalibResult', await apiPost('/api/pick-planner/calibrate')); }
 
 // --- VLA ---
-async function vlaRefreshStatus() { const data = await apiCall('/api/vla/status'); const el = document.getElementById('vlaStatus'); el.textContent = data.status || 'UNKNOWN'; el.className = 'status-indicator ' + (data.ready ? 'running' : 'stopped'); }
-async function vlaAct() { const prompt = document.getElementById('vlaPrompt').value; const cam = document.getElementById('vlaCam').value; showResult('vlaActResult', await apiPost('/api/vla/act', {prompt, camera_id:parseInt(cam)})); }
-async function vlaDemoStart() { const task = document.getElementById('vlaDemoTask').value; showResult('vlaDemoResult', await apiPost('/api/vla/demo/collect', {task})); }
-async function vlaDemoStop() { showResult('vlaDemoResult', await apiPost('/api/vla/demo/stop')); }
-async function vlaDemoList() { showResult('vlaDemoResult', await apiCall('/api/vla/demo/list')); }
+async function vlaRefreshStatus() {
+  const data = await apiCall('/api/vla/status');
+  const el = document.getElementById('vlaStatus');
+  if (!data.available) {
+    el.textContent = 'UNAVAILABLE';
+    el.className = 'status-indicator stopped';
+    return;
+  }
+  const state = data.state || 'UNKNOWN';
+  el.textContent = state.toUpperCase();
+  const running = ['observing','planning','executing','verifying'].includes(state);
+  const done = state === 'completed';
+  el.className = 'status-indicator ' + (running ? 'running' : done ? 'running' : 'stopped');
+  if (data.current_task) el.textContent += ': ' + data.current_task;
+}
+async function vlaAct() {
+  const task = document.getElementById('vlaPrompt').value;
+  if (!task.trim()) { showResult('vlaActResult', {ok:false, error:'Enter a task prompt'}); return; }
+  showResult('vlaActResult', await apiPost('/api/vla/act', {task}));
+}
+let _vlaCamPoller = null;
+function vlaPreviewCams() {
+  const wrap = document.getElementById('vlaCamPreview');
+  if (wrap.style.display !== 'none') { wrap.style.display = 'none'; clearInterval(_vlaCamPoller); _vlaCamPoller = null; return; }
+  wrap.style.display = 'block';
+  const snapBase = `http://${CAM_HOST}:${CAM_PORT}`;
+  function refresh() {
+    const t = Date.now();
+    document.getElementById('vlaCam0Img').src = snapBase + '/snap/0?t=' + t;
+    document.getElementById('vlaCam1Img').src = snapBase + '/snap/1?t=' + t;
+  }
+  refresh();
+  _vlaCamPoller = setInterval(refresh, 1000);
+}
+async function vlaDemoStart() { const task = document.getElementById('vlaDemoTask').value; showResult('vlaDemoResult', await apiPost('/api/vla/collect', {action:'start', task})); }
+async function vlaDemoStop() { showResult('vlaDemoResult', await apiPost('/api/vla/collect', {action:'stop', success:true})); }
+async function vlaDemoList() { showResult('vlaDemoResult', await apiCall('/api/vla/demos')); }
 
 // --- Bifocal ---
 async function bifocalToggle(on) { const data = await apiPost('/api/bifocal/toggle', {enabled:on}); const el = document.getElementById('bifocalStatus'); el.textContent = on ? 'ON' : 'OFF'; el.className = 'status-indicator ' + (on ? 'running' : 'stopped'); }
