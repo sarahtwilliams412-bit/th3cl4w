@@ -1192,6 +1192,9 @@ async def cmd_enable_here():
     if not ok:
         return cmd_response(False, "ENABLE_HERE", "Enable failed", cid)
 
+    global _sw_enabled
+    _sw_enabled = True
+
     # Immediately send current position as target so arm holds still
     if angles is not None and len(angles) >= 6:
         angles_list = [float(a) for a in angles[:6]]
