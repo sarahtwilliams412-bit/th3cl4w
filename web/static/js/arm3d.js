@@ -55,8 +55,10 @@ function dhTransform(dh, theta) {
  * @returns {THREE.Matrix4[]} - 8 transforms (base + 7 joints)
  */
 function forwardKinematics(jointAnglesRad) {
-  const transforms = [new THREE.Matrix4()]; // identity for base
-  let T = new THREE.Matrix4();
+  // Rotate DH frame (Z-up) to Three.js frame (Y-up): rotate -90° about X
+  const base = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+  const transforms = [base.clone()];
+  let T = base.clone();
   for (let i = 0; i < D1_DH.length; i++) {
     const q = jointAnglesRad[i] || 0;
     T = T.clone().multiply(dhTransform(D1_DH[i], q));

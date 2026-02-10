@@ -292,7 +292,9 @@ class D1ArmSimulator {
   syncFromLive() {
     this.simJoints = [...this.liveJoints];
     this.simGripper = this.liveGripper;
-    this._updateArm();
+    // Snap immediately (no smooth interpolation)
+    const simAngles7 = [...this.simJoints, 0];
+    this.arm.setImmediate(simAngles7, this.simGripper);
     if (this.onJointsChanged) {
       this.onJointsChanged(this.simJoints, this.simGripper);
     }
