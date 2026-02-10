@@ -2043,9 +2043,17 @@ function toggleNavGroup(el) {
 
 let _activePanel = 'control';
 
-function showPanel(navItem) {
+function showPanelById(panelId) {
+  const navItem = document.querySelector(`.nav-item[data-panel="${panelId}"]`);
+  if (navItem) showPanel(navItem, true);
+}
+
+function showPanel(navItem, skipHash) {
   const panelId = navItem.dataset.panel;
   if (!panelId) return;
+
+  // Update URL hash for deep linking
+  if (!skipHash) history.pushState(null, '', '#' + panelId);
 
   const PICK_PANELS = ['auto-pick', 'visual-servo', 'multiview-pick', 'pick-planner', 'vla'];
 
@@ -5420,6 +5428,28 @@ fetch('/api/objects/status').then(r => r.json()).then(data => {
   window._simWsHook = function(state) {
     if (sim && sim.active) simUpdateFromWS();
   };
+})();
+
+// --- Deep-link routing via URL hash ---
+(function() {
+  function navigateToHash() {
+    const hash = location.hash.replace('#', '');
+    if (!hash) return;
+    const navItem = document.querySelector(`.nav-item[data-panel="${hash}"]`);
+    if (!navItem) return;
+    // Open parent nav-group if collapsed
+    const group = navItem.closest('.nav-group');
+    if (group && !group.classList.contains('open')) group.classList.add('open');
+    showPanel(navItem, true);
+  }
+  // On initial load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', navigateToHash);
+  } else {
+    navigateToHash();
+  }
+  // On browser back/forward
+  window.addEventListener('popstate', navigateToHash);
 })();
 </script>
 </body>
