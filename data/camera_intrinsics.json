@@ -51,22 +51,22 @@
         1080
       ],
       "camera_matrix": {
-        "fx": 1101.5,
-        "fy": 1101.5,
-        "cx": 960.0,
-        "cy": 540.0
+        "fx": 1392.78,
+        "fy": 1522.99,
+        "cx": 951.5,
+        "cy": 537.27
       },
       "distortion_coefficients": {
-        "k1": -0.12,
-        "k2": 0.04,
-        "p1": 0.0,
-        "p2": 0.0,
-        "k3": 0.0
+        "k1": -0.512183,
+        "k2": 12.24195,
+        "p1": -0.112183,
+        "p2": -0.017852,
+        "k3": -60.974612
       },
-      "fov_diagonal_deg": 90,
-      "fov_horizontal_deg": 82.1,
-      "fov_vertical_deg": 52.2,
-      "confidence": "medium",
+      "fov_diagonal_deg": 74.2,
+      "fov_horizontal_deg": 69.2,
+      "fov_vertical_deg": 39.0,
+      "confidence": "medium-high",
       "mounting": "arm-mounted (moves with end-effector)",
       "hand_eye_transform": null,
       "v4l2": {
@@ -80,7 +80,9 @@
         "pan_absolute": 0,
         "tilt_absolute": 0
       },
-      "notes": "MX Brio has Sony Starvis 2 sensor, different lens than BRIO. 90\u00b0 diagonal FOV (spec). Slightly different distortion profile \u2014 k1=-0.12 estimated (less barrel distortion than BRIO due to newer lens design). Higher sharpness observed (1837 vs 250 Laplacian variance). Hand-eye calibration needed for arm-to-camera transform."
+      "notes": "Checkerboard calibrated. MX Brio at ~74\u00b0 FOV. fx/fy differ (1393 vs 1523) \u2014 slight astigmatism or board was at steep angle. k2/k3 are large \u2014 board was in a small region of frame, distortion model may be overfit. Would benefit from more diverse board positions.",
+      "calibration_method": "checkerboard_19mm_10frames",
+      "rms_reprojection_px": 0.2225
     },
     "cam2": {
       "label": "side",
