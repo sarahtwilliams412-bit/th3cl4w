@@ -14,6 +14,7 @@ fi
 
 PIDFILE="/tmp/th3cl4w-server.pid"
 CAM_PIDFILE="/tmp/th3cl4w-cam.pid"
+LOC_PIDFILE="/tmp/th3cl4w-loc.pid"
 
 kill_server() {
     # Use PID file for reliable kills, fall back to port-based kill
@@ -47,11 +48,22 @@ kill_camera() {
     fi
 }
 
+kill_location() {
+    if [ -f "$LOC_PIDFILE" ]; then
+        pid=$(cat "$LOC_PIDFILE")
+        kill -TERM "$pid" 2>/dev/null
+        rm -f "$LOC_PIDFILE"
+    fi
+    fuser -k 8082/tcp 2>/dev/null || true
+}
+
 cleanup() {
     echo "[$(date)] Watchdog shutting down..."
     kill_server
     kill_camera
+    kill_location
     kill "$CAM_WATCH_PID" 2>/dev/null
+    kill "$LOC_WATCH_PID" 2>/dev/null
     wait
     exit 0
 }
@@ -70,6 +82,21 @@ trap cleanup EXIT INT TERM
     done
 ) &
 CAM_WATCH_PID=$!
+
+# --- Location server watchdog (background) ---
+(
+    # Wait for camera server to start first
+    sleep 5
+    while true; do
+        echo "[$(date)] Starting location server..."
+        python3.12 web/location_server.py 2>&1 | tee -a /tmp/th3cl4w-loc.log &
+        echo $! > "$LOC_PIDFILE"
+        wait $!
+        echo "[$(date)] Location server exited ($?), restarting in 3s..."
+        sleep 3
+    done
+) &
+LOC_WATCH_PID=$!
 
 # --- Main web server watchdog ---
 FIRST_RUN=true
