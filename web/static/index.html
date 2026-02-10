@@ -415,7 +415,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <div class="nav-items">
       <div class="nav-item" data-panel="debug" onclick="showPanel(this)"><span class="nav-icon">🔧</span> <span class="nav-label">Debug Pipeline</span></div>
       <div class="nav-item" data-panel="diagnostics" onclick="showPanel(this)"><span class="nav-icon">🩺</span> <span class="nav-label">Diagnostics</span></div>
-      <div class="nav-item" data-panel="collision-history" onclick="showPanel(this)"><span class="nav-icon">💥</span> <span class="nav-label">Collision History</span></div>
       <div class="nav-item ext" onclick="window.open('/telemetry','_blank')"><span class="nav-icon">📊</span> <span class="nav-label">Telemetry Page</span></div>
     </div>
   </div>
@@ -1178,21 +1177,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   </div>
 </div>
 
-<!-- ============================================================ -->
-<!-- PANEL: Collision History                                       -->
-<!-- ============================================================ -->
-<div class="panel" id="panel-collision-history">
-  <div class="panel-body">
-    <div class="panel-header">💥 Collision History</div>
-    <div class="panel-card">
-      <div class="btn-row">
-        <button class="btn primary" onclick="collisionHistoryLoad()">📋 LOAD HISTORY</button>
-        <button class="btn danger" onclick="collisionHistoryClear()">🗑 CLEAR</button>
-      </div>
-      <div class="result-box" id="collisionHistoryResult" style="margin-top:8px;display:none;"></div>
-    </div>
-  </div>
-</div>
 
 <!-- ============================================================ -->
 <!-- PANEL: Object Locator                                         -->
@@ -2792,10 +2776,6 @@ async function jmApply() {
 async function diagFeedback() { showResult('diagFeedbackResult', await apiCall('/api/debug/feedback')); }
 async function diagSmoother() { showResult('diagSmootherResult', await apiCall('/api/debug/smoother')); }
 async function diagGpu() { const data = await apiCall('/api/gpu/status'); showResult('diagGpuResult', data); showResult('settingsGpuResult', data); }
-
-// --- Collision History ---
-async function collisionHistoryLoad() { showResult('collisionHistoryResult', await apiCall('/api/collisions/history')); }
-async function collisionHistoryClear() { showResult('collisionHistoryResult', await apiPost('/api/collisions/clear')); }
 
 // --- Object Locator ---
 async function locateObject() {

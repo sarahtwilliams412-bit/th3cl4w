@@ -274,7 +274,6 @@ pick_executor: Any = None  # PickExecutor for autonomous pick operations
 vision_task_planner: Any = None  # VisionTaskPlanner for camera-guided planning
 scene_analyzer: Any = None  # SceneAnalyzer for scene understanding
 claw_predictor: Any = None  # ClawPositionPredictor for visual claw tracking
-collision_events: list = []  # Recent collision events for API (kept for API compat)
 vla_controller: Any = None  # VLAController for vision-language-action
 vla_data_collector: Any = None  # DataCollector for recording demonstrations
 pose_fusion: Any = None  # PoseFusion engine
@@ -3642,31 +3641,6 @@ async def run_viz_calibration():
     finally:
         _viz_calib_running = False
 
-
-# ---------------------------------------------------------------------------
-# Collision handling
-# ---------------------------------------------------------------------------
-
-
-# _handle_collision removed — collision detector disabled
-
-
-@app.get("/api/collisions")
-async def api_collisions(limit: int = 20):
-    """Return recent collision events."""
-    return {"events": collision_events[-limit:]}
-
-
-@app.get("/api/collisions/{timestamp}/{filename}")
-async def api_collision_image(timestamp: str, filename: str):
-    """Serve saved collision images."""
-    from fastapi.responses import FileResponse
-
-    data_dir = Path(__file__).resolve().parent.parent / "data" / "collisions"
-    img_path = data_dir / timestamp / filename
-    if not img_path.exists() or not img_path.is_file():
-        return JSONResponse({"error": "Not found"}, status_code=404)
-    return FileResponse(img_path, media_type="image/jpeg")
 
 
 # ---------------------------------------------------------------------------
