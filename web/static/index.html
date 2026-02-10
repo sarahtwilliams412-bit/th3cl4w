@@ -2460,12 +2460,12 @@ async function vsStatus(mode) {
 // --- Multi-view Pick ---
 async function mvpStart() {
   const target = document.getElementById('mvpTarget').value.trim();
-  const data = await apiPost('/api/pick/start', target ? { target } : {});
+  const data = await apiPost('/api/multiview/pick/start', target ? { target } : {});
   showResult('mvpResult', data); mvpRefresh();
 }
-async function mvpStop() { const data = await apiPost('/api/pick/stop'); showResult('mvpResult', data); mvpRefresh(); }
+async function mvpStop() { const data = await apiPost('/api/multiview/pick/stop'); showResult('mvpResult', data); mvpRefresh(); }
 async function mvpRefresh() {
-  const data = await apiCall('/api/pick/status');
+  const data = await apiCall('/api/multiview/pick/status');
   const el = document.getElementById('mvpStatus');
   el.textContent = data.status || data.phase || 'IDLE';
   el.className = 'status-indicator ' + (data.active ? 'running' : 'stopped');
