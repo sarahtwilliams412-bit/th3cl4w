@@ -187,6 +187,19 @@ JOINT_LIMITS_DEG = {
     for i in range(6)
 }
 
+
+def get_runtime_joint_limits() -> dict:
+    """Return joint limits from pick_config (runtime-configurable)."""
+    try:
+        from src.config.pick_config import get_pick_config
+        cfg = get_pick_config()
+        limits = cfg.get("safety", "joint_limits_deg")
+        if limits and len(limits) == 6:
+            return {i: (float(limits[i][0]), float(limits[i][1])) for i in range(6)}
+    except Exception:
+        pass
+    return JOINT_LIMITS_DEG
+
 GRIPPER_RANGE = (GRIPPER_MIN_MM, GRIPPER_MAX_MM)
 
 # ---------------------------------------------------------------------------
@@ -911,7 +924,7 @@ async def api_sim_joint_limits():
     """Return joint limits and specs for the simulator UI."""
     limits = {}
     for i in range(6):
-        lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
+        lo, hi = get_runtime_joint_limits().get(i, (-135, 135))
         limits[str(i)] = {"min": lo, "max": hi}
     return {
         "ok": True,
@@ -1246,7 +1259,7 @@ async def cmd_set_joint(req: SetJointRequest):
     if not (smoother and smoother._arm_enabled):
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
     action_log.add("SET_JOINT", f"Request: J{req.id} -> {req.angle}°", "info")
-    lo, hi = JOINT_LIMITS_DEG.get(req.id, (-135, 135))
+    lo, hi = get_runtime_joint_limits().get(req.id, (-135, 135))
     if not (lo <= req.angle <= hi):
         action_log.add(
             "SET_JOINT", f"REJECTED — J{req.id} angle {req.angle}° outside [{lo}, {hi}]", "error"
@@ -1269,8 +1282,11 @@ async def cmd_set_joint(req: SetJointRequest):
     proposed[req.id] = req.angle
     _j2_factor = _safety_cfg.get("safety", "torque_j2_factor")
     _torque_limit = _safety_cfg.get("safety", "torque_proxy_limit")
+    _torque_enabled = _safety_cfg.get("safety", "torque_proxy_enabled")
+    if _torque_enabled is None:
+        _torque_enabled = True
     torque_proxy = abs(proposed[1]) + abs(proposed[2]) * _j2_factor
-    if torque_proxy > _torque_limit:
+    if _torque_enabled and torque_proxy > _torque_limit:
         action_log.add(
             "SET_JOINT",
             f"REJECTED — torque proxy {torque_proxy:.1f} > 100 (J1={proposed[1]:.1f}° J2={proposed[2]:.1f}°)",
@@ -1329,6 +1345,9 @@ async def _check_stall(joint_id: int, target_angle: float, cid: str | None):
     """After delay, check if joint reached within threshold of target. Log warning if stalled."""
     from src.config.pick_config import get_pick_config as _get_pick_config
     _scfg = _get_pick_config()
+    _stall_enabled = _scfg.get("safety", "stall_detection_enabled")
+    if _stall_enabled is not None and not _stall_enabled:
+        return
     await asyncio.sleep(_scfg.get("safety", "stall_check_delay_s"))
     state = get_arm_state()
     actual = state["joints"][joint_id]
@@ -1347,7 +1366,7 @@ async def cmd_set_all_joints(req: SetAllJointsRequest):
         return JSONResponse({"ok": False, "error": "Arm not enabled"}, status_code=409)
     action_log.add("SET_ALL_JOINTS", f"Request: {[round(a,1) for a in req.angles]}", "info")
     for i, a in enumerate(req.angles):
-        lo, hi = JOINT_LIMITS_DEG.get(i, (-135, 135))
+        lo, hi = get_runtime_joint_limits().get(i, (-135, 135))
         if not (lo <= a <= hi):
             action_log.add(
                 "SET_ALL_JOINTS", f"REJECTED — J{i} angle {a}° outside [{lo}, {hi}]", "error"
@@ -5379,7 +5398,7 @@ async def joint_mapping_start():
             get_angles_fn=_get_angles,
             set_joint_fn=_set_joint,
             is_enabled_fn=_is_enabled,
-            joint_limits=JOINT_LIMITS_DEG,
+            joint_limits=get_runtime_joint_limits(),
         )
 
     _jm_task = asyncio.create_task(_run())

@@ -605,6 +605,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <div class="sim-btn-row">
         <button class="btn" id="simBtnHome" title="Reset to home position">Home</button>
         <button class="btn" id="simBtnSync" title="Sync from live arm state">Sync Live</button>
+        <button class="btn" id="simBtnFollow" title="Continuously follow live arm">Follow Arm</button>
         <button class="btn" id="simBtnClearTrail" title="Clear end-effector trail">Clear Trail</button>
       </div>
 
@@ -2602,7 +2603,7 @@ async function pickCfgReset() {
 <script defer src="factory3d.js"></script>
 <script defer src="realworld3d.js"></script>
 <script defer src="js/arm3d-overlay.js"></script>
-<script src="js/simulator3d.js"></script>
+<script src="js/simulator3d.js?v=2"></script>
 <script>
 // ============================================================
 //  3D Simulator Integration
@@ -2671,6 +2672,9 @@ async function pickCfgReset() {
     document.querySelectorAll('input[name="simMode"]').forEach(radio => {
       radio.addEventListener('change', function() {
         sim.mode = this.value;
+        if (this.value === 'simulate' && sim.followLive) {
+          toggleFollowMode(false);
+        }
         updateSimModeUI();
       });
     });
@@ -2685,6 +2689,9 @@ async function pickCfgReset() {
         sim.setLiveState(armState.joints, armState.gripper || 0);
         sim.syncFromLive();
       }
+    });
+    document.getElementById('simBtnFollow').addEventListener('click', () => {
+      toggleFollowMode(!sim.followLive);
     });
     document.getElementById('simBtnClearTrail').addEventListener('click', () => {
       sim.clearTrail();
@@ -2712,20 +2719,62 @@ async function pickCfgReset() {
     });
   }
 
+  function toggleFollowMode(on) {
+    if (!sim) return;
+    sim.followLive = on;
+    const btn = document.getElementById('simBtnFollow');
+    if (btn) {
+      if (on) {
+        btn.classList.add('on');
+        btn.style.background = '#0a3d20';
+        btn.style.borderColor = 'var(--success)';
+        btn.style.color = 'var(--success)';
+      } else {
+        btn.classList.remove('on');
+        btn.style.background = '';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+      }
+    }
+    // Enable/disable sim sliders
+    for (let i = 0; i < 6; i++) {
+      const sl = document.getElementById('simSlider' + i);
+      if (sl) {
+        sl.disabled = on;
+        sl.style.opacity = on ? '0.4' : '1';
+      }
+    }
+    const gs = document.getElementById('simGripperSlider');
+    if (gs) {
+      gs.disabled = on;
+      gs.style.opacity = on ? '0.4' : '1';
+    }
+    // If turning on, do an immediate sync
+    if (on && typeof armState !== 'undefined' && armState.joints) {
+      sim.setLiveState(armState.joints, armState.gripper || 0);
+    }
+    updateSimModeUI();
+  }
+
   function updateSimModeUI() {
     if (!sim) return;
     const overlay = document.getElementById('simOverlayMode');
     const executeBtn = document.getElementById('simBtnExecute');
+    const executeBar = executeBtn ? executeBtn.parentElement : null;
     if (sim.mode === 'physical') {
-      overlay.textContent = 'PHYSICAL';
+      overlay.textContent = 'PHYSICAL — FOLLOW';
       overlay.className = 'sim-overlay-mode physical';
       executeBtn.className = 'btn-execute phys-mode';
       executeBtn.textContent = 'EXECUTE ON ARM';
+      // In physical mode, auto-enable follow and hide execute bar
+      if (!sim.followLive) toggleFollowMode(true);
+      if (executeBar) executeBar.style.display = 'none';
     } else {
-      overlay.textContent = 'SIMULATE';
+      overlay.textContent = sim.followLive ? 'SIMULATE — FOLLOWING' : 'SIMULATE';
       overlay.className = 'sim-overlay-mode simulate';
       executeBtn.className = 'btn-execute sim-mode';
       executeBtn.textContent = 'Send to Arm';
+      if (executeBar) executeBar.style.display = '';
     }
   }
 

@@ -58,6 +58,9 @@ class D1ArmSimulator {
     this.showAxes = true;
     this.showGhost = true;
 
+    // Follow mode — slave sim to live telemetry
+    this.followLive = false;
+
     // Callbacks
     this.onJointsChanged = null;  // called when sim joints change
     this.onExecute = null;        // called when user clicks Execute
@@ -434,8 +437,31 @@ class D1ArmSimulator {
 
     const dt = this._clock.getDelta();
 
+    // Follow mode: copy live → sim each frame
+    if (this.followLive) {
+      let changed = false;
+      for (let i = 0; i < 6; i++) {
+        if (this.simJoints[i] !== this.liveJoints[i]) { changed = true; break; }
+      }
+      if (this.simGripper !== this.liveGripper) changed = true;
+      if (changed) {
+        this.simJoints = [...this.liveJoints];
+        this.simGripper = this.liveGripper;
+        const simAngles7 = [...this.simJoints, 0];
+        this.arm.setTarget(simAngles7, this.simGripper);
+        if (this.onJointsChanged) {
+          this.onJointsChanged(this.simJoints, this.simGripper);
+        }
+      }
+      // Hide ghost in follow mode (main arm IS the live state)
+      if (this.ghost.group.visible) this.ghost.group.visible = false;
+    } else {
+      // Restore ghost visibility based on showGhost setting
+      if (this.showGhost && !this.ghost.group.visible) this.ghost.group.visible = true;
+    }
+
     this.arm.animate(dt);
-    if (this.showGhost && this.ghost.group.visible) {
+    if (this.ghost.group.visible) {
       this.ghost.animate(dt);
     }
 

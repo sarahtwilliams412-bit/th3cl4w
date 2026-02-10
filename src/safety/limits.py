@@ -34,13 +34,26 @@ NUM_JOINTS = 7  # 6 arm + 1 gripper (matches d1_connection.NUM_JOINTS)
 JOINT_LIMITS_DEG = np.array(
     [
         [-135.0, 135.0],  # J0 — base yaw
-        [-80.0, 80.0],  # J1 — shoulder pitch (±85° hw, 5° margin)
-        [-80.0, 80.0],  # J2 — elbow pitch   (±85° hw, 5° margin)
+        [-90.0, 90.0],  # J1 — shoulder pitch (±85° hw, widened from ±80°)
+        [-90.0, 90.0],  # J2 — elbow pitch   (±85° hw, widened from ±80°)
         [-135.0, 135.0],  # J3 — elbow roll
-        [-80.0, 80.0],  # J4 — wrist pitch   (±85° hw, 5° margin)
+        [-90.0, 90.0],  # J4 — wrist pitch   (±85° hw, widened from ±80°)
         [-135.0, 135.0],  # J5 — wrist roll
     ]
 )
+
+
+def get_joint_limits_deg():
+    """Return runtime joint limits from pick_config if available, else defaults."""
+    try:
+        from src.config.pick_config import get_pick_config
+        cfg = get_pick_config()
+        limits = cfg.get("safety", "joint_limits_deg")
+        if limits and len(limits) == 6:
+            return np.array(limits)
+    except Exception:
+        pass
+    return JOINT_LIMITS_DEG
 
 # Same limits in radians for the SafetyMonitor / DDS layer (7 joints, last = gripper)
 JOINT_LIMITS_RAD_MIN = np.array(
