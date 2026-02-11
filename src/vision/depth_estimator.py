@@ -166,6 +166,11 @@ def estimate_metric_depth(
     -------
     depth_map : HxW float32 in meters
     """
+    # Check if a calibrated model is available first
+    calibrated = _load_calibrated_model()
+    if calibrated is not None:
+        return calibrated(frame_bgr)
+
     rel_depth = estimate_depth(frame_bgr)
     if rel_depth is None:
         return None
@@ -176,3 +181,167 @@ def estimate_metric_depth(
     metric = rel_depth * scale
 
     return metric
+
+
+# ---------------------------------------------------------------------------
+# Calibrated metric depth from sim ground truth
+# ---------------------------------------------------------------------------
+
+_calibrated_model = None
+_calibrated_loaded = False
+
+
+def _load_calibrated_model():
+    """Load a depth model fine-tuned on MuJoCo ground-truth depth maps.
+
+    The NVIDIA Kitchen-Sim-Demos provide MuJoCo scenes that can render
+    perfect ground-truth depth. This calibrated model was trained on
+    paired (RGB, metric_depth) data from those scenes, producing
+    metric depth directly without the single-reference-point scaling.
+
+    Returns a callable (frame_bgr -> depth_meters) or None.
+    """
+    global _calibrated_model, _calibrated_loaded
+
+    if _calibrated_loaded:
+        return _calibrated_model
+
+    _calibrated_loaded = True
+
+    import os
+    model_path = os.path.join("data", "models", "depth_calibrated", "model.pt")
+    if not os.path.exists(model_path):
+        return None
+
+    try:
+        import torch
+
+        checkpoint = torch.load(model_path, map_location="cpu")
+
+        # Expected: a fine-tuned Depth Anything v2 Small with metric head
+        if "scale" in checkpoint and "shift" in checkpoint:
+            # Simple affine calibration: metric = scale * relative + shift
+            scale = float(checkpoint["scale"])
+            shift = float(checkpoint["shift"])
+
+            def _calibrated_metric(frame_bgr):
+                rel = estimate_depth(frame_bgr)
+                if rel is None:
+                    return None
+                return rel * scale + shift
+
+            _calibrated_model = _calibrated_metric
+            logger.info(
+                "Loaded calibrated depth model (affine: scale=%.4f, shift=%.4f)",
+                scale, shift,
+            )
+            return _calibrated_model
+
+        # Full model checkpoint
+        if hasattr(checkpoint, "eval"):
+            checkpoint.eval()
+            _calibrated_model = lambda frame: _run_calibrated_model(checkpoint, frame)
+            logger.info("Loaded calibrated depth model (full checkpoint)")
+            return _calibrated_model
+
+    except Exception as e:
+        logger.debug("Calibrated depth model not available: %s", e)
+
+    return None
+
+
+def _run_calibrated_model(model, frame_bgr: np.ndarray) -> Optional[np.ndarray]:
+    """Run the calibrated depth model on a frame."""
+    try:
+        import torch
+        import cv2
+        from PIL import Image
+
+        h, w = frame_bgr.shape[:2]
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(frame_rgb)
+
+        if _processor is not None:
+            inputs = _processor(images=pil_img, return_tensors="pt")
+        else:
+            return None
+
+        with torch.no_grad():
+            outputs = model(**inputs)
+            if hasattr(outputs, "predicted_depth"):
+                depth = outputs.predicted_depth
+            else:
+                depth = outputs
+
+        depth = (
+            torch.nn.functional.interpolate(
+                depth.unsqueeze(1) if depth.dim() == 2 else depth.unsqueeze(0),
+                size=(h, w),
+                mode="bicubic",
+                align_corners=False,
+            )
+            .squeeze()
+            .cpu()
+            .numpy()
+        )
+        return depth.astype(np.float32)
+    except Exception as e:
+        logger.warning("Calibrated model inference failed: %s", e)
+        return None
+
+
+def render_sim_depth_pair(
+    mujoco_model_path: str,
+    joint_angles_rad: np.ndarray,
+    camera_name: str = "agentview",
+    width: int = 640,
+    height: int = 480,
+) -> Optional[tuple]:
+    """Render an RGB + ground-truth depth pair from a MuJoCo scene.
+
+    This is used to generate training data for the calibrated depth model.
+    Requires MuJoCo to be installed.
+
+    Parameters
+    ----------
+    mujoco_model_path : Path to MuJoCo XML scene model
+    joint_angles_rad : Robot joint configuration for the scene
+    camera_name : MuJoCo camera to render from
+    width, height : Render resolution
+
+    Returns
+    -------
+    (rgb, depth) tuple of HxWx3 uint8 and HxW float32 (meters), or None
+    """
+    try:
+        import mujoco
+
+        model = mujoco.MjModel.from_xml_path(mujoco_model_path)
+        data = mujoco.MjData(model)
+
+        # Set joint angles if the model has matching joints
+        for i, angle in enumerate(joint_angles_rad):
+            if i < model.nq:
+                data.qpos[i] = angle
+
+        mujoco.mj_forward(model, data)
+
+        # Render RGB
+        renderer = mujoco.Renderer(model, height=height, width=width)
+        renderer.update_scene(data, camera=camera_name)
+        rgb = renderer.render()
+
+        # Render depth
+        renderer.enable_depth_rendering(True)
+        renderer.update_scene(data, camera=camera_name)
+        depth = renderer.render()
+
+        renderer.close()
+        return rgb, depth.astype(np.float32)
+
+    except ImportError:
+        logger.warning("MuJoCo not available for depth ground truth rendering")
+        return None
+    except Exception as e:
+        logger.warning("Sim depth rendering failed: %s", e)
+        return None

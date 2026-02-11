@@ -1,0 +1,359 @@
+{
+  "version": "1.0",
+  "description": "Task decomposition graph for composite kitchen tasks. Derived from NVIDIA PhysicalAI-Robotics-Kitchen-Sim-Demos task structure.",
+  "atomic_skills": {
+    "open_cabinet": {
+      "description": "Open a cabinet door",
+      "skill_type": "articulation",
+      "postconditions": ["cabinet_open"],
+      "approach": "lateral_pull",
+      "joints_involved": ["j0", "j1", "j2", "j4"],
+      "gripper_action": "pinch_handle"
+    },
+    "close_cabinet": {
+      "description": "Close a cabinet door",
+      "skill_type": "articulation",
+      "preconditions": ["cabinet_open"],
+      "postconditions": ["cabinet_closed"],
+      "approach": "lateral_push",
+      "joints_involved": ["j0", "j1", "j2", "j4"]
+    },
+    "open_drawer": {
+      "description": "Open a drawer",
+      "skill_type": "articulation",
+      "postconditions": ["drawer_open"],
+      "approach": "linear_pull",
+      "joints_involved": ["j0", "j1", "j2"]
+    },
+    "close_drawer": {
+      "description": "Close a drawer",
+      "skill_type": "articulation",
+      "preconditions": ["drawer_open"],
+      "postconditions": ["drawer_closed"],
+      "approach": "linear_push"
+    },
+    "open_microwave": {
+      "description": "Open microwave door",
+      "skill_type": "articulation",
+      "postconditions": ["microwave_open"],
+      "approach": "lateral_pull"
+    },
+    "close_microwave": {
+      "description": "Close microwave door",
+      "skill_type": "articulation",
+      "preconditions": ["microwave_open"],
+      "postconditions": ["microwave_closed"],
+      "approach": "lateral_push"
+    },
+    "open_fridge": {
+      "description": "Open refrigerator door",
+      "skill_type": "articulation",
+      "postconditions": ["fridge_open"],
+      "approach": "lateral_pull"
+    },
+    "close_fridge": {
+      "description": "Close refrigerator door",
+      "skill_type": "articulation",
+      "preconditions": ["fridge_open"],
+      "postconditions": ["fridge_closed"],
+      "approach": "lateral_push"
+    },
+    "open_oven": {
+      "description": "Open oven door",
+      "skill_type": "articulation",
+      "postconditions": ["oven_open"],
+      "approach": "downward_pull"
+    },
+    "close_oven": {
+      "description": "Close oven door",
+      "skill_type": "articulation",
+      "preconditions": ["oven_open"],
+      "postconditions": ["oven_closed"],
+      "approach": "upward_push"
+    },
+    "pick_from_counter": {
+      "description": "Pick up object from counter surface",
+      "skill_type": "pick",
+      "postconditions": ["object_held"],
+      "approach": "top_down"
+    },
+    "place_on_counter": {
+      "description": "Place held object on counter surface",
+      "skill_type": "place",
+      "preconditions": ["object_held"],
+      "postconditions": ["object_on_counter"],
+      "approach": "top_down"
+    },
+    "pick_from_cabinet": {
+      "description": "Pick object from inside cabinet",
+      "skill_type": "pick",
+      "preconditions": ["cabinet_open"],
+      "postconditions": ["object_held"],
+      "approach": "lateral_reach"
+    },
+    "place_in_cabinet": {
+      "description": "Place held object in cabinet",
+      "skill_type": "place",
+      "preconditions": ["object_held", "cabinet_open"],
+      "postconditions": ["object_in_cabinet"],
+      "approach": "lateral_reach"
+    },
+    "pick_from_drawer": {
+      "description": "Pick object from open drawer",
+      "skill_type": "pick",
+      "preconditions": ["drawer_open"],
+      "postconditions": ["object_held"],
+      "approach": "top_down"
+    },
+    "place_in_drawer": {
+      "description": "Place held object in drawer",
+      "skill_type": "place",
+      "preconditions": ["object_held", "drawer_open"],
+      "postconditions": ["object_in_drawer"],
+      "approach": "top_down"
+    },
+    "pick_from_microwave": {
+      "description": "Pick object from microwave",
+      "skill_type": "pick",
+      "preconditions": ["microwave_open"],
+      "postconditions": ["object_held"],
+      "approach": "lateral_reach"
+    },
+    "place_in_microwave": {
+      "description": "Place held object in microwave",
+      "skill_type": "place",
+      "preconditions": ["object_held", "microwave_open"],
+      "postconditions": ["object_in_microwave"],
+      "approach": "lateral_reach"
+    },
+    "pick_from_sink": {
+      "description": "Pick object from sink",
+      "skill_type": "pick",
+      "postconditions": ["object_held"],
+      "approach": "top_down"
+    },
+    "place_in_sink": {
+      "description": "Place held object in sink",
+      "skill_type": "place",
+      "preconditions": ["object_held"],
+      "postconditions": ["object_in_sink"],
+      "approach": "top_down"
+    },
+    "turn_on_stove": {
+      "description": "Turn on stove burner",
+      "skill_type": "knob",
+      "postconditions": ["stove_on"],
+      "approach": "pinch_rotate"
+    },
+    "turn_off_stove": {
+      "description": "Turn off stove burner",
+      "skill_type": "knob",
+      "preconditions": ["stove_on"],
+      "postconditions": ["stove_off"],
+      "approach": "pinch_rotate"
+    },
+    "turn_on_sink": {
+      "description": "Turn on sink faucet",
+      "skill_type": "knob",
+      "postconditions": ["sink_on"],
+      "approach": "pinch_rotate"
+    },
+    "turn_off_sink": {
+      "description": "Turn off sink faucet",
+      "skill_type": "knob",
+      "preconditions": ["sink_on"],
+      "postconditions": ["sink_off"],
+      "approach": "pinch_rotate"
+    },
+    "turn_on_microwave": {
+      "description": "Turn on microwave",
+      "skill_type": "button",
+      "preconditions": ["microwave_closed"],
+      "postconditions": ["microwave_running"],
+      "approach": "button_press"
+    },
+    "start_coffee_machine": {
+      "description": "Start the coffee machine",
+      "skill_type": "button",
+      "postconditions": ["coffee_brewing"],
+      "approach": "button_press"
+    },
+    "turn_on_kettle": {
+      "description": "Turn on electric kettle",
+      "skill_type": "button",
+      "postconditions": ["kettle_on"],
+      "approach": "button_press"
+    },
+    "navigate": {
+      "description": "Move base to target position (requires mobile base)",
+      "skill_type": "navigation",
+      "postconditions": ["at_target_position"]
+    }
+  },
+  "composite_tasks": {
+    "PrepareCoffee": {
+      "description": "Prepare a cup of coffee using the coffee machine",
+      "steps": [
+        "open_cabinet",
+        "pick_from_cabinet",
+        "place_on_counter",
+        "close_cabinet",
+        "pick_from_counter",
+        "place_on_counter",
+        "start_coffee_machine"
+      ],
+      "objects_involved": ["mug", "coffee_machine"],
+      "category": "beverage_preparation"
+    },
+    "KettleBoiling": {
+      "description": "Boil water in the electric kettle",
+      "steps": [
+        "turn_on_sink",
+        "pick_from_counter",
+        "place_in_sink",
+        "turn_off_sink",
+        "pick_from_sink",
+        "place_on_counter",
+        "turn_on_kettle"
+      ],
+      "objects_involved": ["kettle", "sink"],
+      "category": "beverage_preparation"
+    },
+    "SteamInMicrowave": {
+      "description": "Heat food item in the microwave",
+      "steps": [
+        "pick_from_counter",
+        "open_microwave",
+        "place_in_microwave",
+        "close_microwave",
+        "turn_on_microwave"
+      ],
+      "objects_involved": ["food_container", "microwave"],
+      "category": "cooking"
+    },
+    "LoadDishwasher": {
+      "description": "Load dirty dishes from sink into dishwasher",
+      "steps": [
+        "pick_from_sink",
+        "place_on_counter",
+        "pick_from_counter",
+        "place_in_drawer"
+      ],
+      "objects_involved": ["dish", "dishwasher_rack"],
+      "category": "cleaning"
+    },
+    "StackBowlsCabinet": {
+      "description": "Stack bowls and store in cabinet",
+      "steps": [
+        "pick_from_counter",
+        "place_on_counter",
+        "pick_from_counter",
+        "open_cabinet",
+        "place_in_cabinet",
+        "close_cabinet"
+      ],
+      "objects_involved": ["bowl", "cabinet"],
+      "category": "organization"
+    },
+    "SearingMeat": {
+      "description": "Sear meat on the stove",
+      "steps": [
+        "turn_on_stove",
+        "pick_from_counter",
+        "place_on_counter"
+      ],
+      "objects_involved": ["pan", "meat", "stove"],
+      "category": "cooking"
+    },
+    "WashFruitColander": {
+      "description": "Wash fruit in a colander under running water",
+      "steps": [
+        "pick_from_counter",
+        "place_in_sink",
+        "turn_on_sink",
+        "turn_off_sink",
+        "pick_from_sink",
+        "place_on_counter"
+      ],
+      "objects_involved": ["colander", "fruit", "sink"],
+      "category": "cleaning"
+    },
+    "StoreLeftoversInBowl": {
+      "description": "Store leftover food in a bowl and refrigerate",
+      "steps": [
+        "pick_from_counter",
+        "place_on_counter",
+        "open_fridge",
+        "pick_from_counter",
+        "place_on_counter",
+        "close_fridge"
+      ],
+      "objects_involved": ["bowl", "food", "fridge"],
+      "category": "organization"
+    },
+    "ArrangeTea": {
+      "description": "Arrange tea preparation on counter",
+      "steps": [
+        "open_cabinet",
+        "pick_from_cabinet",
+        "place_on_counter",
+        "pick_from_cabinet",
+        "place_on_counter",
+        "close_cabinet",
+        "turn_on_kettle"
+      ],
+      "objects_involved": ["mug", "tea_box", "kettle", "cabinet"],
+      "category": "beverage_preparation"
+    },
+    "SetUpCuttingStation": {
+      "description": "Set up a cutting station on the counter",
+      "steps": [
+        "open_drawer",
+        "pick_from_drawer",
+        "place_on_counter",
+        "pick_from_drawer",
+        "place_on_counter",
+        "close_drawer"
+      ],
+      "objects_involved": ["cutting_board", "knife", "drawer"],
+      "category": "setup"
+    },
+    "GatherTableware": {
+      "description": "Gather tableware from cabinets and drawers",
+      "steps": [
+        "open_cabinet",
+        "pick_from_cabinet",
+        "place_on_counter",
+        "close_cabinet",
+        "open_drawer",
+        "pick_from_drawer",
+        "place_on_counter",
+        "close_drawer"
+      ],
+      "objects_involved": ["plate", "utensils", "cabinet", "drawer"],
+      "category": "setup"
+    }
+  },
+  "task_categories": {
+    "beverage_preparation": {
+      "description": "Tasks involving drink preparation",
+      "examples": ["PrepareCoffee", "KettleBoiling", "ArrangeTea"]
+    },
+    "cooking": {
+      "description": "Tasks involving food cooking/heating",
+      "examples": ["SteamInMicrowave", "SearingMeat"]
+    },
+    "cleaning": {
+      "description": "Tasks involving washing and cleaning",
+      "examples": ["LoadDishwasher", "WashFruitColander"]
+    },
+    "organization": {
+      "description": "Tasks involving storage and arrangement",
+      "examples": ["StackBowlsCabinet", "StoreLeftoversInBowl"]
+    },
+    "setup": {
+      "description": "Tasks involving workspace preparation",
+      "examples": ["SetUpCuttingStation", "GatherTableware"]
+    }
+  }
+}

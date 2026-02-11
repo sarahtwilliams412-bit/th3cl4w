@@ -1,6 +1,6 @@
 {
-  "version": "1.0",
-  "description": "Object ontology for th3cl4w robotic arm vision system",
+  "version": "2.0",
+  "description": "Object ontology for th3cl4w robotic arm vision system. Extended with kitchen objects from NVIDIA PhysicalAI-Robotics-Kitchen-Sim-Demos.",
   "categories": {
     "beverage_can": {
       "parent": "containers",
@@ -33,6 +33,26 @@
     "electronic": {
       "parent": "devices",
       "description": "Small electronics"
+    },
+    "kitchen_container": {
+      "parent": "containers",
+      "description": "Kitchen containers: bowls, pots, pans, food storage"
+    },
+    "kitchen_utensil": {
+      "parent": "tools",
+      "description": "Kitchen utensils: spatulas, whisks, tongs, knives"
+    },
+    "kitchen_appliance_part": {
+      "parent": "appliances",
+      "description": "Interactable appliance components: doors, lids, racks, knobs"
+    },
+    "food_item": {
+      "parent": "consumables",
+      "description": "Food items that can be manipulated"
+    },
+    "kitchen_surface": {
+      "parent": "fixtures",
+      "description": "Kitchen work surfaces and fixtures"
     }
   },
   "objects": {
@@ -255,6 +275,216 @@
       "grip_type": "pinch",
       "grip_width_mm": 14,
       "color_hints": {"primary": "varies"}
+    },
+    "bowl": {
+      "category": "kitchen_container",
+      "aliases": ["mixing bowl", "cereal bowl", "soup bowl"],
+      "height_mm": 80,
+      "width_mm": 150,
+      "depth_mm": 150,
+      "shape": "cylinder",
+      "grip_type": "wrap",
+      "grip_width_mm": 150,
+      "grasp_strategy": "top_down_wrap",
+      "color_hints": {"primary": "varies"}
+    },
+    "plate": {
+      "category": "kitchen_container",
+      "aliases": ["dish", "dinner plate", "saucer"],
+      "height_mm": 25,
+      "width_mm": 260,
+      "depth_mm": 260,
+      "shape": "cylinder",
+      "grip_type": "top",
+      "grip_width_mm": 260,
+      "grasp_strategy": "scoop_lift",
+      "color_hints": {"primary": "white"},
+      "notes": "Too wide for direct grip — use scoop/slide approach"
+    },
+    "pot": {
+      "category": "kitchen_container",
+      "aliases": ["cooking pot", "saucepan", "stockpot"],
+      "height_mm": 120,
+      "width_mm": 180,
+      "depth_mm": 180,
+      "shape": "cylinder",
+      "grip_type": "wrap",
+      "grip_width_mm": 180,
+      "grasp_strategy": "top_down_wrap",
+      "color_hints": {"primary": "silver_metallic"},
+      "notes": "Grip handle if available, otherwise rim wrap"
+    },
+    "pan": {
+      "category": "kitchen_container",
+      "aliases": ["frying pan", "skillet", "saute pan"],
+      "height_mm": 50,
+      "width_mm": 250,
+      "depth_mm": 250,
+      "shape": "cylinder",
+      "grip_type": "wrap",
+      "grip_width_mm": 35,
+      "grasp_strategy": "lateral_reach",
+      "color_hints": {"primary": "black_dark"},
+      "notes": "Grip by handle (35mm diameter)"
+    },
+    "food_container": {
+      "category": "kitchen_container",
+      "aliases": ["tupperware", "storage container", "leftover container"],
+      "height_mm": 80,
+      "width_mm": 120,
+      "depth_mm": 120,
+      "shape": "box",
+      "grip_type": "wrap",
+      "grip_width_mm": 120,
+      "grasp_strategy": "top_down_wrap",
+      "color_hints": {"primary": "clear_varies"}
+    },
+    "spatula": {
+      "category": "kitchen_utensil",
+      "aliases": ["turner", "flipper"],
+      "height_mm": 15,
+      "width_mm": 300,
+      "depth_mm": 80,
+      "shape": "irregular",
+      "grip_type": "pinch",
+      "grip_width_mm": 25,
+      "grasp_strategy": "top_down_pinch",
+      "color_hints": {"primary": "varies"},
+      "notes": "Grip handle section (~25mm)"
+    },
+    "whisk": {
+      "category": "kitchen_utensil",
+      "aliases": ["wire whisk", "balloon whisk"],
+      "height_mm": 25,
+      "width_mm": 300,
+      "depth_mm": 60,
+      "shape": "irregular",
+      "grip_type": "pinch",
+      "grip_width_mm": 20,
+      "grasp_strategy": "top_down_pinch",
+      "color_hints": {"primary": "silver_metallic"}
+    },
+    "tongs": {
+      "category": "kitchen_utensil",
+      "aliases": ["kitchen tongs", "serving tongs"],
+      "height_mm": 30,
+      "width_mm": 250,
+      "depth_mm": 50,
+      "shape": "irregular",
+      "grip_type": "pinch",
+      "grip_width_mm": 25,
+      "grasp_strategy": "top_down_pinch",
+      "color_hints": {"primary": "silver_metallic"}
+    },
+    "knife": {
+      "category": "kitchen_utensil",
+      "aliases": ["kitchen knife", "chef knife", "cutting knife"],
+      "height_mm": 20,
+      "width_mm": 300,
+      "depth_mm": 45,
+      "shape": "irregular",
+      "grip_type": "pinch",
+      "grip_width_mm": 25,
+      "grasp_strategy": "top_down_pinch",
+      "color_hints": {"primary": "silver_black"},
+      "notes": "Always grip handle, never blade"
+    },
+    "cutting_board": {
+      "category": "kitchen_surface",
+      "aliases": ["chopping board", "board"],
+      "height_mm": 15,
+      "width_mm": 300,
+      "depth_mm": 200,
+      "shape": "box",
+      "grip_type": "top",
+      "grip_width_mm": 15,
+      "grasp_strategy": "scoop_lift",
+      "color_hints": {"primary": "wood_brown"}
+    },
+    "blender_lid": {
+      "category": "kitchen_appliance_part",
+      "aliases": ["blender cap", "blender cover"],
+      "height_mm": 30,
+      "width_mm": 100,
+      "depth_mm": 100,
+      "shape": "cylinder",
+      "grip_type": "pinch",
+      "grip_width_mm": 30,
+      "grasp_strategy": "top_down_pinch",
+      "color_hints": {"primary": "clear_black"}
+    },
+    "cabinet_handle": {
+      "category": "kitchen_appliance_part",
+      "aliases": ["cabinet door handle", "cupboard handle"],
+      "height_mm": 15,
+      "width_mm": 120,
+      "depth_mm": 30,
+      "shape": "box",
+      "grip_type": "pinch",
+      "grip_width_mm": 15,
+      "grasp_strategy": "handle_pull",
+      "color_hints": {"primary": "silver_metallic"}
+    },
+    "drawer_handle": {
+      "category": "kitchen_appliance_part",
+      "aliases": ["drawer pull", "drawer knob"],
+      "height_mm": 15,
+      "width_mm": 100,
+      "depth_mm": 25,
+      "shape": "box",
+      "grip_type": "pinch",
+      "grip_width_mm": 15,
+      "grasp_strategy": "handle_pull",
+      "color_hints": {"primary": "silver_metallic"}
+    },
+    "stove_knob": {
+      "category": "kitchen_appliance_part",
+      "aliases": ["burner knob", "stove dial", "range knob"],
+      "height_mm": 20,
+      "width_mm": 40,
+      "depth_mm": 40,
+      "shape": "cylinder",
+      "grip_type": "pinch",
+      "grip_width_mm": 15,
+      "grasp_strategy": "knob_rotate",
+      "color_hints": {"primary": "black_silver"}
+    },
+    "faucet_handle": {
+      "category": "kitchen_appliance_part",
+      "aliases": ["tap handle", "sink handle", "faucet knob"],
+      "height_mm": 50,
+      "width_mm": 30,
+      "depth_mm": 30,
+      "shape": "irregular",
+      "grip_type": "pinch",
+      "grip_width_mm": 20,
+      "grasp_strategy": "knob_rotate",
+      "color_hints": {"primary": "silver_chrome"}
+    },
+    "kettle": {
+      "category": "kitchen_container",
+      "aliases": ["electric kettle", "tea kettle", "water kettle"],
+      "height_mm": 200,
+      "width_mm": 150,
+      "depth_mm": 150,
+      "shape": "cylinder",
+      "grip_type": "wrap",
+      "grip_width_mm": 35,
+      "grasp_strategy": "top_down_wrap",
+      "color_hints": {"primary": "silver_black"},
+      "notes": "Grip by handle (~35mm diameter)"
+    },
+    "colander": {
+      "category": "kitchen_container",
+      "aliases": ["strainer", "pasta strainer"],
+      "height_mm": 100,
+      "width_mm": 200,
+      "depth_mm": 200,
+      "shape": "cylinder",
+      "grip_type": "wrap",
+      "grip_width_mm": 200,
+      "grasp_strategy": "top_down_wrap",
+      "color_hints": {"primary": "silver_metallic"}
     }
   }
 }

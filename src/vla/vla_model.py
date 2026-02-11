@@ -256,36 +256,311 @@ class GeminiVLABackend(VLABackend):
 
 
 class OctoVLABackend(VLABackend):
-    """Placeholder for Octo-Small model backend.
+    """Local VLA model backend using OpenVLA / Octo architecture.
 
-    When fine-tuned and deployed, this will provide real-time (~200ms) inference
-    for action chunking. Currently raises NotImplementedError.
+    Provides real-time (~200ms) inference for closed-loop manipulation
+    without requiring external API calls. Supports pre-training on NVIDIA
+    Kitchen-Sim-Demos and fine-tuning on D1 demonstrations.
 
-    To use:
-    1. Collect demonstrations with DataCollector
-    2. Fine-tune Octo-Small on our D1 data
-    3. Save model to data/models/octo-small-d1/
-    4. Initialize this backend
+    Training pipeline:
+    1. Pre-train on NVIDIA Kitchen-Sim-Demos via LeRobot format
+    2. Fine-tune on D1 teleoperation demonstrations
+    3. Save model to data/models/octo-d1/
+    4. Initialize this backend with the model path
+
+    Action output format:
+    The model predicts action chunks — sequences of (state_dim,) vectors
+    representing joint deltas + gripper, which are decoded into the standard
+    ActionPlan format for the ActionDecoder pipeline.
     """
 
-    def __init__(self, model_path: str = "data/models/octo-small-d1"):
+    # Default model configurations
+    STATE_DIM = 7     # 6 joints + gripper
+    ACTION_DIM = 7    # 6 joint deltas + gripper delta
+    ACTION_HORIZON = 4  # Predict 4 steps ahead (action chunking)
+
+    def __init__(
+        self,
+        model_path: str = "data/models/octo-d1",
+        device: str = "auto",
+        action_horizon: int = 4,
+    ):
         self._model_path = model_path
+        self._device = device
+        self._action_horizon = action_horizon
         self._model = None
+        self._processor = None
+        self._loaded = False
         logger.info("OctoVLABackend initialized (model_path=%s)", model_path)
 
     @property
     def name(self) -> str:
-        return "octo-small"
+        return "octo-d1"
 
-    async def plan(
-        self, observation: Observation, task: str, history: Optional[List[str]] = None
+    def _load_model(self):
+        """Lazy-load the model on first inference call."""
+        if self._loaded:
+            return
+
+        import os
+
+        model_dir = os.path.join(self._model_path)
+        if not os.path.exists(model_dir):
+            raise FileNotFoundError(
+                f"Model not found at {model_dir}. To create it:\n"
+                f"1. Collect demonstrations: python -m scripts.download_nvidia_kitchen\n"
+                f"2. Train model: python -m scripts.train_vla\n"
+                f"3. Or use Gemini backend as fallback: VLAController(backend=GeminiVLABackend())"
+            )
+
+        try:
+            import torch
+
+            # Determine device
+            if self._device == "auto":
+                self._device = "cuda" if torch.cuda.is_available() else "cpu"
+
+            # Try loading as a PyTorch model checkpoint
+            config_path = os.path.join(model_dir, "config.json")
+            if os.path.exists(config_path):
+                with open(config_path) as f:
+                    config = json.load(f)
+                self._action_horizon = config.get("action_horizon", self._action_horizon)
+
+            weights_path = os.path.join(model_dir, "model.pt")
+            if os.path.exists(weights_path):
+                self._model = torch.load(weights_path, map_location=self._device)
+                if hasattr(self._model, "eval"):
+                    self._model.eval()
+                self._loaded = True
+                logger.info(
+                    "Octo model loaded from %s (device=%s, action_horizon=%d)",
+                    model_dir, self._device, self._action_horizon,
+                )
+                return
+
+            # Try loading as HuggingFace model
+            try:
+                from transformers import AutoModelForVision2Seq, AutoProcessor
+                self._processor = AutoProcessor.from_pretrained(model_dir)
+                self._model = AutoModelForVision2Seq.from_pretrained(model_dir)
+                self._model.to(self._device)
+                self._model.eval()
+                self._loaded = True
+                logger.info("Loaded VLA model from HuggingFace format: %s", model_dir)
+                return
+            except Exception:
+                pass
+
+            raise FileNotFoundError(
+                f"No loadable model found at {model_dir}. "
+                f"Expected model.pt or HuggingFace model files."
+            )
+
+        except ImportError as e:
+            raise ImportError(
+                f"PyTorch required for Octo backend: {e}. "
+                f"Install with: pip install torch torchvision"
+            ) from e
+
+    def _preprocess_observation(self, obs: Observation) -> dict:
+        """Convert Observation to model input tensors."""
+        import torch
+        import io
+        from PIL import Image
+
+        # Decode JPEG images
+        img0 = Image.open(io.BytesIO(obs.cam0_jpeg)).convert("RGB")
+        img1 = Image.open(io.BytesIO(obs.cam1_jpeg)).convert("RGB")
+
+        # Resize to model input size (224x224 default for most VLAs)
+        img0 = img0.resize((224, 224))
+        img1 = img1.resize((224, 224))
+
+        import numpy as np
+
+        img0_tensor = torch.from_numpy(np.array(img0)).permute(2, 0, 1).float() / 255.0
+        img1_tensor = torch.from_numpy(np.array(img1)).permute(2, 0, 1).float() / 255.0
+
+        # Stack images as (2, 3, 224, 224)
+        images = torch.stack([img0_tensor, img1_tensor]).unsqueeze(0)  # (1, 2, 3, H, W)
+
+        # Build state vector
+        state = torch.tensor(
+            obs.joints + [obs.gripper_mm], dtype=torch.float32,
+        ).unsqueeze(0)  # (1, 7)
+
+        return {
+            "images": images.to(self._device),
+            "state": state.to(self._device),
+        }
+
+    def _decode_action_chunk(
+        self,
+        action_chunk: "Any",
+        observation: Observation,
+        task: str,
     ) -> ActionPlan:
-        raise NotImplementedError(
-            "Octo backend not yet available. Collect demonstrations first, "
-            "then fine-tune. See docs/vla-architecture.md"
+        """Convert model output (action chunk) to ActionPlan format."""
+        import torch
+        import numpy as np
+
+        if isinstance(action_chunk, torch.Tensor):
+            actions_np = action_chunk.detach().cpu().numpy()
+        else:
+            actions_np = np.asarray(action_chunk)
+
+        # actions_np shape: (horizon, action_dim) or (1, horizon, action_dim)
+        if actions_np.ndim == 3:
+            actions_np = actions_np[0]  # Remove batch dim
+        if actions_np.ndim == 1:
+            actions_np = actions_np.reshape(1, -1)  # Single step
+
+        actions_list = []
+        for step_idx in range(min(len(actions_np), self._action_horizon)):
+            action_vec = actions_np[step_idx]
+
+            # First 6 values: joint deltas in degrees
+            for j in range(min(6, len(action_vec))):
+                delta = float(action_vec[j])
+                if abs(delta) >= 0.5:
+                    actions_list.append({
+                        "type": "joint",
+                        "id": j,
+                        "delta": round(delta, 1),
+                        "reason": f"octo step {step_idx}: j{j} delta",
+                    })
+
+            # 7th value: gripper
+            if len(action_vec) > 6:
+                gripper_val = float(action_vec[6])
+                # Interpret as absolute gripper position in mm
+                gripper_mm = max(0.0, min(65.0, gripper_val))
+                actions_list.append({
+                    "type": "gripper",
+                    "position_mm": round(gripper_mm, 1),
+                    "reason": f"octo step {step_idx}: gripper",
+                })
+
+            # Add verify checkpoint between action chunk steps
+            if step_idx < len(actions_np) - 1:
+                actions_list.append({
+                    "type": "verify",
+                    "reason": f"checkpoint after action chunk step {step_idx}",
+                })
+
+        # Determine phase from action patterns
+        phase = self._infer_phase(actions_np, observation)
+
+        return ActionPlan(
+            reasoning=f"Octo model predicted {len(actions_np)}-step action chunk for: {task}",
+            scene_description="Processed by local VLA model",
+            actions=actions_list,
+            phase=phase,
+            confidence=0.7,  # Default confidence for local model
+            estimated_remaining_steps=max(1, self._action_horizon),
         )
 
-    async def verify(
-        self, observation: Observation, task: str, actions_taken: List[str]
+    def _infer_phase(self, actions_np: "Any", obs: Observation) -> str:
+        """Infer the current manipulation phase from action patterns."""
+        import numpy as np
+
+        if actions_np.size == 0:
+            return "unknown"
+
+        # Check gripper actions
+        if actions_np.shape[1] > 6:
+            gripper_values = actions_np[:, 6]
+            gripper_closing = np.any(gripper_values < 20.0)
+            gripper_opening = np.any(gripper_values > 50.0)
+        else:
+            gripper_closing = False
+            gripper_opening = False
+
+        # Check joint movements
+        joint_deltas = np.abs(actions_np[:, :6])
+        total_movement = np.sum(joint_deltas)
+
+        if gripper_closing and obs.gripper_mm > 30:
+            return "grasp"
+        elif gripper_opening and obs.gripper_mm < 30:
+            return "place"
+        elif total_movement > 30:
+            return "approach"
+        elif total_movement < 5:
+            return "align"
+        else:
+            return "approach"
+
+    async def plan(
+        self,
+        observation: Observation,
+        task: str,
+        history: Optional[List[str]] = None,
     ) -> ActionPlan:
-        raise NotImplementedError("Octo backend not yet available")
+        """Generate action plan using the local VLA model."""
+        t0 = time.monotonic()
+
+        try:
+            self._load_model()
+        except (FileNotFoundError, ImportError) as e:
+            return ActionPlan(
+                error=str(e),
+                reasoning=f"Model loading failed: {e}",
+                inference_time_ms=(time.monotonic() - t0) * 1000,
+            )
+
+        try:
+            import torch
+
+            inputs = self._preprocess_observation(observation)
+
+            with torch.no_grad():
+                if hasattr(self._model, "predict_action"):
+                    # Standard Octo/OpenVLA interface
+                    action_chunk = self._model.predict_action(
+                        images=inputs["images"],
+                        state=inputs["state"],
+                        task=task,
+                    )
+                elif callable(self._model):
+                    # Generic callable model
+                    action_chunk = self._model(inputs["images"], inputs["state"])
+                else:
+                    return ActionPlan(
+                        error="Model does not have a callable interface",
+                        reasoning="Model loaded but no predict_action or __call__ method found",
+                        inference_time_ms=(time.monotonic() - t0) * 1000,
+                    )
+
+            plan = self._decode_action_chunk(action_chunk, observation, task)
+            plan.inference_time_ms = (time.monotonic() - t0) * 1000
+
+            logger.info(
+                "Octo VLA inference: %.0fms, phase=%s, %d actions",
+                plan.inference_time_ms, plan.phase, len(plan.actions),
+            )
+            return plan
+
+        except Exception as e:
+            elapsed = (time.monotonic() - t0) * 1000
+            logger.error("Octo VLA inference failed after %.0fms: %s", elapsed, e)
+            return ActionPlan(
+                error=str(e),
+                inference_time_ms=elapsed,
+                reasoning=f"Local model inference failed: {e}",
+            )
+
+    async def verify(
+        self,
+        observation: Observation,
+        task: str,
+        actions_taken: List[str],
+    ) -> ActionPlan:
+        """Verify and re-plan using the local model.
+
+        For the local model, verify is the same as plan — the model
+        processes the current observation without explicit history context
+        (the observation itself encodes the result of previous actions).
+        """
+        return await self.plan(observation, task, history=actions_taken)

@@ -36,6 +36,16 @@ SYSTEM_PROMPT = """You are a robot arm controller. You control a Unitree D1 6-DO
 - Camera 0: overhead/front view of workspace
 - Camera 1: side/angled view
 
+## Kitchen Objects & Grasp Strategies
+The arm can manipulate kitchen objects using these strategies:
+- **Cylinders** (cans, bottles, mugs, kettles): wrap grip, top-down approach, wrist pitch ~60°
+- **Flat objects** (plates, cutting boards): scoop/slide approach, wrist pitch ~80°
+- **Utensils** (spatula, whisk, tongs, knife): pinch grip on handle, top-down
+- **Handles** (cabinet, drawer, fridge): pinch grip then pull linearly or laterally
+- **Knobs** (stove, faucet): pinch grip then rotate J5 (wrist roll)
+- **Buttons** (microwave, coffee machine): closed gripper tip press
+- **Containers** (bowls, pots, food containers): wrap grip, top-down approach
+
 ## Home Position
 All joints at 0° = arm pointing straight up, fully retracted.
 
