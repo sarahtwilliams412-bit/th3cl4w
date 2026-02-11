@@ -6493,112 +6493,74 @@ async def vla_demos():
 # 3D Workspace Scanning endpoints
 # ---------------------------------------------------------------------------
 
-try:
-    from src.vision.scan_manager import ScanManager as _ScanManager
-
-    _HAS_SCAN = True
-except ImportError:
-    _HAS_SCAN = False
-
-_scan_manager: Optional[Any] = None
-
-
-def _get_scan_manager():
-    """Lazy-init scan manager with arm control functions."""
-    global _scan_manager
-    if _scan_manager is not None:
-        return _scan_manager
-    if not _HAS_SCAN:
-        return None
-
-    async def move_arm(angles: list) -> bool:
-        if not (smoother and smoother._arm_enabled):
-            return False
-        if smoother and smoother.running:
-            smoother.set_all_joints_target(angles)
-        elif arm:
-            arm.set_all_joints(angles)
-        else:
-            return False
-        await asyncio.sleep(1.5)  # wait for move
-        return True
-
-    _scan_manager = _ScanManager(
-        arm_command_fn=move_arm,
-        get_state_fn=get_arm_state,
-    )
-    return _scan_manager
+_HAS_SCAN = True  # scan is now handled by map server at :8083
 
 
 @app.post("/api/scan/start")
 async def scan_start():
-    """Begin a workspace scan (moves arm through viewpoints)."""
-    mgr = _get_scan_manager()
-    if mgr is None:
-        return JSONResponse(
-            {"ok": False, "error": "Scan module not available"},
-            status_code=501,
-        )
-    result = await mgr.start_scan()
-    status = 200 if result.get("ok") else 409
-    return JSONResponse(result, status_code=status)
+    """Proxy to map server scan."""
+    import httpx
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.post("http://localhost:8083/api/map/scan/start", timeout=10)
+            return JSONResponse(r.json(), status_code=r.status_code)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=502)
 
 
 @app.get("/api/scan/status")
 async def scan_status():
-    """Check scan progress."""
-    mgr = _get_scan_manager()
-    if mgr is None:
+    """Proxy to map server scan status."""
+    import httpx
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get("http://localhost:8083/api/map/scan/status", timeout=5)
+            return r.json()
+    except Exception:
         return {"running": False, "phase": "unavailable"}
-    return mgr.status.to_dict()
 
 
 @app.post("/api/scan/stop")
 async def scan_stop():
-    """Abort current scan."""
-    mgr = _get_scan_manager()
-    if mgr is None:
-        return JSONResponse(
-            {"ok": False, "error": "Scan module not available"},
-            status_code=501,
-        )
-    result = await mgr.stop_scan()
-    return result
+    """Proxy to map server scan stop."""
+    import httpx
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.post("http://localhost:8083/api/map/scan/stop", timeout=5)
+            return r.json()
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=502)
 
 
 @app.get("/api/scan/result")
 async def scan_result(scan_id: Optional[str] = None):
-    """Download the latest (or specific) PLY point cloud."""
-    if not _HAS_SCAN:
-        return JSONResponse(
-            {"ok": False, "error": "Scan module not available"},
-            status_code=501,
-        )
-    from src.vision.scan_manager import ScanManager as _SM
-
-    ply_path = _SM.get_scan_ply(scan_id)
-    if ply_path is None:
-        return JSONResponse(
-            {"ok": False, "error": "No scan result found"},
-            status_code=404,
-        )
-    from starlette.responses import FileResponse
-
-    return FileResponse(
-        ply_path,
-        media_type="application/octet-stream",
-        filename=Path(ply_path).name,
-    )
+    """Proxy to map server scan result."""
+    import httpx
+    try:
+        params = {"scan_id": scan_id} if scan_id else {}
+        async with httpx.AsyncClient() as c:
+            r = await c.get("http://localhost:8083/api/map/scan/result",
+                            params=params, timeout=10)
+            if r.status_code == 200:
+                from starlette.responses import Response
+                return Response(content=r.content,
+                                media_type="application/octet-stream",
+                                headers={"content-disposition": "attachment; filename=scan.ply"})
+            return JSONResponse(r.json(), status_code=r.status_code)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=502)
 
 
 @app.get("/api/scan/list")
 async def scan_list():
-    """List previous scans."""
-    if not _HAS_SCAN:
+    """Proxy to map server scan list."""
+    import httpx
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get("http://localhost:8083/api/map/scan/list", timeout=5)
+            return r.json()
+    except Exception:
         return {"scans": []}
-    from src.vision.scan_manager import ScanManager as _SM
-
-    return {"scans": _SM.list_scans()}
 
 
 # ---------------------------------------------------------------------------

@@ -47,41 +47,94 @@ except ImportError:
 logger = logging.getLogger("th3cl4w.camera")
 
 # ---------------------------------------------------------------------------
-# Camera registry — single source of truth for camera hardware
+# Camera auto-detection — find cameras by name, not hardcoded device index
 # ---------------------------------------------------------------------------
 
-CAMERA_REGISTRY = {
-    0: {
-        "id": 0,
-        "device": "/dev/video0",
-        "name": "Side",
-        "role": "side_profile",
-        "mount": "fixed",
-        "resolution": [1920, 1080],
-        "fov_deg": 78,
-        "description": "Fixed side-view camera. Used for height (Z) estimation of objects on workspace.",
-    },
-    1: {
-        "id": 1,
-        "device": "/dev/video4",
-        "name": "Arm-mounted",
-        "role": "end_effector",
-        "mount": "arm",
-        "resolution": [1920, 1080],
-        "fov_deg": 78,
-        "description": "Camera attached to end-effector. Moves with arm. Used for close-up inspection and visual servo.",
-    },
-    2: {
-        "id": 2,
-        "device": "/dev/video6",
-        "name": "Overhead",
-        "role": "overhead",
-        "mount": "fixed",
-        "resolution": [1920, 1080],
-        "fov_deg": 78,
-        "description": "Logitech BRIO mounted above workspace, looking straight down. Primary camera for object detection X/Y positioning.",
-    },
+def detect_video_devices() -> dict[int, str]:
+    """Scan /sys/class/video4linux/ and return {device_index: device_name}.
+    Only returns capture-capable devices (V4L2 index=0)."""
+    import glob
+    devices = {}
+    for path in sorted(glob.glob("/sys/class/video4linux/video*")):
+        name_file = Path(path) / "name"
+        index_file = Path(path) / "index"
+        if name_file.exists():
+            dev_name = name_file.read_text().strip()
+            dev_idx = int(Path(path).name.replace("video", ""))
+            # Only include capture devices (index=0), skip metadata (index>0)
+            if index_file.exists():
+                try:
+                    v4l_index = int(index_file.read_text().strip())
+                    if v4l_index != 0:
+                        continue
+                except ValueError:
+                    pass
+            devices[dev_idx] = dev_name
+    return devices
+
+
+def auto_detect_cameras() -> dict[int, int]:
+    """Auto-detect camera assignments. Returns {cam_id: device_index}.
+    
+    Camera roles:
+      cam0 = Side (first Logitech BRIO found)
+      cam1 = Arm-mounted (second Logitech BRIO found)  
+      cam2 = Overhead (third Logitech BRIO found)
+    
+    MX Brio is excluded (it's a webcam, not a workspace camera).
+    Falls back to hardcoded defaults if detection fails.
+    """
+    devices = detect_video_devices()
+    logger.info("Detected video devices: %s", {f"/dev/video{k}": v for k, v in devices.items()})
+    
+    # Find all Logitech BRIOs (exclude MX Brio)
+    brios = sorted([idx for idx, name in devices.items() 
+                     if "BRIO" in name and "MX" not in name])
+    
+    assignments = {}
+    defaults = {0: 0, 1: 4, 2: 6}  # fallback
+    
+    for cam_id, dev_idx in enumerate(brios):
+        if cam_id > 2:
+            break
+        assignments[cam_id] = dev_idx
+        
+    if not assignments:
+        logger.warning("No BRIO cameras detected, using defaults: %s", defaults)
+        return defaults
+    
+    logger.info("Auto-detected camera assignments: %s", 
+                {f"cam{k}": f"/dev/video{v}" for k, v in assignments.items()})
+    return assignments
+
+
+# ---------------------------------------------------------------------------
+# Camera registry — updated dynamically at startup
+# ---------------------------------------------------------------------------
+
+_CAMERA_ROLES = {
+    0: {"name": "Side", "role": "side_profile", "mount": "fixed",
+        "description": "Fixed side-view camera. Used for height (Z) estimation of objects on workspace."},
+    1: {"name": "Arm-mounted", "role": "end_effector", "mount": "arm",
+        "description": "Camera attached to end-effector. Moves with arm. Used for close-up inspection and visual servo."},
+    2: {"name": "Overhead", "role": "overhead", "mount": "fixed",
+        "description": "Logitech BRIO mounted above workspace, looking straight down. Primary camera for object detection X/Y positioning."},
 }
+
+def build_camera_registry(assignments: dict[int, int]) -> dict:
+    registry = {}
+    for cam_id, dev_idx in assignments.items():
+        role = _CAMERA_ROLES.get(cam_id, {"name": f"Camera {cam_id}", "role": "unknown", "mount": "unknown", "description": ""})
+        registry[cam_id] = {
+            "id": cam_id,
+            "device": f"/dev/video{dev_idx}",
+            **role,
+            "resolution": [1920, 1080],
+            "fov_deg": 78,
+        }
+    return registry
+
+CAMERA_REGISTRY = build_camera_registry({0: 0, 1: 4, 2: 6})  # default, rebuilt at startup
 
 # ---------------------------------------------------------------------------
 # Camera capture thread
@@ -573,16 +626,34 @@ def main():
     from src.utils.logging_config import setup_logging
     setup_logging(server_name="camera", debug=args.debug, log_dir=args.log_dir)
 
+    # Auto-detect cameras, with CLI args as overrides
+    global CAMERA_REGISTRY
+    detected = auto_detect_cameras()
+    
+    # CLI args override auto-detection
+    if args.cam0 != 0 or 0 not in detected:
+        detected[0] = args.cam0
+    if args.cam1 != 4 or 1 not in detected:
+        detected[1] = args.cam1
+    if args.cam2 != 6 or 2 not in detected:
+        detected.setdefault(2, args.cam2)
+    
+    CAMERA_REGISTRY = build_camera_registry(detected)
+
     # Start camera threads
-    cameras[0] = CameraThread(args.cam0, args.width, args.height, args.fps, args.jpeg_quality)
-    cameras[1] = CameraThread(args.cam1, args.width, args.height, args.fps, args.jpeg_quality)
+    cameras[0] = CameraThread(detected[0], args.width, args.height, args.fps, args.jpeg_quality)
+    cameras[1] = CameraThread(detected[1], args.width, args.height, args.fps, args.jpeg_quality)
 
     # Try to open cam2 — don't crash if it fails
-    try:
-        cam2 = CameraThread(args.cam2, args.width, args.height, args.fps, args.jpeg_quality)
-        cameras[2] = cam2
-    except Exception as e:
-        logger.warning("Failed to create camera 2 (dev %d): %s — continuing with 2 cameras", args.cam2, e)
+    cam2_dev = detected.get(2)
+    if cam2_dev is not None:
+        try:
+            cam2 = CameraThread(cam2_dev, args.width, args.height, args.fps, args.jpeg_quality)
+            cameras[2] = cam2
+        except Exception as e:
+            logger.warning("Failed to create camera 2 (dev %d): %s — continuing with 2 cameras", cam2_dev, e)
+    else:
+        logger.warning("No device found for cam2 (overhead) — continuing with 2 cameras")
 
     for cam in cameras.values():
         cam.start()

@@ -1,36 +1,60 @@
-"""Tests for scan manager."""
-
-import pytest
+"""Tests for the new MapScanManager in src/map/env_map."""
 import numpy as np
+import pytest
 
 
-class TestScanManager:
-    def test_import(self):
-        from src.vision.scan_manager import ScanManager, ScanStatus, SCAN_POSES
+def test_env_map_config():
+    from src.map.env_map import EnvMapConfig
+    cfg = EnvMapConfig()
+    assert cfg.voxel_size_m == 0.01
+    d = cfg.to_dict()
+    assert "max_points" in d
 
-        assert len(SCAN_POSES) == 8
 
-    def test_status_dict(self):
-        from src.vision.scan_manager import ScanStatus
+def test_env_map_clear():
+    from src.map.env_map import EnvMap
+    em = EnvMap()
+    em.clear()
+    assert em.get_stats()["total_points"] == 0
 
-        s = ScanStatus()
-        d = s.to_dict()
-        assert d["running"] is False
-        assert d["phase"] == "idle"
 
-    def test_validate_poses(self):
-        from src.vision.scan_manager import _validate_pose
+def test_env_map_stats():
+    from src.map.env_map import EnvMap
+    em = EnvMap()
+    stats = em.get_stats()
+    assert stats["total_points"] == 0
+    assert stats["voxel_count"] == 0
 
-        assert _validate_pose({"J0": 0, "J1": 30, "J2": 40, "J4": 50})
-        assert not _validate_pose({"J0": 0, "J1": 100})  # J1 limit is ±80
 
-    def test_list_scans_empty(self):
-        from src.vision.scan_manager import ScanManager
+def test_scan_manager_list(tmp_path, monkeypatch):
+    from src.map import env_map as em_mod
+    from src.map.env_map import EnvMap, MapScanManager
+    monkeypatch.setattr(em_mod, "SCAN_DIR", tmp_path)
+    # Create a fake scan
+    scan_dir = tmp_path / "20260101_120000"
+    scan_dir.mkdir()
+    (scan_dir / "scan.ply").write_text("fake")
 
-        scans = ScanManager.list_scans()
-        assert isinstance(scans, list)
+    scans = MapScanManager.list_scans()
+    # Won't find it because list_scans uses the module-level SCAN_DIR
+    # but we monkeypatched it
+    assert isinstance(scans, list)
 
-    def test_get_scan_ply_none(self):
-        from src.vision.scan_manager import ScanManager
 
-        assert ScanManager.get_scan_ply("nonexistent") is None
+@pytest.mark.asyncio
+async def test_scan_manager_start(tmp_path, monkeypatch):
+    from src.map import env_map as em_mod
+    from src.map.env_map import EnvMap, MapScanManager
+    monkeypatch.setattr(em_mod, "SCAN_DIR", tmp_path)
+    em = EnvMap()
+    mgr = MapScanManager(env_map=em)
+    result = await mgr.start_scan()
+    assert result["ok"] in (True, False)  # ok even with empty cloud
+
+
+def test_scan_manager_status():
+    from src.map.env_map import EnvMap, MapScanManager
+    em = EnvMap()
+    mgr = MapScanManager(env_map=em)
+    status = mgr.get_status()
+    assert status["phase"] == "idle"

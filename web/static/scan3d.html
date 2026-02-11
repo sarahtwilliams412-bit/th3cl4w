@@ -2,230 +2,438 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>th3cl4w — 3D Scan Viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>th3cl4w — 3D Workspace Scan</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #111; color: #0f0; font-family: 'Courier New', monospace; overflow: hidden; }
-#container { width: 100vw; height: 100vh; position: relative; }
+body { background: #0a0a0a; color: #e0e0e0; font-family: 'JetBrains Mono', monospace; overflow: hidden; }
+#canvas-container { width: 100vw; height: 100vh; position: relative; }
 canvas { display: block; }
 #hud {
-    position: absolute; top: 10px; left: 10px; z-index: 10;
-    background: rgba(0,0,0,0.8); padding: 12px; border: 1px solid #0f0;
-    border-radius: 4px; font-size: 13px; max-width: 300px;
+  position: absolute; top: 12px; left: 12px;
+  background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 6px;
+  padding: 10px 14px; font-size: 12px; line-height: 1.6; min-width: 200px;
+  pointer-events: auto;
 }
-#hud h2 { margin-bottom: 8px; font-size: 15px; }
-#hud .status { color: #0a0; margin-bottom: 6px; }
-#hud button {
-    background: #0f0; color: #000; border: none; padding: 6px 14px;
-    cursor: pointer; font-family: inherit; font-weight: bold;
-    margin: 3px 3px 3px 0; border-radius: 2px;
+#hud h3 { color: #0f0; margin-bottom: 6px; font-size: 13px; }
+#hud .stat { color: #999; }
+#hud .val { color: #0f0; }
+#controls {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 8px;
 }
-#hud button:hover { background: #0c0; }
-#hud button.danger { background: #f44; color: #fff; }
-#hud button:disabled { opacity: 0.4; cursor: not-allowed; }
-#scan-list {
-    position: absolute; top: 10px; right: 10px; z-index: 10;
-    background: rgba(0,0,0,0.8); padding: 12px; border: 1px solid #0f0;
-    border-radius: 4px; font-size: 12px; max-width: 250px; max-height: 300px;
-    overflow-y: auto;
+#controls button {
+  background: #1a1a1a; color: #0f0; border: 1px solid #333; border-radius: 4px;
+  padding: 8px 16px; cursor: pointer; font-family: inherit; font-size: 12px;
 }
-#scan-list h3 { margin-bottom: 6px; }
-.scan-item { padding: 4px 0; border-bottom: 1px solid #030; cursor: pointer; }
-.scan-item:hover { color: #fff; }
-#info { position: absolute; bottom: 10px; left: 10px; z-index: 10; font-size: 11px; color: #080; }
+#controls button:hover { background: #2a2a2a; border-color: #0f0; }
+#controls button.active { background: #0f02; border-color: #0f0; }
+#status-bar {
+  position: absolute; top: 12px; right: 12px;
+  background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 6px;
+  padding: 8px 12px; font-size: 11px;
+}
+.connected { color: #0f0; }
+.disconnected { color: #f00; }
+#cam-views {
+  position: absolute; bottom: 60px; right: 12px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+#cam-views img {
+  width: 160px; height: 120px; object-fit: cover; border: 1px solid #333;
+  border-radius: 4px; opacity: 0.8;
+}
+#cam-views img:hover { opacity: 1; border-color: #0f0; }
 </style>
 </head>
 <body>
-<div id="container">
-    <div id="hud">
-        <h2>🔍 3D Scan</h2>
-        <div id="status" class="status">Ready</div>
-        <div id="progress"></div>
-        <button id="btn-scan" onclick="startScan()">Start Scan</button>
-        <button id="btn-stop" class="danger" onclick="stopScan()" disabled>Stop</button>
-        <button id="btn-load" onclick="loadLatest()">Load Latest</button>
-        <br>
-        <button onclick="listScans()">List Scans</button>
-        <a href="/ui/" style="color:#0f0;margin-left:10px;">← Back</a>
-    </div>
-    <div id="scan-list"><h3>Previous Scans</h3><div id="scans"></div></div>
-    <div id="info">Drag to orbit · Scroll to zoom · Points: <span id="point-count">0</span></div>
+<div id="canvas-container">
+  <div id="hud">
+    <h3>🤖 th3cl4w workspace</h3>
+    <div><span class="stat">Points:</span> <span class="val" id="point-count">0</span></div>
+    <div><span class="stat">Objects:</span> <span class="val" id="obj-count">0</span></div>
+    <div><span class="stat">Voxels:</span> <span class="val" id="voxel-count">0</span></div>
+    <div><span class="stat">FPS:</span> <span class="val" id="fps">0</span></div>
+  </div>
+  <div id="status-bar">
+    <span id="ws-status" class="disconnected">● disconnected</span>
+  </div>
+  <div id="controls">
+    <button onclick="toggleArm()" id="btn-arm" class="active">Arm</button>
+    <button onclick="toggleObjects()" id="btn-obj" class="active">Objects</button>
+    <button onclick="toggleCloud()" id="btn-cloud" class="active">Cloud</button>
+    <button onclick="toggleVoxels()" id="btn-voxel">Voxels</button>
+    <button onclick="captureSnapshot()">📸 Snapshot</button>
+    <button onclick="clearCloud()">🗑 Clear</button>
+    <button onclick="resetView()">⟲ Reset</button>
+  </div>
+  <div id="cam-views">
+    <img id="cam0-img" src="" alt="cam0 (side)" title="cam0 — side camera">
+    <img id="cam1-img" src="" alt="cam1 (arm)" title="cam1 — arm camera">
+  </div>
 </div>
 
-<script type="importmap">
-{
-    "imports": {
-        "three": "/static/lib/three-0.162.0/three.module.js",
-        "three/addons/": "/static/lib/three-0.162.0/examples/jsm/"
-    }
-}
-</script>
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// --- Config ---
+const MAP_SERVER = location.port === '8083' ? '' : 'http://localhost:8083';
+const MAIN_SERVER = 'http://localhost:8080';
+const CAM_SERVER = 'http://localhost:8081';
+const WS_URL = `ws://${location.hostname}:8083/ws/map`;
 
-const container = document.getElementById('container');
+// --- Three.js Setup ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111111);
+scene.background = new THREE.Color(0x0a0a0a);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
-camera.position.set(0.5, 0.5, 0.5);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 10);
+camera.position.set(0.5, 0.6, 0.5);
+camera.lookAt(0, 0.15, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
-container.appendChild(renderer.domElement);
+document.getElementById('canvas-container').prepend(renderer.domElement);
 
-const controls = new OrbitControls(camera, renderer.domElement);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.15, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.1;
 
-// Grid helper
-const grid = new THREE.GridHelper(2, 20, 0x003300, 0x002200);
-scene.add(grid);
+// --- Lights ---
+scene.add(new THREE.AmbientLight(0x404040, 0.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(1, 2, 1);
+scene.add(dirLight);
 
-// Axes
-const axes = new THREE.AxesHelper(0.3);
+// --- Grid & Axes ---
+const grid = new THREE.GridHelper(1.0, 20, 0x222222, 0x111111);
+scene.add(grid);
+const axes = new THREE.AxesHelper(0.15);
 scene.add(axes);
 
-// Ambient light
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+// --- Arm skeleton group ---
+const armGroup = new THREE.Group();
+scene.add(armGroup);
+const JOINT_COLOR = 0x00ff00;
+const LINK_COLOR = 0x00cc00;
+const EE_COLOR = 0xff3300;
 
-let currentPoints = null;
+// --- Objects group ---
+const objectsGroup = new THREE.Group();
+scene.add(objectsGroup);
 
-window.loadPLY = function(url) {
-    const loader = new PLYLoader();
-    document.getElementById('status').textContent = 'Loading PLY...';
+// --- Point cloud ---
+const MAX_CLOUD_POINTS = 200000;
+const cloudGeometry = new THREE.BufferGeometry();
+const cloudPositions = new Float32Array(MAX_CLOUD_POINTS * 3);
+const cloudColors = new Float32Array(MAX_CLOUD_POINTS * 3);
+cloudGeometry.setAttribute('position', new THREE.BufferAttribute(cloudPositions, 3));
+cloudGeometry.setAttribute('color', new THREE.BufferAttribute(cloudColors, 3));
+cloudGeometry.setDrawRange(0, 0);
+const cloudMaterial = new THREE.PointsMaterial({ size: 0.004, vertexColors: true, sizeAttenuation: true });
+const cloudPoints = new THREE.Points(cloudGeometry, cloudMaterial);
+scene.add(cloudPoints);
 
-    loader.load(url, (geometry) => {
-        if (currentPoints) scene.remove(currentPoints);
+// --- Voxel group ---
+const voxelGroup = new THREE.Group();
+voxelGroup.visible = false;
+scene.add(voxelGroup);
 
-        geometry.computeBoundingBox();
-        const center = new THREE.Vector3();
-        geometry.boundingBox.getCenter(center);
-        geometry.translate(-center.x, -center.y, -center.z);
+// --- State ---
+let wsConn = null;
+let frameCount = 0;
+let lastFpsTime = performance.now();
 
-        let material;
-        if (geometry.hasAttribute('color')) {
-            material = new THREE.PointsMaterial({ size: 0.003, vertexColors: true });
-        } else {
-            material = new THREE.PointsMaterial({ size: 0.003, color: 0x00ff00 });
-        }
+// --- DH params (D1 arm) ---
+const DH = [
+  { a: 0, d: 0.1215, alpha: -Math.PI/2 },
+  { a: 0, d: 0,      alpha:  Math.PI/2 },
+  { a: 0, d: 0.2085, alpha: -Math.PI/2 },
+  { a: 0, d: 0,      alpha:  Math.PI/2 },
+  { a: 0, d: 0.2085, alpha: -Math.PI/2 },
+  { a: 0, d: 0,      alpha:  Math.PI/2 },
+  { a: 0, d: 0.1130, alpha: 0 },
+];
 
-        currentPoints = new THREE.Points(geometry, material);
-        scene.add(currentPoints);
-
-        const count = geometry.attributes.position.count;
-        document.getElementById('point-count').textContent = count.toLocaleString();
-        document.getElementById('status').textContent = `Loaded: ${count.toLocaleString()} points`;
-
-        // Fit camera
-        const bbox = geometry.boundingBox;
-        const size = new THREE.Vector3();
-        bbox.getSize(size);
-        const maxDim = Math.max(size.x, size.y, size.z);
-        camera.position.set(maxDim, maxDim * 0.8, maxDim);
-        controls.target.set(0, 0, 0);
-        controls.update();
-    },
-    (progress) => {
-        if (progress.total) {
-            const pct = Math.round(progress.loaded / progress.total * 100);
-            document.getElementById('status').textContent = `Loading... ${pct}%`;
-        }
-    },
-    (error) => {
-        document.getElementById('status').textContent = 'Failed to load PLY';
-        console.error(error);
-    });
-};
-
-window.loadLatest = function() {
-    window.loadPLY('/api/scan/result');
-};
-
-window.loadScan = function(scanId) {
-    window.loadPLY(`/api/scan/result?scan_id=${scanId}`);
-};
-
-// Animation loop
-function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
+function dhMatrix(a, d, alpha, theta) {
+  const ct = Math.cos(theta), st = Math.sin(theta);
+  const ca = Math.cos(alpha), sa = Math.sin(alpha);
+  return new THREE.Matrix4().set(
+    ct, -st*ca,  st*sa, a*ct,
+    st,  ct*ca, -ct*sa, a*st,
+    0,   sa,     ca,    d,
+    0,   0,      0,     1
+  );
 }
-animate();
 
+function computeFK(jointsDeg) {
+  const positions = [new THREE.Vector3(0, 0, 0)];
+  let T = new THREE.Matrix4().identity();
+  for (let i = 0; i < Math.min(jointsDeg.length, 7); i++) {
+    const theta = (jointsDeg[i] || 0) * Math.PI / 180;
+    const p = DH[i] || DH[6];
+    T = T.clone().multiply(dhMatrix(p.a, p.d, p.alpha, theta));
+    const pos = new THREE.Vector3();
+    pos.setFromMatrixPosition(T);
+    positions.push(pos);
+  }
+  return positions;
+}
+
+function updateArm(data) {
+  // Clear old
+  while (armGroup.children.length) armGroup.remove(armGroup.children[0]);
+
+  const angles = data.joint_angles_deg || data.joints || [];
+  if (!angles.length) return;
+
+  const positions = computeFK(angles);
+
+  // Draw joints as spheres + links as cylinders
+  const jointMat = new THREE.MeshPhongMaterial({ color: JOINT_COLOR, emissive: 0x003300 });
+  const linkMat = new THREE.MeshPhongMaterial({ color: LINK_COLOR, transparent: true, opacity: 0.7 });
+
+  for (let i = 0; i < positions.length; i++) {
+    const isEE = i === positions.length - 1;
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(isEE ? 0.015 : 0.012, 12, 12),
+      isEE ? new THREE.MeshPhongMaterial({ color: EE_COLOR, emissive: 0x330000 }) : jointMat
+    );
+    sphere.position.copy(positions[i]);
+    armGroup.add(sphere);
+
+    if (i > 0) {
+      const start = positions[i-1], end = positions[i];
+      const dir = new THREE.Vector3().subVectors(end, start);
+      const len = dir.length();
+      if (len > 0.001) {
+        const cyl = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.008, 0.008, len, 8),
+          linkMat
+        );
+        cyl.position.copy(start).add(dir.multiplyScalar(0.5));
+        cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+        armGroup.add(cyl);
+      }
+    }
+  }
+}
+
+function updateObjects(objects) {
+  while (objectsGroup.children.length) objectsGroup.remove(objectsGroup.children[0]);
+  document.getElementById('obj-count').textContent = objects.length;
+
+  const colors = [0x00aaff, 0xff6600, 0xaa00ff, 0xffcc00, 0x00ffaa, 0xff0066];
+  objects.forEach((obj, i) => {
+    const pos = obj.position_mm || [0, 0, 0];
+    const bbox = obj.bbox_mm || [50, 50, 50];
+    const color = colors[i % colors.length];
+
+    // Box mesh
+    const geo = new THREE.BoxGeometry(bbox[0]/1000, bbox[1]/1000, bbox[2]/1000);
+    const mat = new THREE.MeshPhongMaterial({
+      color, transparent: true, opacity: 0.5,
+      emissive: obj.reachable ? 0x002200 : 0x220000
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(pos[0]/1000, pos[1]/1000, pos[2]/1000);
+    objectsGroup.add(mesh);
+
+    // Wireframe
+    const wire = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color, linewidth: 1 })
+    );
+    wire.position.copy(mesh.position);
+    objectsGroup.add(wire);
+
+    // Label
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 256, 64);
+    ctx.fillStyle = '#0f0'; ctx.font = '20px monospace';
+    ctx.fillText(obj.label || 'unknown', 8, 40);
+    const tex = new THREE.CanvasTexture(canvas);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+    sprite.position.copy(mesh.position);
+    sprite.position.y += bbox[1]/2000 + 0.03;
+    sprite.scale.set(0.12, 0.03, 1);
+    objectsGroup.add(sprite);
+  });
+}
+
+function updateCloud(cloudData) {
+  if (!cloudData) return;
+  // cloudData can be {points: [[x,y,z,r,g,b],...]} or voxel-based
+  const pts = cloudData.points || cloudData;
+  if (!Array.isArray(pts)) return;
+
+  const n = Math.min(pts.length, MAX_CLOUD_POINTS);
+  const posAttr = cloudGeometry.attributes.position;
+  const colAttr = cloudGeometry.attributes.color;
+
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    posAttr.array[i*3]   = p[0];
+    posAttr.array[i*3+1] = p[1];
+    posAttr.array[i*3+2] = p[2];
+    colAttr.array[i*3]   = (p[3] || 128) / 255;
+    colAttr.array[i*3+1] = (p[4] || 128) / 255;
+    colAttr.array[i*3+2] = (p[5] || 128) / 255;
+  }
+  posAttr.needsUpdate = true;
+  colAttr.needsUpdate = true;
+  cloudGeometry.setDrawRange(0, n);
+  document.getElementById('point-count').textContent = n.toLocaleString();
+}
+
+function updateVoxels(voxelData) {
+  while (voxelGroup.children.length) voxelGroup.remove(voxelGroup.children[0]);
+  if (!voxelData || !voxelData.voxels) return;
+
+  const voxels = voxelData.voxels;
+  const size = 0.01;
+  document.getElementById('voxel-count').textContent = voxels.length.toLocaleString();
+
+  // Use instanced mesh for performance
+  const geo = new THREE.BoxGeometry(size, size, size);
+  const mat = new THREE.MeshPhongMaterial({ color: 0x00ff44, transparent: true, opacity: 0.3 });
+  const mesh = new THREE.InstancedMesh(geo, mat, voxels.length);
+
+  const dummy = new THREE.Object3D();
+  voxels.forEach((v, i) => {
+    dummy.position.set(v[0], v[1], v[2]);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+  });
+  voxelGroup.add(mesh);
+}
+
+// --- WebSocket ---
+function connectWS() {
+  if (wsConn && wsConn.readyState <= 1) return;
+  wsConn = new WebSocket(WS_URL);
+
+  wsConn.onopen = () => {
+    document.getElementById('ws-status').textContent = '● connected';
+    document.getElementById('ws-status').className = 'connected';
+    // Subscribe to all updates
+    wsConn.send(JSON.stringify({ type: 'subscribe', channels: ['arm', 'objects', 'cloud', 'voxels'] }));
+  };
+
+  wsConn.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.arm) updateArm(msg.arm);
+      if (msg.objects) updateObjects(msg.objects);
+      if (msg.cloud) updateCloud(msg.cloud);
+      if (msg.voxels) updateVoxels(msg.voxels);
+      // Full scene snapshot
+      if (msg.type === 'scene') {
+        if (msg.arm) updateArm(msg.arm);
+        if (msg.objects) updateObjects(msg.objects);
+      }
+    } catch(e) { /* ignore parse errors */ }
+  };
+
+  wsConn.onclose = () => {
+    document.getElementById('ws-status').textContent = '● disconnected';
+    document.getElementById('ws-status').className = 'disconnected';
+    setTimeout(connectWS, 2000);
+  };
+
+  wsConn.onerror = () => wsConn.close();
+}
+
+// --- REST polling fallback ---
+async function pollData() {
+  try {
+    const [armRes, objRes] = await Promise.all([
+      fetch(`${MAP_SERVER}/api/map/arm`).then(r => r.json()).catch(() => null),
+      fetch(`${MAP_SERVER}/api/map/objects`).then(r => r.json()).catch(() => null),
+    ]);
+    if (armRes) updateArm(armRes);
+    if (objRes && objRes.objects) updateObjects(objRes.objects);
+  } catch(e) { /* ok */ }
+}
+
+// --- Camera feeds ---
+function updateCamFeeds() {
+  document.getElementById('cam0-img').src = `${CAM_SERVER}/latest/0?t=${Date.now()}`;
+  document.getElementById('cam1-img').src = `${CAM_SERVER}/latest/1?t=${Date.now()}`;
+}
+
+// --- Toggle buttons ---
+function toggleArm() {
+  armGroup.visible = !armGroup.visible;
+  document.getElementById('btn-arm').classList.toggle('active');
+}
+function toggleObjects() {
+  objectsGroup.visible = !objectsGroup.visible;
+  document.getElementById('btn-obj').classList.toggle('active');
+}
+function toggleCloud() {
+  cloudPoints.visible = !cloudPoints.visible;
+  document.getElementById('btn-cloud').classList.toggle('active');
+}
+function toggleVoxels() {
+  voxelGroup.visible = !voxelGroup.visible;
+  document.getElementById('btn-voxel').classList.toggle('active');
+  if (voxelGroup.visible) {
+    fetch(`${MAP_SERVER}/api/map/voxels`).then(r => r.json()).then(updateVoxels).catch(() => {});
+  }
+}
+
+async function captureSnapshot() {
+  try {
+    const r = await fetch(`${MAP_SERVER}/api/map/scan/start`, { method: 'POST' });
+    const data = await r.json();
+    alert(data.ok ? `Snapshot saved: ${data.points} points` : `Error: ${data.error}`);
+  } catch(e) { alert('Snapshot failed: ' + e); }
+}
+
+async function clearCloud() {
+  if (!confirm('Clear point cloud?')) return;
+  await fetch(`${MAP_SERVER}/api/map/env/clear`, { method: 'POST' }).catch(() => {});
+  cloudGeometry.setDrawRange(0, 0);
+  document.getElementById('point-count').textContent = '0';
+}
+
+function resetView() {
+  camera.position.set(0.5, 0.6, 0.5);
+  controls.target.set(0, 0.15, 0);
+  controls.update();
+}
+
+// --- Animation loop ---
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime > 1000) {
+    document.getElementById('fps').textContent = frameCount;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+}
+
+// --- Resize ---
 window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Scan control
-let pollInterval = null;
-
-window.startScan = async function() {
-    const resp = await fetch('/api/scan/start', { method: 'POST' });
-    const data = await resp.json();
-    document.getElementById('status').textContent = data.ok
-        ? `Scan started (${data.total_poses} poses)`
-        : `Error: ${data.error}`;
-
-    if (data.ok) {
-        document.getElementById('btn-scan').disabled = true;
-        document.getElementById('btn-stop').disabled = false;
-        pollInterval = setInterval(pollStatus, 1000);
-    }
-};
-
-window.stopScan = async function() {
-    await fetch('/api/scan/stop', { method: 'POST' });
-    document.getElementById('btn-scan').disabled = false;
-    document.getElementById('btn-stop').disabled = true;
-    if (pollInterval) clearInterval(pollInterval);
-};
-
-async function pollStatus() {
-    try {
-        const resp = await fetch('/api/scan/status');
-        const s = await resp.json();
-        const el = document.getElementById('status');
-        el.textContent = `${s.phase} — pose ${s.current_pose}/${s.total_poses} (${s.points_total} pts, ${s.elapsed_seconds}s)`;
-
-        if (!s.running && s.phase !== 'idle') {
-            document.getElementById('btn-scan').disabled = false;
-            document.getElementById('btn-stop').disabled = true;
-            if (pollInterval) clearInterval(pollInterval);
-            if (s.phase === 'done') {
-                el.textContent = `Done! ${s.points_total} points in ${s.elapsed_seconds}s`;
-                setTimeout(() => window.loadLatest(), 500);
-            } else if (s.error) {
-                el.textContent = `Error: ${s.error}`;
-            }
-        }
-    } catch(e) { console.error(e); }
-}
-
-window.listScans = async function() {
-    try {
-        const resp = await fetch('/api/scan/list');
-        const data = await resp.json();
-        const el = document.getElementById('scans');
-        if (!data.scans || data.scans.length === 0) {
-            el.innerHTML = '<div style="color:#555">No scans yet</div>';
-            return;
-        }
-        el.innerHTML = data.scans.map(s =>
-            `<div class="scan-item" onclick="loadScan('${s.scan_id}')">` +
-            `${s.scan_id} — ${(s.total_points||0).toLocaleString()} pts</div>`
-        ).join('');
-    } catch(e) { console.error(e); }
-};
-
-// Auto-list scans on load
-window.listScans();
+// --- Init ---
+connectWS();
+setInterval(pollData, 3000);  // fallback polling
+setInterval(updateCamFeeds, 2000);  // camera thumbnails
+animate();
 </script>
 </body>
 </html>

@@ -34,7 +34,7 @@ if _project_root not in sys.path:
 
 from src.map.scene import Scene, ArmSkeletonData, ObjectData
 from src.map.arm_model import ArmModel
-from src.map.env_map import EnvMap, EnvMapConfig, MapScanManager
+from src.map.env_map import EnvMap, EnvMapConfig, MapScanManager, SCAN_DIR
 from src.map.collision_map import CollisionMap
 from src.map.ingest import DataIngest, IngestConfig
 from src.map.ws_hub import WSHub

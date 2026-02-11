@@ -21,11 +21,7 @@ from src.vision.world_model import (
     ObjectCategory,
     ReachStatus,
 )
-from src.vision.startup_scanner import (
-    StartupScanner,
-    ScanPhase,
-    StartupScanReport,
-)
+# StartupScanner removed — scan rebuilt in src/map/
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -402,102 +398,4 @@ class TestWorldModel:
         assert d["reach_status"] == "reachable"
 
 
-# ---------------------------------------------------------------------------
-# StartupScanner tests
-# ---------------------------------------------------------------------------
-
-
-class TestStartupScanner:
-    def test_init_defaults(self):
-        scanner = StartupScanner()
-        assert scanner.phase == ScanPhase.WAITING_FOR_CAMERAS
-        assert not scanner.is_running
-
-    def test_scan_with_mock_cameras(self):
-        img0 = make_image_with_red_object(obj_x=200, obj_y=200, obj_w=60, obj_h=80)
-        img1 = make_image_with_red_object(obj_x=300, obj_y=250, obj_w=50, obj_h=50)
-
-        cam0 = MockFrameProvider(frame=img0, connected=True)
-        cam1 = MockFrameProvider(frame=img1, connected=True)
-
-        scanner = StartupScanner(cam0=cam0, cam1=cam1)
-        scanner.INITIAL_BURST_COUNT = 2
-        scanner.BURST_FRAME_DELAY_S = 0.05
-        scanner.REFINEMENT_INTERVAL_S = 0.1
-        scanner.MAX_REFINEMENT_SCANS = 2
-        scanner.CAMERA_TIMEOUT_S = 2.0
-
-        model_ready = threading.Event()
-
-        def on_ready(snap):
-            model_ready.set()
-
-        scanner.on_model_ready(on_ready)
-        scanner.start()
-
-        # Wait for completion
-        model_ready.wait(timeout=10.0)
-        assert model_ready.is_set(), "Model ready callback was not fired"
-
-        # Wait for scanner to finish
-        deadline = time.monotonic() + 15.0
-        while scanner.is_running and time.monotonic() < deadline:
-            time.sleep(0.1)
-
-        report = scanner.get_report()
-        assert report.scans_completed >= 2
-        assert report.phase in (ScanPhase.COMPLETE, ScanPhase.CONTINUOUS_REFINEMENT)
-
-        model = scanner.get_world_model()
-        snap = model.snapshot()
-        assert snap.scan_count >= 1
-
-    def test_scan_no_cameras(self):
-        scanner = StartupScanner(cam0=None, cam1=None)
-        scanner.CAMERA_TIMEOUT_S = 1.0
-        scanner.start()
-
-        deadline = time.monotonic() + 5.0
-        while scanner.is_running and time.monotonic() < deadline:
-            time.sleep(0.1)
-
-        assert scanner.phase == ScanPhase.ERROR
-
-    def test_scan_one_camera_only(self):
-        img1 = make_image_with_red_object()
-        cam1 = MockFrameProvider(frame=img1, connected=True)
-
-        scanner = StartupScanner(cam0=None, cam1=cam1)
-        scanner.INITIAL_BURST_COUNT = 1
-        scanner.BURST_FRAME_DELAY_S = 0.01
-        scanner.REFINEMENT_INTERVAL_S = 0.1
-        scanner.MAX_REFINEMENT_SCANS = 1
-        scanner.CAMERA_TIMEOUT_S = 2.0
-
-        scanner.start()
-        deadline = time.monotonic() + 10.0
-        while scanner.is_running and time.monotonic() < deadline:
-            time.sleep(0.1)
-
-        report = scanner.get_report()
-        assert report.scans_completed >= 1
-
-    def test_report_to_dict(self):
-        scanner = StartupScanner()
-        report = scanner.get_report()
-        d = report.to_dict()
-        assert "phase" in d
-        assert "scans_completed" in d
-        assert "world_model" in d
-
-    def test_stop_while_running(self):
-        cam0 = MockFrameProvider(frame=make_image_with_red_object(), connected=True)
-        cam1 = MockFrameProvider(frame=make_image_with_red_object(), connected=True)
-
-        scanner = StartupScanner(cam0=cam0, cam1=cam1)
-        scanner.REFINEMENT_INTERVAL_S = 0.5
-        scanner.MAX_REFINEMENT_SCANS = 100  # lots of scans
-        scanner.start()
-        time.sleep(0.5)
-        scanner.stop()
-        assert not scanner.is_running
+# StartupScanner tests removed — module deleted in 3D scan rebuild

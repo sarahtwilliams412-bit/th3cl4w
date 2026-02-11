@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from src.vision.pointcloud_generator import (
+from src.map.pointcloud import (
     backproject_depth,
     compute_camera_pose_from_joints,
     merge_point_clouds,
@@ -184,49 +184,51 @@ class EnvMap:
 
 
 class MapScanManager:
-    """Wraps ScanManager for map-integrated arm-sweep scans.
+    """Simple scan manager — captures environment snapshots to PLY files."""
 
-    Feeds scan point clouds directly into the live EnvMap instead of
-    just saving to PLY.
-    """
-
-    def __init__(
-        self,
-        env_map: EnvMap,
-        arm_command_fn=None,
-        get_state_fn=None,
-        camera_url: str = None,
-    ):
-        from src.vision.scan_manager import ScanManager, ScanStatus
-        from src.config.camera_config import CAMERA_SERVER_URL
-
-        camera_url = camera_url or CAMERA_SERVER_URL
-
+    def __init__(self, env_map: EnvMap, camera_url: str = None, **_kwargs):
         self._env_map = env_map
-        self._scanner = ScanManager(
-            arm_command_fn=arm_command_fn,
-            get_state_fn=get_state_fn,
-            camera_url=camera_url,
-        )
-        self.status = self._scanner.status
+        self._camera_url = camera_url
+        self._running = False
+        self._phase = "idle"
 
     async def start_scan(self) -> Dict[str, Any]:
-        return await self._scanner.start_scan()
+        """Snapshot current point cloud to PLY."""
+        import datetime
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        scan_dir = SCAN_DIR / ts
+        scan_dir.mkdir(parents=True, exist_ok=True)
+        ply_path = scan_dir / "scan.ply"
+        ok = self._env_map.save_ply(str(ply_path))
+        return {"ok": ok, "scan_id": ts, "path": str(ply_path),
+                "points": len(self._env_map._cloud)}
 
     async def stop_scan(self) -> Dict[str, Any]:
-        return await self._scanner.stop_scan()
+        return {"ok": True}
 
     def get_status(self) -> Dict[str, Any]:
-        return self._scanner.status.to_dict()
+        return {"running": False, "phase": "idle",
+                "points": len(self._env_map._cloud)}
 
     @staticmethod
     def list_scans() -> List[Dict[str, Any]]:
-        from src.vision.scan_manager import ScanManager
-
-        return ScanManager.list_scans()
+        scans = []
+        if SCAN_DIR.exists():
+            for d in sorted(SCAN_DIR.iterdir(), reverse=True):
+                if d.is_dir() and (d / "scan.ply").exists():
+                    scans.append({"id": d.name, "path": str(d / "scan.ply"),
+                                  "size": (d / "scan.ply").stat().st_size})
+        return scans
 
     @staticmethod
     def get_scan_ply(scan_id: Optional[str] = None) -> Optional[str]:
-        from src.vision.scan_manager import ScanManager
-
-        return ScanManager.get_scan_ply(scan_id)
+        if scan_id:
+            p = SCAN_DIR / scan_id / "scan.ply"
+            return str(p) if p.exists() else None
+        # Latest
+        if SCAN_DIR.exists():
+            for d in sorted(SCAN_DIR.iterdir(), reverse=True):
+                p = d / "scan.ply"
+                if p.exists():
+                    return str(p)
+        return None
