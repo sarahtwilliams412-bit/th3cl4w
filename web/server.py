@@ -3498,6 +3498,433 @@ async def objects_enrich(obj_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Gemini-enhanced object detection helpers
+# ---------------------------------------------------------------------------
+
+def _parse_gemini_json(raw_text: str):
+    """Defensively parse JSON from Gemini (may be wrapped in markdown)."""
+    import re
+    text = raw_text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text.strip())
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+async def _gemini_vision_call(image_bytes: bytes, prompt: str, mime: str = "image/jpeg"):
+    """Send an image + prompt to Gemini, respecting rate limiter. Returns parsed JSON or None."""
+    from src.utils.gemini_limiter import gemini_limiter
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return None
+
+    if not gemini_limiter.acquire():
+        logger.warning("Gemini rate-limited, skipping vision call")
+        return None
+
+    try:
+        from google import genai as _genai
+        from google.genai import types as _gtypes
+
+        client = _genai.Client(api_key=api_key)
+        contents = [
+            _gtypes.Part.from_bytes(data=image_bytes, mime_type=mime),
+            prompt,
+        ]
+        config = _gtypes.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=2000,
+            response_mime_type="application/json",
+        )
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", contents=contents, config=config,
+        )
+        gemini_limiter.record_success()
+        return _parse_gemini_json(response.text)
+    except Exception as e:
+        logger.error("Gemini vision call failed: %s", e)
+        # Check for 429
+        if "429" in str(e) or "ResourceExhausted" in str(e):
+            gemini_limiter.record_429()
+        return None
+
+
+async def _gemini_multi_image_call(images: list[tuple[bytes, str]], prompt: str):
+    """Send multiple images + prompt to Gemini. images = [(bytes, mime), ...]"""
+    from src.utils.gemini_limiter import gemini_limiter
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return None
+
+    if not gemini_limiter.acquire():
+        logger.warning("Gemini rate-limited, skipping multi-image call")
+        return None
+
+    try:
+        from google import genai as _genai
+        from google.genai import types as _gtypes
+
+        client = _genai.Client(api_key=api_key)
+        contents = []
+        for img_bytes, mime in images:
+            contents.append(_gtypes.Part.from_bytes(data=img_bytes, mime_type=mime))
+        contents.append(prompt)
+        config = _gtypes.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=2000,
+            response_mime_type="application/json",
+        )
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", contents=contents, config=config,
+        )
+        gemini_limiter.record_success()
+        return _parse_gemini_json(response.text)
+    except Exception as e:
+        logger.error("Gemini multi-image call failed: %s", e)
+        if "429" in str(e) or "ResourceExhausted" in str(e):
+            gemini_limiter.record_429()
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Gemini-enhanced detection endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/objects/detect-with-ai")
+async def objects_detect_with_ai():
+    """Unified AI-enhanced detection: overhead capture → Gemini pre-analysis → CV detection → Gemini verification → merged results."""
+    import base64
+
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+
+    # Auto-enable
+    if not object_detector.enabled:
+        object_detector.enable()
+
+    import httpx
+    t0 = time.time()
+
+    try:
+        # 1. Capture overhead + side frames
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp_overhead = await cam_snap(client, CAM_OVERHEAD)
+            resp_side = None
+            try:
+                resp_side = await cam_snap(client, CAM_SIDE)
+            except Exception:
+                pass
+
+        if resp_overhead.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502)
+
+        overhead_jpeg = resp_overhead.content
+        overhead_frame = cv2.imdecode(np.frombuffer(overhead_jpeg, np.uint8), cv2.IMREAD_COLOR)
+        if overhead_frame is None:
+            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
+
+        side_frame = None
+        if resp_side is not None and resp_side.status_code == 200:
+            side_frame = cv2.imdecode(np.frombuffer(resp_side.content, np.uint8), cv2.IMREAD_COLOR)
+
+        # 2. Gemini pre-detection inventory (raw overhead image)
+        raw_b64 = base64.b64encode(overhead_jpeg).decode("ascii")
+        gemini_inventory = await _gemini_vision_call(
+            overhead_jpeg,
+            "List every distinct object you can see on this workspace table. "
+            "For each object, provide: 1) A specific real-world name (e.g., 'Red Bull energy drink can', not 'red cylinder'), "
+            "2) Estimated dimensions in mm (width × height × depth), "
+            "3) Approximate pixel location (center x, y). "
+            "Return as JSON array with keys: name, width_mm, height_mm, depth_mm, pixel_x, pixel_y."
+        )
+
+        # 3. Run CV detection
+        if workspace_mapper is not None and workspace_mapper.scale_calibrated:
+            object_detector._scale = workspace_mapper._scale_factor
+        result = object_detector.detect_from_overhead(overhead_frame, side_frame)
+
+        # 4. Generate annotated image
+        annotated = object_detector.annotate_frame(overhead_frame)
+        _, ann_buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        annotated_jpeg = ann_buf.tobytes()
+        annotated_b64 = base64.b64encode(annotated_jpeg).decode("ascii")
+
+        # 5. Gemini post-detection verification (annotated image)
+        gemini_verification = await _gemini_vision_call(
+            annotated_jpeg,
+            "I've run computer vision detection on this workspace image. "
+            "The colored circles/boxes show detected objects. For each detection, tell me: "
+            "1) What real-world object this actually is (specific name), "
+            "2) Is the detection correct (covers the right area)? "
+            "3) Are there any objects on the table that were MISSED by the detection? "
+            "Return as JSON with keys: detections (array of {name, correct, notes}), missed (array of {name, pixel_x, pixel_y})."
+        )
+
+        # 6. Merge Gemini labels/dimensions with CV objects
+        objects = object_detector.get_objects()
+        merged_objects = []
+        inventory_items = gemini_inventory if isinstance(gemini_inventory, list) else []
+        verification_detections = []
+        if isinstance(gemini_verification, dict):
+            verification_detections = gemini_verification.get("detections", [])
+
+        for i, o in enumerate(objects):
+            od = o.to_dict()
+            od["cv_label"] = o.label
+            od["gemini_label"] = None
+            od["gemini_dimensions"] = None
+            od["gemini_confidence"] = 0
+            od["review_status"] = "pending"
+
+            # Match with inventory by proximity (pixel coords)
+            best_match = None
+            best_dist = 999999
+            for inv in inventory_items:
+                ix = inv.get("pixel_x", 0)
+                iy = inv.get("pixel_y", 0)
+                px = o.bbox_overhead[0] + o.bbox_overhead[2] // 2 if o.bbox_overhead[2] > 0 else 0
+                py = o.bbox_overhead[1] + o.bbox_overhead[3] // 2 if o.bbox_overhead[3] > 0 else 0
+                dist = ((ix - px) ** 2 + (iy - py) ** 2) ** 0.5
+                if dist < best_dist and dist < 150:  # within 150px
+                    best_dist = dist
+                    best_match = inv
+
+            if best_match:
+                od["gemini_label"] = best_match.get("name", "")
+                od["gemini_dimensions"] = {
+                    "width_mm": best_match.get("width_mm", 0),
+                    "height_mm": best_match.get("height_mm", 0),
+                    "depth_mm": best_match.get("depth_mm", 0),
+                }
+                od["gemini_confidence"] = 0.8
+
+            # Also check verification detections
+            if i < len(verification_detections):
+                vd = verification_detections[i]
+                if not od["gemini_label"] and vd.get("name"):
+                    od["gemini_label"] = vd["name"]
+                    od["gemini_confidence"] = 0.7
+                if vd.get("correct") is False:
+                    od["gemini_confidence"] = max(0, od["gemini_confidence"] - 0.3)
+
+            # Store gemini data on the actual object for persistence
+            o.category = od.get("gemini_label") or o.category
+            o._gemini_label = od.get("gemini_label")
+            o._gemini_dimensions = od.get("gemini_dimensions")
+            o._gemini_confidence = od.get("gemini_confidence", 0)
+            o._review_status = "pending"
+
+            merged_objects.append(od)
+
+        side_b64 = None
+        if side_frame is not None:
+            _, side_buf = cv2.imencode(".jpg", side_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            side_b64 = base64.b64encode(side_buf.tobytes()).decode("ascii")
+
+        elapsed_ms = (time.time() - t0) * 1000
+        action_log.add("OBJECTS_AI", f"AI-enhanced detection: {len(merged_objects)} objects in {elapsed_ms:.0f}ms", "info")
+
+        return {
+            "ok": True,
+            "objects": merged_objects,
+            "count": len(merged_objects),
+            "raw_image_b64": raw_b64,
+            "annotated_image_b64": annotated_b64,
+            "side_image": side_b64,
+            "gemini_inventory": gemini_inventory,
+            "gemini_verification": gemini_verification,
+            "elapsed_ms": round(elapsed_ms, 1),
+            "timestamp": time.time(),
+        }
+
+    except Exception as e:
+        logger.exception("detect-with-ai failed")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/objects/{obj_id}/re-evaluate")
+async def objects_re_evaluate(obj_id: str):
+    """Re-evaluate a single object using both overhead and side camera views with Gemini."""
+    import base64
+
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+
+    # Find the object
+    objects = object_detector.get_objects()
+    target = None
+    for o in objects:
+        oid = getattr(o, "obj_id", None) or getattr(o, "id", None)
+        if str(oid) == obj_id or getattr(o, "label", "") == obj_id:
+            target = o
+            break
+    if target is None:
+        try:
+            idx = int(obj_id)
+            if 0 <= idx < len(objects):
+                target = objects[idx]
+        except (ValueError, IndexError):
+            pass
+    if target is None:
+        return JSONResponse({"ok": False, "error": f"Object '{obj_id}' not found"}, status_code=404)
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp_overhead = await cam_snap(client, CAM_OVERHEAD)
+            resp_side = await cam_snap(client, CAM_SIDE)
+
+        if resp_overhead.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Overhead camera failed"}, status_code=502)
+        if resp_side.status_code != 200:
+            return JSONResponse({"ok": False, "error": "Side camera failed"}, status_code=502)
+
+        # Crop overhead around object bbox with padding
+        overhead_frame = cv2.imdecode(np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR)
+        bx, by, bw, bh = target.bbox_overhead
+        if bw > 0 and bh > 0:
+            pad = 60
+            h, w = overhead_frame.shape[:2]
+            x1 = max(0, bx - pad)
+            y1 = max(0, by - pad)
+            x2 = min(w, bx + bw + pad)
+            y2 = min(h, by + bh + pad)
+            crop = overhead_frame[y1:y2, x1:x2]
+            _, crop_buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            crop_bytes = crop_buf.tobytes()
+        else:
+            crop_bytes = resp_overhead.content
+
+        side_bytes = resp_side.content
+
+        prompt = (
+            f"This object was detected at pixel ({bx + bw // 2}, {by + bh // 2}) in the overhead camera, "
+            f"world position ({target.x_mm:.0f}, {target.y_mm:.0f}, {target.z_mm:.0f}) mm. "
+            f"CV detection labeled it '{target.label}'. "
+            f"Image 1 is a cropped overhead view centered on the object. "
+            f"Image 2 is the full side camera view of the workspace. "
+            f"What is this object? Provide: "
+            f"1) specific_name (real-world product/object name), "
+            f"2) width_mm, height_mm, depth_mm (estimated dimensions), "
+            f"3) confidence (0-1), "
+            f"4) reasoning (brief explanation). "
+            f"Return as JSON with those keys."
+        )
+
+        analysis = await _gemini_multi_image_call(
+            [(crop_bytes, "image/jpeg"), (side_bytes, "image/jpeg")],
+            prompt,
+        )
+
+        if analysis:
+            if analysis.get("specific_name"):
+                target.category = analysis["specific_name"]
+                target._gemini_label = analysis["specific_name"]
+            if analysis.get("width_mm"):
+                target.width_mm = float(analysis["width_mm"])
+            if analysis.get("height_mm"):
+                target.height_mm = float(analysis["height_mm"])
+            if analysis.get("depth_mm"):
+                target.depth_mm = float(analysis["depth_mm"])
+            target._gemini_dimensions = {
+                "width_mm": analysis.get("width_mm", 0),
+                "height_mm": analysis.get("height_mm", 0),
+                "depth_mm": analysis.get("depth_mm", 0),
+            }
+            target._gemini_confidence = analysis.get("confidence", 0.5)
+            target._review_status = "re-evaluate"
+
+        crop_b64 = base64.b64encode(crop_bytes).decode("ascii")
+        side_b64 = base64.b64encode(side_bytes).decode("ascii")
+
+        action_log.add("OBJECTS_AI", f"Re-evaluated object '{target.label}' → '{analysis.get('specific_name', '?') if analysis else '?'}'", "info")
+
+        return {
+            "ok": True,
+            "object": target.to_dict(),
+            "gemini_analysis": analysis,
+            "crop_image_b64": crop_b64,
+            "side_image_b64": side_b64,
+        }
+
+    except Exception as e:
+        logger.exception("re-evaluate failed")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/objects/{obj_id}/keep")
+async def objects_keep(obj_id: str):
+    """Mark an object as kept, sync to map server."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+
+    objects = object_detector.get_objects()
+    target = None
+    for o in objects:
+        oid = getattr(o, "obj_id", None) or getattr(o, "id", None)
+        if str(oid) == obj_id:
+            target = o
+            break
+    if target is None:
+        return JSONResponse({"ok": False, "error": f"Object '{obj_id}' not found"}, status_code=404)
+
+    target._review_status = "keep"
+    action_log.add("OBJECTS", f"Object '{target.label}' marked KEEP", "info")
+
+    # Sync to map server
+    map_synced = False
+    try:
+        import httpx
+        obj_data = target.to_dict()
+        obj_data["gemini_label"] = getattr(target, "_gemini_label", None)
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post("http://localhost:8083/api/map/objects", json=obj_data)
+            map_synced = resp.status_code == 200
+    except Exception as e:
+        logger.warning("Map sync failed for keep: %s", e)
+
+    return {"ok": True, "status": "keep", "map_synced": map_synced, "object": target.to_dict()}
+
+
+@app.post("/api/objects/{obj_id}/remove")
+async def objects_remove(obj_id: str):
+    """Mark an object as removed, remove from map server if present."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse({"ok": False, "error": "Object detector not available"}, status_code=501)
+
+    objects = object_detector.get_objects()
+    target = None
+    for o in objects:
+        oid = getattr(o, "obj_id", None) or getattr(o, "id", None)
+        if str(oid) == obj_id:
+            target = o
+            break
+    if target is None:
+        return JSONResponse({"ok": False, "error": f"Object '{obj_id}' not found"}, status_code=404)
+
+    target._review_status = "remove"
+    action_log.add("OBJECTS", f"Object '{target.label}' marked REMOVE", "info")
+
+    # Remove from map server
+    map_removed = False
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.delete(f"http://localhost:8083/api/map/objects/{obj_id}")
+            map_removed = resp.status_code == 200
+    except Exception as e:
+        logger.warning("Map remove failed: %s", e)
+
+    return {"ok": True, "status": "remove", "map_removed": map_removed}
+
+
+# ---------------------------------------------------------------------------
 # Visual Pick endpoints — dual-camera object detection + autonomous grasp
 # ---------------------------------------------------------------------------
 

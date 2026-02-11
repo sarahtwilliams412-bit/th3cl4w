@@ -4796,33 +4796,40 @@ async function objPanelToggle() {
 async function objPanelRunDetect() {
   if (!_objPanelEnabled) return;
   const detectBtn = document.getElementById('objPanelDetect');
-  if (detectBtn) { detectBtn.textContent = 'DETECTING...'; detectBtn.disabled = true; }
+  if (detectBtn) { detectBtn.textContent = '⏳ AI DETECTING...'; detectBtn.disabled = true; }
   try {
-    // Run detection + get annotated snapshot (this runs detection internally)
-    const snapResp = await fetch('/api/objects/detect/snapshot', { method: 'POST' });
+    const resp = await fetch('/api/objects/detect-with-ai', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || 'Detection failed');
+
+    _objPanelObjects = data.objects || [];
 
     // Show annotated camera image
-    if (snapResp.ok) {
-      const blob = await snapResp.blob();
+    if (data.annotated_image_b64) {
       const img = document.getElementById('objDetectCamImg');
       const placeholder = document.getElementById('objDetectCamPlaceholder');
-      if (img) {
-        img.src = URL.createObjectURL(blob);
-        img.style.display = 'block';
-        img.onload = () => _objPanelDrawOverlay(_objPanelObjects);
-      }
+      if (img) { img.src = 'data:image/jpeg;base64,' + data.annotated_image_b64; img.style.display = 'block'; }
       if (placeholder) placeholder.style.display = 'none';
     }
 
-    // Now fetch the object list (detection already finished above)
-    const listResp = await fetch('/api/objects/list');
-    if (listResp.ok) {
-      const data = await listResp.json();
-      _objPanelObjects = data.objects || [];
-    } else {
-      _objPanelObjects = [];
+    // Show review panel
+    if (data.annotated_image_b64 || data.side_image) {
+      const reviewPanel = document.getElementById('scanReviewPanel');
+      if (reviewPanel) reviewPanel.style.display = 'block';
+      const ohImg = document.getElementById('scanOverheadImg');
+      if (ohImg && data.annotated_image_b64) ohImg.src = 'data:image/jpeg;base64,' + data.annotated_image_b64;
+      const sideImg = document.getElementById('scanSideImg');
+      if (sideImg && data.side_image) sideImg.src = 'data:image/jpeg;base64,' + data.side_image;
     }
-    // Item 9: Atomic update of all UI elements
+
+    // Log
+    const logEl = document.getElementById('detectionLog');
+    if (logEl) {
+      const ts = new Date().toLocaleTimeString();
+      const aiInfo = data.gemini_inventory ? ` | Gemini: ${Array.isArray(data.gemini_inventory) ? data.gemini_inventory.length : '?'} items` : ' | Gemini: skipped';
+      logEl.innerHTML = `<div>[${ts}] AI detect: ${data.count} objects (${data.elapsed_ms?.toFixed(0) || '?'}ms)${aiInfo}</div>` + logEl.innerHTML;
+    }
+
     _objPanelUpdateAll(_objPanelObjects);
   } catch (e) {
     console.error('objPanelRunDetect:', e);
@@ -4911,9 +4918,9 @@ async function objPanelSyncToSim() {
 async function scanTable(btn) {
   const statusEl = document.getElementById('scanTableStatus');
   await withFeedback(btn, async () => {
-    if (statusEl) { statusEl.style.display = 'inline'; statusEl.textContent = '⏳ Capturing + detecting...'; statusEl.style.color = 'var(--info)'; }
+    if (statusEl) { statusEl.style.display = 'inline'; statusEl.textContent = '⏳ AI scanning table...'; statusEl.style.color = 'var(--info)'; }
 
-    const resp = await fetch('/api/objects/scan-table', { method: 'POST' });
+    const resp = await fetch('/api/objects/detect-with-ai', { method: 'POST' });
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error || 'Scan failed');
 
@@ -4924,26 +4931,27 @@ async function scanTable(btn) {
     _objPanelDrawWorkspace(_objPanelObjects);
 
     // Show annotated overhead
-    if (data.overhead_image) {
+    if (data.annotated_image_b64) {
       const img = document.getElementById('objDetectCamImg');
       const ph = document.getElementById('objDetectCamPlaceholder');
-      if (img) { img.src = 'data:image/jpeg;base64,' + data.overhead_image; img.style.display = 'block'; }
+      if (img) { img.src = 'data:image/jpeg;base64,' + data.annotated_image_b64; img.style.display = 'block'; }
       if (ph) ph.style.display = 'none';
       const reviewPanel = document.getElementById('scanReviewPanel');
       if (reviewPanel) reviewPanel.style.display = 'block';
       const ohImg = document.getElementById('scanOverheadImg');
-      if (ohImg) ohImg.src = 'data:image/jpeg;base64,' + data.overhead_image;
+      if (ohImg) ohImg.src = 'data:image/jpeg;base64,' + data.annotated_image_b64;
     }
     if (data.side_image) {
       const sideImg = document.getElementById('scanSideImg');
       if (sideImg) sideImg.src = 'data:image/jpeg;base64,' + data.side_image;
     }
 
-    if (statusEl) { statusEl.textContent = `✓ Found ${data.count} objects`; statusEl.style.color = 'var(--success)'; }
+    if (statusEl) { statusEl.textContent = `✓ Found ${data.count} objects (${data.elapsed_ms?.toFixed(0) || '?'}ms)`; statusEl.style.color = 'var(--success)'; }
     const logEl = document.getElementById('detectionLog');
     if (logEl) {
       const ts = new Date().toLocaleTimeString();
-      logEl.innerHTML = `<div>[${ts}] Table scan: ${data.count} objects detected</div>` + logEl.innerHTML;
+      const aiInfo = data.gemini_inventory ? ` | Gemini: ${Array.isArray(data.gemini_inventory) ? data.gemini_inventory.length : '?'} items` : '';
+      logEl.innerHTML = `<div>[${ts}] AI table scan: ${data.count} objects${aiInfo}</div>` + logEl.innerHTML;
     }
     return { ok: true };
   }, `Scan complete: ${_objPanelObjects.length} objects found`);
@@ -5150,75 +5158,136 @@ function _objPanelRenderList(objects) {
       listEl.innerHTML = '<span style="color:#556;">No objects detected</span>';
     } else {
       listEl.innerHTML = objects.map((o, idx) => {
-        const color = _getObjColor(o.label);
+        const color = _getObjColor(o.cv_label || o.label);
         const reach = o.within_reach
           ? '<span style="color:var(--success);font-weight:bold">REACHABLE</span>'
           : '<span style="color:var(--warning)">Out of reach</span>';
         const sel = _objPanelSelectedId === o.id;
         const border = sel ? '3px solid #fff' : `4px solid ${color}`;
         const bg = sel ? 'rgba(74,144,217,0.15)' : 'rgba(255,255,255,0.02)';
-        const reviewStatus = o._review_status || 'pending';
-        const statusBadge = reviewStatus === 'confirmed'
-          ? '<span style="color:#2ecc71;font-weight:bold;">✓ Confirmed</span>'
-          : reviewStatus === 'rejected'
-          ? '<span style="color:#e74c3c;font-weight:bold;">✗ Rejected</span>'
-          : reviewStatus === 'false_positive'
-          ? '<span style="color:#f39c12;font-weight:bold;">⚠ False Positive</span>'
-          : '<span style="color:#95a5a6;">⏳ Pending review</span>';
+        const reviewStatus = o.review_status || o._review_status || 'pending';
+        const statusBadge = reviewStatus === 'keep'
+          ? '<span style="color:#2ecc71;font-weight:bold;">✓ KEEP</span>'
+          : reviewStatus === 'remove'
+          ? '<span style="color:#e74c3c;font-weight:bold;">✗ REMOVED</span>'
+          : reviewStatus === 're-evaluate'
+          ? '<span style="color:#f39c12;font-weight:bold;">🔄 RE-EVALUATED</span>'
+          : '<span style="color:#95a5a6;">⏳ Pending</span>';
+
+        // Gemini label display
+        const cvLabel = o.cv_label || o.label || '?';
+        const geminiLabel = o.gemini_label || '';
+        const labelDisplay = geminiLabel
+          ? `<span style="color:#aaa;font-size:10px;">CV:</span> <strong>${cvLabel}</strong> <span style="color:#aaa;font-size:10px;">→ AI:</span> <span style="color:#4a90d9;font-weight:bold;">${geminiLabel}</span>`
+          : `<strong>${cvLabel}</strong>`;
+
+        // Gemini dimensions
+        const gd = o.gemini_dimensions;
+        const dimInfo = gd
+          ? `<span style="font-size:10px;color:#7aa;">AI dims: ${gd.width_mm || '?'}×${gd.height_mm || '?'}×${gd.depth_mm || '?'} mm</span>`
+          : '';
+
+        // Re-evaluate inline result
+        const reEvalHtml = o._reeval_analysis
+          ? `<div id="objReeval_${o.id}" style="margin-top:6px;padding:6px;background:#1a2030;border:1px solid #444;border-radius:3px;font-size:10px;color:#ccc;line-height:1.5;">` +
+            `<strong style="color:#f1c40f;">🔍 Re-evaluation:</strong> ${o._reeval_analysis.specific_name || '?'}<br>` +
+            `Dims: ${o._reeval_analysis.width_mm || '?'}×${o._reeval_analysis.height_mm || '?'}×${o._reeval_analysis.depth_mm || '?'} mm | ` +
+            `Conf: ${((o._reeval_analysis.confidence || 0) * 100).toFixed(0)}%<br>` +
+            `${o._reeval_analysis.reasoning || ''}<br>` +
+            `<div class="btn-row" style="margin:4px 0 0;gap:4px;">` +
+              `<button class="btn" onclick="_objKeep(${idx})" style="background:#27ae60;color:#fff;padding:3px 10px;font-size:11px;">✓ KEEP</button>` +
+              `<button class="btn" onclick="_objRemove(${idx})" style="background:#e74c3c;color:#fff;padding:3px 10px;font-size:11px;">✗ REMOVE</button>` +
+            `</div></div>`
+          : `<div id="objReeval_${o.id}"></div>`;
+
         return `<div id="objListItem-${o.id}" data-obj-id="${o.id}" style="margin-bottom:8px;padding:8px;border-left:${border};background:${bg};cursor:pointer;border-radius:2px;" onclick="_objPanelSelectObj(${o.id})">` +
           `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">` +
-            `<span style="color:${color};font-size:18px;">■</span>` +
-            `<input type="text" value="${o.label}" onclick="event.stopPropagation()" onchange="_objReviewLabel(${idx}, this.value)" ` +
-              `style="background:#1a1f2e;border:1px solid #333;color:#fff;padding:2px 6px;border-radius:3px;font-family:var(--mono);font-size:12px;width:120px;" title="Edit label">` +
-            `<span> — ${reach} | ${statusBadge}</span>` +
+            `<span style="display:inline-block;width:16px;height:16px;border-radius:2px;background:${color};flex-shrink:0;"></span>` +
+            `<span>${labelDisplay}</span>` +
+            `<span style="margin-left:auto;"> ${reach} | ${statusBadge}</span>` +
           `</div>` +
-          `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">` +
+          `<div style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">` +
             `Pos: (${o.x_mm}, ${o.y_mm}, ${o.z_mm}) mm | Dist: ${o.distance_mm}mm | Conf: ${(o.confidence * 100).toFixed(0)}%` +
           `</div>` +
-          `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;" onclick="event.stopPropagation()">` +
-            `<label style="font-size:10px;color:#aaa;">W:</label>` +
-            `<input type="number" value="${o.width_mm || 0}" id="objDim_w_${idx}" style="width:50px;background:#1a1f2e;border:1px solid #333;color:#fff;padding:1px 4px;font-size:11px;border-radius:2px;" title="Width mm">` +
-            `<label style="font-size:10px;color:#aaa;">H:</label>` +
-            `<input type="number" value="${o.height_mm || 0}" id="objDim_h_${idx}" style="width:50px;background:#1a1f2e;border:1px solid #333;color:#fff;padding:1px 4px;font-size:11px;border-radius:2px;" title="Height mm">` +
-            `<label style="font-size:10px;color:#aaa;">D:</label>` +
-            `<input type="number" value="${o.depth_mm || 0}" id="objDim_d_${idx}" style="width:50px;background:#1a1f2e;border:1px solid #333;color:#fff;padding:1px 4px;font-size:11px;border-radius:2px;" title="Depth mm">` +
-          `</div>` +
+          (dimInfo ? `<div style="margin-bottom:4px;">${dimInfo}</div>` : '') +
           `<div class="btn-row" style="margin:0;gap:4px;" onclick="event.stopPropagation()">` +
-            `<button class="btn" onclick="_objReview(${idx},'confirmed')" style="background:#27ae60;color:#fff;padding:3px 10px;font-size:11px;">✓ Confirm</button>` +
-            `<button class="btn" onclick="_objReview(${idx},'rejected')" style="background:#e74c3c;color:#fff;padding:3px 10px;font-size:11px;">✗ Reject</button>` +
-            `<button class="btn" onclick="_objReview(${idx},'false_positive')" style="background:#f39c12;color:#fff;padding:3px 10px;font-size:11px;">⚠ False +</button>` +
-            `<button class="btn" onclick="openObjInspect3D(_objPanelObjects[${idx}])" style="padding:3px 10px;font-size:11px;">🔍 3D Inspect</button>` +
-            `<button class="btn" onclick="objPanelEnrich('${o.id}','${o.label}')" style="padding:3px 10px;font-size:11px;">📷 Side View</button>` +
+            `<button class="btn" onclick="_objKeep(${idx})" style="background:#27ae60;color:#fff;padding:3px 10px;font-size:11px;">✓ KEEP</button>` +
+            `<button class="btn" onclick="_objRemove(${idx})" style="background:#e74c3c;color:#fff;padding:3px 10px;font-size:11px;">✗ REMOVE</button>` +
+            `<button class="btn" onclick="_objReEvaluate(${idx})" style="background:#f39c12;color:#000;padding:3px 10px;font-size:11px;">🔄 RE-EVALUATE</button>` +
+            `<button class="btn" onclick="openObjInspect3D(_objPanelObjects[${idx}])" style="padding:3px 10px;font-size:11px;">🔍 3D</button>` +
           `</div>` +
+          reEvalHtml +
         `</div>`;
       }).join('');
     }
   }
 }
 
-// Item 8: Send review to backend
-async function _objReview(idx, status) {
+// Keep/Remove/Re-evaluate actions
+async function _objKeep(idx) {
   const o = _objPanelObjects[idx];
   if (!o) return;
-  const dims = {
-    w: parseFloat(document.getElementById(`objDim_w_${idx}`)?.value) || o.width_mm || 0,
-    h: parseFloat(document.getElementById(`objDim_h_${idx}`)?.value) || o.height_mm || 0,
-    d: parseFloat(document.getElementById(`objDim_d_${idx}`)?.value) || o.depth_mm || 0
-  };
   const objId = o.id !== undefined ? o.id : idx;
   try {
-    const resp = await fetch(`/api/objects/${objId}/review`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, label: o.label, dimensions: dims })
-    });
+    const resp = await fetch(`/api/objects/${objId}/keep`, { method: 'POST' });
     const data = await resp.json();
     if (data.ok) {
-      o._review_status = status;
-      o.width_mm = dims.w; o.height_mm = dims.h; o.depth_mm = dims.d;
+      o.review_status = 'keep';
+      o._review_status = 'keep';
       _objPanelRenderList(_objPanelObjects);
     }
-  } catch (e) { console.error('_objReview:', e); }
+  } catch (e) { console.error('_objKeep:', e); }
+}
+
+async function _objRemove(idx) {
+  const o = _objPanelObjects[idx];
+  if (!o) return;
+  const objId = o.id !== undefined ? o.id : idx;
+  try {
+    const resp = await fetch(`/api/objects/${objId}/remove`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      o.review_status = 'remove';
+      o._review_status = 'remove';
+      _objPanelRenderList(_objPanelObjects);
+    }
+  } catch (e) { console.error('_objRemove:', e); }
+}
+
+async function _objReEvaluate(idx) {
+  const o = _objPanelObjects[idx];
+  if (!o) return;
+  const objId = o.id !== undefined ? o.id : idx;
+  const reevalEl = document.getElementById(`objReeval_${o.id}`);
+  if (reevalEl) reevalEl.innerHTML = '<span style="color:#f1c40f;">⏳ Re-evaluating with Gemini (overhead + side cameras)...</span>';
+  try {
+    const resp = await fetch(`/api/objects/${objId}/re-evaluate`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok && data.gemini_analysis) {
+      o._reeval_analysis = data.gemini_analysis;
+      o.review_status = 're-evaluate';
+      o._review_status = 're-evaluate';
+      if (data.gemini_analysis.specific_name) {
+        o.gemini_label = data.gemini_analysis.specific_name;
+      }
+      if (data.object) {
+        Object.assign(o, { width_mm: data.object.width_mm, height_mm: data.object.height_mm, depth_mm: data.object.depth_mm });
+      }
+      _objPanelRenderList(_objPanelObjects);
+    } else {
+      if (reevalEl) reevalEl.innerHTML = '<span style="color:#e74c3c;">Re-evaluation failed: ' + (data.error || 'No Gemini response') + '</span>';
+    }
+  } catch (e) {
+    console.error('_objReEvaluate:', e);
+    if (reevalEl) reevalEl.innerHTML = '<span style="color:#e74c3c;">Error: ' + e.message + '</span>';
+  }
+}
+
+// Legacy review function (kept for compatibility)
+async function _objReview(idx, status) {
+  if (status === 'confirmed') return _objKeep(idx);
+  if (status === 'rejected') return _objRemove(idx);
+  if (status === 'false_positive') return _objRemove(idx);
 }
 
 // Item 8: Update label via inline edit
