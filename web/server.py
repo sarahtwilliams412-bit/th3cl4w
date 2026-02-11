@@ -2731,10 +2731,19 @@ async def bifocal_check_checkerboard():
                     results[str(cam_id)] = {"found": False, "corners_count": 0, "error": "decode failed", "name": CAMERA_NAMES.get(cam_id, f"Camera {cam_id}")}
                     continue
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                found, corners = cv2.findChessboardCorners(gray, (7, 7), None)
+                # Try multiple board sizes for robustness
+                found = False
+                corners = None
+                detected_size = None
+                for bsize in [(8, 5), (5, 8), (7, 7), (7, 5), (9, 6), (6, 9)]:
+                    found, corners = cv2.findChessboardCorners(gray, bsize, None)
+                    if found:
+                        detected_size = bsize
+                        break
                 results[str(cam_id)] = {
                     "found": bool(found),
                     "corners_count": int(len(corners)) if corners is not None else 0,
+                    "board_size": list(detected_size) if detected_size else None,
                     "resolution": [image.shape[1], image.shape[0]],
                     "name": CAMERA_NAMES.get(cam_id, f"Camera {cam_id}"),
                 }

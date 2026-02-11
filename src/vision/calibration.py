@@ -22,7 +22,7 @@ logger = logging.getLogger("th3cl4w.vision.calibration")
 
 # Default checkerboard: 15/16" = 23.8125mm squares
 DEFAULT_SQUARE_SIZE_MM = 23.8
-DEFAULT_BOARD_SIZE = (7, 5)  # inner corners (cols, rows)
+DEFAULT_BOARD_SIZE = (8, 5)  # inner corners (cols, rows)
 
 
 @dataclass
