@@ -2710,6 +2710,83 @@ class CalibScaleRequest(BaseModel):
     square_size_mm: float = Field(default=25.0, gt=0)
 
 
+CAMERA_NAMES = {CAM_SIDE: "Side", CAM_ARM: "Arm", CAM_OVERHEAD: "Overhead"}
+
+
+@app.post("/api/bifocal/check-checkerboard")
+async def bifocal_check_checkerboard():
+    """Check all connected cameras for checkerboard pattern visibility."""
+    import httpx, cv2
+
+    results = {}
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            for cam_id in [CAM_SIDE, CAM_ARM, CAM_OVERHEAD]:
+                resp = await cam_snap(client, cam_id)
+                if resp.status_code != 200 or not resp.content:
+                    results[str(cam_id)] = {"found": False, "corners_count": 0, "error": "no frame", "name": CAMERA_NAMES.get(cam_id, f"Camera {cam_id}")}
+                    continue
+                image = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
+                if image is None:
+                    results[str(cam_id)] = {"found": False, "corners_count": 0, "error": "decode failed", "name": CAMERA_NAMES.get(cam_id, f"Camera {cam_id}")}
+                    continue
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                found, corners = cv2.findChessboardCorners(gray, (7, 7), None)
+                results[str(cam_id)] = {
+                    "found": bool(found),
+                    "corners_count": int(len(corners)) if corners is not None else 0,
+                    "resolution": [image.shape[1], image.shape[0]],
+                    "name": CAMERA_NAMES.get(cam_id, f"Camera {cam_id}"),
+                }
+        action_log.add("CALIBRATION", f"Checkerboard check: {results}", "info")
+        return {"ok": True, "cameras": results}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/bifocal/diagnose-checkerboard")
+async def bifocal_diagnose_checkerboard():
+    """Send overhead camera frame to Gemini for checkerboard diagnosis."""
+    import httpx, cv2, base64
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return JSONResponse({"ok": False, "error": "GEMINI_API_KEY not set"}, status_code=400)
+
+    from src.utils.gemini_limiter import gemini_limiter
+
+    if not gemini_limiter.acquire():
+        return JSONResponse({"ok": False, "error": "Gemini rate-limited, try again later"}, status_code=429)
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await cam_snap(client, CAM_OVERHEAD)
+        if resp.status_code != 200 or not resp.content:
+            return JSONResponse({"ok": False, "error": "Failed to capture frame"}, status_code=502)
+
+        from google import genai as _genai
+        from google.genai import types as _gtypes
+
+        gclient = _genai.Client(api_key=api_key)
+        img_b64 = base64.b64encode(resp.content).decode()
+        img_bytes = base64.b64decode(img_b64)
+
+        contents = [
+            _gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+            "Is there a checkerboard calibration pattern in this image? If yes, describe its visibility. If not, what might be wrong? Consider: blur, glare, too small, obstructed, poor lighting, wrong angle, or no checkerboard present. Be concise (2-3 sentences).",
+        ]
+        config = _gtypes.GenerateContentConfig(temperature=0.2, max_output_tokens=300)
+        response = gclient.models.generate_content(model="gemini-2.0-flash", contents=contents, config=config)
+        gemini_limiter.record_success()
+
+        diagnosis = response.text.strip()
+        action_log.add("CALIBRATION", f"Gemini diagnosis: {diagnosis[:100]}", "info")
+        return {"ok": True, "diagnosis": diagnosis}
+    except Exception as e:
+        gemini_limiter.record_429()
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @app.post("/api/bifocal/calibrate-scale")
 async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
     """Calibrate real-world scale using a checkerboard pattern."""
@@ -2722,19 +2799,29 @@ async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
     from src.vision.calibration import IndependentCalibrator
     from src.config.camera_config import CAM_OVERHEAD
 
+    cam_id = CAM_OVERHEAD
+    cam_name = CAMERA_NAMES.get(cam_id, f"Camera {cam_id}")
+
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await cam_snap(client, CAM_OVERHEAD)
+            resp = await cam_snap(client, cam_id)
 
         image = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
         if image is None:
             return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
 
+        resolution = [image.shape[1], image.shape[0]]
+        logger.info("Calibration using Camera %d (%s), resolution %s", cam_id, cam_name, resolution)
+
         calibrator = IndependentCalibrator(square_size_mm=req.square_size_mm)
         result = workspace_mapper.calibrate_scale_from_checkerboard(image, calibrator, req.square_size_mm)
+
+        # Inject camera info into result
+        result["camera"] = {"id": cam_id, "name": cam_name, "resolution": resolution}
+
         if result["ok"]:
             action_log.add(
-                "CALIBRATION", f"Scale calibrated: factor={result['scale_factor']}", "info"
+                "CALIBRATION", f"Scale calibrated: factor={result['scale_factor']} (cam {cam_id} {cam_name} {resolution})", "info"
             )
         else:
             action_log.add(
@@ -2873,6 +2960,10 @@ async def objects_detect():
         if resp_side is not None and resp_side.status_code == 200:
             side_frame = cv2.imdecode(np.frombuffer(resp_side.content, np.uint8), cv2.IMREAD_COLOR)
 
+        # Feed workspace_mapper scale calibration into detector if available
+        if workspace_mapper is not None and workspace_mapper.scale_calibrated:
+            object_detector._scale = workspace_mapper._scale_factor
+
         result = object_detector.detect_from_overhead(overhead_frame, side_frame)
         return {"ok": True, **result}
 
@@ -2924,7 +3015,9 @@ async def objects_detect_snapshot():
         if resp_side is not None and resp_side.status_code == 200:
             side_frame = cv2.imdecode(np.frombuffer(resp_side.content, np.uint8), cv2.IMREAD_COLOR)
 
-        # Run detection
+        # Run detection (feed calibration scale if available)
+        if workspace_mapper is not None and workspace_mapper.scale_calibrated:
+            object_detector._scale = workspace_mapper._scale_factor
         object_detector.detect_from_overhead(overhead_frame, side_frame)
 
         # Annotate the frame with detection overlays
@@ -3059,6 +3152,53 @@ async def objects_clear():
     return {"ok": True}
 
 
+class ObjectReviewRequest(BaseModel):
+    status: str = Field(pattern="^(confirmed|rejected|false_positive)$")
+    label: Optional[str] = None
+    dimensions: Optional[Dict[str, float]] = None  # {w, h, d} in mm
+
+
+@app.post("/api/objects/{obj_id}/review")
+async def objects_review(obj_id: str, req: ObjectReviewRequest):
+    """Review a detected object: confirm, reject, or mark as false positive."""
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
+    objects = object_detector.get_objects()
+    target = None
+    for o in objects:
+        oid = getattr(o, "id", None) or getattr(o, "label", None)
+        if str(oid) == obj_id or getattr(o, "label", "") == obj_id:
+            target = o
+            break
+    if target is None:
+        # Try by index
+        try:
+            idx = int(obj_id)
+            if 0 <= idx < len(objects):
+                target = objects[idx]
+        except (ValueError, IndexError):
+            pass
+    if target is None:
+        return JSONResponse({"ok": False, "error": f"Object '{obj_id}' not found"}, status_code=404)
+
+    # Store review state on the object
+    target._review_status = req.status
+    if req.label is not None:
+        target.label = req.label
+    if req.dimensions is not None:
+        if "w" in req.dimensions:
+            target.width_mm = req.dimensions["w"]
+        if "h" in req.dimensions:
+            target.height_mm = req.dimensions["h"]
+        if "d" in req.dimensions:
+            target.depth_mm = req.dimensions["d"]
+
+    action_log.add("OBJECTS", f"Object '{getattr(target, 'label', obj_id)}' reviewed: {req.status}", "info")
+    return {"ok": True, "status": req.status, "label": getattr(target, "label", obj_id)}
+
+
 @app.get("/api/objects/config")
 async def objects_config_get():
     """Return current object detection configuration."""
@@ -3131,6 +3271,8 @@ async def objects_scan():
             side_frame = cv2.imdecode(np.frombuffer(resp_side.content, np.uint8), cv2.IMREAD_COLOR)
 
         # Run full detection pipeline (includes height estimation + LLM labeling)
+        if workspace_mapper is not None and workspace_mapper.scale_calibrated:
+            object_detector._scale = workspace_mapper._scale_factor
         result = object_detector.detect_from_overhead(overhead_frame, side_frame)
 
         # Generate annotated overhead image
@@ -3158,6 +3300,191 @@ async def objects_scan():
         }
 
     except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/objects/scan-table")
+async def objects_scan_table():
+    """Scan the table: capture overhead, run detection, return all objects.
+
+    This is the primary 'Scan Table' action for the Object Detection panel.
+    Auto-enables detector if needed. Returns objects + annotated images.
+    """
+    import base64
+
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
+
+    # Auto-enable if needed
+    if not object_detector.enabled:
+        object_detector.enable()
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp_overhead = await cam_snap(client, CAM_OVERHEAD)
+            resp_side = None
+            try:
+                resp_side = await cam_snap(client, CAM_SIDE)
+            except Exception:
+                pass
+
+        if resp_overhead.status_code != 200:
+            return JSONResponse(
+                {"ok": False, "error": "Overhead camera snapshot failed"}, status_code=502
+            )
+
+        overhead_frame = cv2.imdecode(
+            np.frombuffer(resp_overhead.content, np.uint8), cv2.IMREAD_COLOR
+        )
+        if overhead_frame is None:
+            return JSONResponse(
+                {"ok": False, "error": "Failed to decode overhead frame"}, status_code=502
+            )
+
+        side_frame = None
+        if resp_side is not None and resp_side.status_code == 200:
+            side_frame = cv2.imdecode(np.frombuffer(resp_side.content, np.uint8), cv2.IMREAD_COLOR)
+
+        # Run detection
+        result = object_detector.detect_from_overhead(overhead_frame, side_frame)
+
+        # Generate annotated image
+        annotated = object_detector.annotate_frame(overhead_frame)
+        _, oh_buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        overhead_b64 = base64.b64encode(oh_buf.tobytes()).decode("ascii")
+
+        side_b64 = None
+        if side_frame is not None:
+            _, side_buf = cv2.imencode(".jpg", side_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            side_b64 = base64.b64encode(side_buf.tobytes()).decode("ascii")
+
+        objects = [o.to_dict() for o in object_detector.get_objects()]
+        action_log.add("OBJECTS", f"Table scan: {len(objects)} objects detected", "info")
+
+        return {
+            "ok": True,
+            "objects": objects,
+            "count": len(objects),
+            "overhead_image": overhead_b64,
+            "side_image": side_b64,
+            "timestamp": time.time(),
+        }
+
+    except Exception as e:
+        logger.exception("scan-table failed")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/objects/{obj_id}/enrich")
+async def objects_enrich(obj_id: str):
+    """Enrich an object with a side camera snap and optional Gemini analysis.
+
+    Captures from CAM_SIDE, optionally sends to Gemini for identification,
+    and attaches the result to the object's metadata.
+    """
+    import base64
+
+    if not _HAS_OBJECT_DETECT or object_detector is None:
+        return JSONResponse(
+            {"ok": False, "error": "Object detector not available"}, status_code=501
+        )
+
+    # Find the object
+    objects = object_detector.get_objects()
+    target = None
+    for o in objects:
+        oid = getattr(o, "obj_id", None) or getattr(o, "id", None)
+        if str(oid) == obj_id or getattr(o, "label", "") == obj_id:
+            target = o
+            break
+    if target is None:
+        try:
+            idx = int(obj_id)
+            if 0 <= idx < len(objects):
+                target = objects[idx]
+        except (ValueError, IndexError):
+            pass
+    if target is None:
+        return JSONResponse({"ok": False, "error": f"Object '{obj_id}' not found"}, status_code=404)
+
+    import httpx
+
+    try:
+        # Capture side camera
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp_side = await cam_snap(client, CAM_SIDE)
+
+        if resp_side.status_code != 200:
+            return JSONResponse(
+                {"ok": False, "error": "Side camera snapshot failed"}, status_code=502
+            )
+
+        side_b64 = base64.b64encode(resp_side.content).decode("ascii")
+
+        # Optional Gemini analysis
+        gemini_analysis = None
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if api_key:
+            try:
+                from google import genai as _genai
+                from google.genai import types as _gtypes
+
+                gclient = _genai.Client(api_key=api_key)
+                contents = [
+                    _gtypes.Part.from_bytes(data=resp_side.content, mime_type="image/jpeg"),
+                    f"This is a side-view photo of a robotic arm workspace. "
+                    f"There is an object labeled '{target.label}' at approximately "
+                    f"({target.x_mm:.0f}, {target.y_mm:.0f}, {target.z_mm:.0f}) mm from the arm base. "
+                    f"Identify this object more precisely. What is it? Estimate its dimensions in mm. "
+                    f"Respond as JSON: {{\"name\": \"...\", \"description\": \"...\", "
+                    f"\"estimated_width_mm\": N, \"estimated_height_mm\": N, \"estimated_depth_mm\": N}}"
+                ]
+                config = _gtypes.GenerateContentConfig(
+                    temperature=0.2, max_output_tokens=500,
+                    response_mime_type="application/json",
+                )
+                response = gclient.models.generate_content(
+                    model="gemini-2.0-flash", contents=contents, config=config,
+                )
+                import re
+                raw = response.text.strip()
+                clean = re.sub(r"^```(?:json)?\s*", "", raw)
+                clean = re.sub(r"\s*```$", "", clean.strip())
+                gemini_analysis = json.loads(clean)
+
+                # Update object metadata from Gemini
+                if gemini_analysis.get("name"):
+                    target.category = gemini_analysis["name"]
+                if gemini_analysis.get("estimated_width_mm"):
+                    target.width_mm = float(gemini_analysis["estimated_width_mm"])
+                if gemini_analysis.get("estimated_height_mm"):
+                    target.height_mm = float(gemini_analysis["estimated_height_mm"])
+                if gemini_analysis.get("estimated_depth_mm"):
+                    target.depth_mm = float(gemini_analysis["estimated_depth_mm"])
+            except Exception as e:
+                gemini_analysis = {"error": str(e)}
+
+        # Store side image reference on the object
+        if not hasattr(target, "_enrichment"):
+            target._enrichment = {}
+        target._enrichment["side_image_b64"] = side_b64
+        target._enrichment["gemini_analysis"] = gemini_analysis
+
+        action_log.add("OBJECTS", f"Object '{target.label}' enriched with side view", "info")
+
+        return {
+            "ok": True,
+            "object": target.to_dict(),
+            "side_image": side_b64,
+            "gemini_analysis": gemini_analysis,
+        }
+
+    except Exception as e:
+        logger.exception("enrich failed")
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 

@@ -1060,15 +1060,22 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <div class="panel-card">
         <h3>Scale Calibration</h3>
         <p style="font-size:11px;color:#888;margin:4px 0;">Place a checkerboard in view of the overhead camera, then calibrate to establish pixel-to-mm scale.</p>
+        <div id="wsCalibCameraInfo" style="font-size:11px;color:#6cf;margin:4px 0;display:none;"></div>
+        <div id="wsCalibStatus" style="font-size:12px;color:#ff0;margin:6px 0;display:none;"></div>
+        <div id="wsCalibPreviewBox" style="margin:8px 0;display:none;">
+          <img id="wsCalibLivePreview" style="width:100%;max-width:480px;background:#0d1525;border-radius:4px;border:1px solid #333;" alt="Calibration camera preview">
+        </div>
         <div class="form-row" style="margin-top:6px;">
           <label>Square size (mm)</label>
           <input type="number" id="wsCalibSquareMm" value="25" min="1" max="100" step="0.1" style="width:80px;">
         </div>
         <div class="btn-row" style="margin-top:8px;">
-          <button class="btn primary" onclick="wsCalibScale()">CALIBRATE</button>
+          <button class="btn primary" id="wsCalibBtn" onclick="wsCalibScale()">CALIBRATE</button>
           <button class="btn" onclick="wsCalibPreview()">PREVIEW</button>
+          <button class="btn" onclick="wsCalibCheckAll()">CHECK ALL CAMERAS</button>
         </div>
         <div class="result-box" id="wsCalibResult" style="margin-top:8px;display:none;"></div>
+        <div id="wsCalibDiagnosis" style="margin-top:8px;display:none;padding:8px;background:#1a1a2e;border:1px solid #444;border-radius:4px;font-size:12px;color:#ddd;"></div>
       </div>
     </div>
   </div>
@@ -1109,11 +1116,11 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
             Enable detection and click DETECT NOW<br>to see camera overlay with detected objects
           </div>
           <img id="objDetectCamImg" style="width:100%;display:none;border-radius:4px;" alt="Detection overlay">
+          <canvas id="objDetectOverlayCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;pointer-events:none;"></canvas>
         </div>
         <p style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:6px;line-height:1.4;">
           Overhead camera (cam1) with bounding boxes, circles, and labels for each detected object.
-          <strong style="color:var(--success)">Green</strong> = within reach |
-          <strong style="color:var(--warning)">Orange</strong> = out of reach
+          Color coding matches the object list below.
         </p>
       </div>
 
@@ -1130,10 +1137,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       </div>
     </div>
 
-    <!-- Object list -->
+    <!-- Object list / Review Panel -->
     <div class="panel-card">
-      <h3>Detected Objects</h3>
-      <div class="result-box" id="objPanelList" style="max-height:200px;">No objects detected</div>
+      <h3>Detected Objects <span id="objPanelCountBadge" style="background:#333;color:#aaa;padding:2px 8px;border-radius:10px;font-size:11px;margin-left:8px;">0</span></h3>
+      <div class="result-box" id="objPanelList" style="max-height:400px;overflow-y:auto;">No objects detected</div>
     </div>
 
     <!-- Scan & Review Workflow -->
@@ -2043,6 +2050,47 @@ function toggleNavGroup(el) {
 
 let _activePanel = 'control';
 
+// =====================================================//  PANEL STATE PERSISTENCE
+// =====================================================
+// Module-level state that survives panel navigation
+const _panelState = {
+  'object-detect': { objects: [], enabled: false },
+  'visual-servo': { overhead: { target: '', cam: '1' }, approach: { target: '', maxSteps: 25 } },
+  'auto-pick': { target: 'redbull', mode: 'auto' },
+  'pick-planner': { detectTarget: '', target: '', pos: { x: '', y: '', z: '' } },
+  'vla': { prompt: '' },
+  'bifocal': { squareMm: 25 },
+  'multiview-pick': { target: '' },
+  'scan3d': {},
+  'locate': { target: '', cam: '1' },
+  'scene-analysis': { cam: '1', prompt: '' },
+};
+
+function _savePanelInputs(panelId) {
+  const panel = document.getElementById('panel-' + panelId);
+  if (!panel) return;
+  const state = _panelState[panelId];
+  if (!state) return;
+  // Auto-save all inputs with an id inside this panel
+  panel.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+    state['__input_' + el.id] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+}
+
+function _restorePanelInputs(panelId) {
+  const panel = document.getElementById('panel-' + panelId);
+  if (!panel) return;
+  const state = _panelState[panelId];
+  if (!state) return;
+  panel.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+    const key = '__input_' + el.id;
+    if (key in state) {
+      if (el.type === 'checkbox') el.checked = state[key];
+      else el.value = state[key];
+    }
+  });
+}
+
 function showPanelById(panelId) {
   const navItem = document.querySelector(`.nav-item[data-panel="${panelId}"]`);
   if (navItem) showPanel(navItem, true);
@@ -2057,8 +2105,11 @@ function showPanel(navItem, skipHash) {
 
   const PICK_PANELS = ['auto-pick', 'visual-servo', 'multiview-pick', 'pick-planner', 'vla'];
 
-  // Deactivate previous
+  // Save state of previous panel
   const prevPanel = _activePanel;
+  _savePanelInputs(prevPanel);
+
+  // Deactivate previous
   if (PICK_PANELS.includes(prevPanel) && typeof deactivateMiniSim === 'function') deactivateMiniSim(prevPanel);
   if (prevPanel === 'ascii' && typeof asciiDisconnect === 'function') asciiDisconnect();
   if (prevPanel === 'factory' && typeof fw_deactivate === 'function') fw_deactivate();
@@ -2205,6 +2256,60 @@ function makeThrottle(fn, ms=50) {
     if(now-lastCall>=ms){lastCall=now;fn(...args);}
     else{clearTimeout(timer);timer=setTimeout(()=>{lastCall=Date.now();fn(...args);},ms-(now-lastCall));}
   };
+}
+
+// =====================================================//  TOAST NOTIFICATIONS
+// =====================================================
+(function() {
+  const container = document.createElement('div');
+  container.className = 'toast-container';
+  document.body.appendChild(container);
+  window._toastContainer = container;
+})();
+
+function toast(message, type='info', durationMs=3000) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = message;
+  window._toastContainer.appendChild(el);
+  setTimeout(() => { el.classList.add('removing'); setTimeout(() => el.remove(), 200); }, durationMs);
+}
+
+// =====================================================//  withFeedback — universal button wrapper
+// =====================================================
+async function withFeedback(btn, asyncFn, successMsg) {
+  if (!btn || btn.disabled) return null;
+  const origText = btn.textContent;
+  const origBg = btn.style.background;
+  const origBorder = btn.style.borderColor;
+  btn.disabled = true;
+  btn.textContent = '⏳ ...';
+  try {
+    const result = await asyncFn();
+    const ok = result && (result.ok !== false);
+    btn.textContent = origText;
+    if (ok) {
+      btn.style.background = 'rgba(83,215,105,0.25)';
+      btn.style.borderColor = 'var(--success)';
+      if (successMsg) toast(successMsg, 'success');
+    } else {
+      const errMsg = (result && result.error) || 'Operation failed';
+      btn.style.background = 'rgba(233,69,96,0.25)';
+      btn.style.borderColor = 'var(--danger)';
+      toast('✗ ' + errMsg, 'error');
+    }
+    setTimeout(() => { btn.style.background = origBg; btn.style.borderColor = origBorder; }, 600);
+    btn.disabled = false;
+    return result;
+  } catch(e) {
+    btn.textContent = origText;
+    btn.style.background = 'rgba(233,69,96,0.25)';
+    btn.style.borderColor = 'var(--danger)';
+    toast('✗ ' + e.message, 'error');
+    setTimeout(() => { btn.style.background = origBg; btn.style.borderColor = origBorder; }, 800);
+    btn.disabled = false;
+    return null;
+  }
 }
 
 // Generic API helper
@@ -2929,29 +3034,37 @@ function renderDebugEvents(events) {
 // =====================================================
 // --- Visual Servo ---
 async function vsStart(mode) {
+  const btn = event && event.target;
   const resultId = mode === 'overhead' ? 'vsOverheadResult' : 'vsApproachResult';
-  let url, body;
-  if (mode === 'overhead') {
-    const target = document.getElementById('vsOhTarget').value.trim() || 'redbull';
-    const cam = parseInt(document.getElementById('vsOhCam').value);
-    url = '/api/servo/visual-servo';
-    body = { target: target, camera_id: cam };
-  } else {
-    const target = document.getElementById('vsApTarget').value.trim() || 'red bull can';
-    const maxSteps = parseInt(document.getElementById('vsApMaxSteps').value) || 25;
-    url = '/api/servo/approach';
-    body = { target: target, max_steps: maxSteps };
-  }
-  const data = await apiPost(url, body);
-  showResult(resultId, data);
-  vsStatus(mode);
+  await withFeedback(btn, async () => {
+    let url, body;
+    if (mode === 'overhead') {
+      const target = document.getElementById('vsOhTarget').value.trim() || 'redbull';
+      const cam = parseInt(document.getElementById('vsOhCam').value);
+      url = '/api/servo/visual-servo';
+      body = { target: target, camera_id: cam };
+    } else {
+      const target = document.getElementById('vsApTarget').value.trim() || 'red bull can';
+      const maxSteps = parseInt(document.getElementById('vsApMaxSteps').value) || 25;
+      url = '/api/servo/approach';
+      body = { target: target, max_steps: maxSteps };
+    }
+    const data = await apiPost(url, body);
+    showResult(resultId, data);
+    vsStatus(mode);
+    return data;
+  }, `${mode} servo started`);
 }
 async function vsStop(mode) {
-  const url = mode === 'overhead' ? '/api/servo/visual-servo/stop' : '/api/servo/stop';
-  const resultId = mode === 'overhead' ? 'vsOverheadResult' : 'vsApproachResult';
-  const data = await apiPost(url);
-  showResult(resultId, data);
-  vsStatus(mode);
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    const url = mode === 'overhead' ? '/api/servo/visual-servo/stop' : '/api/servo/stop';
+    const resultId = mode === 'overhead' ? 'vsOverheadResult' : 'vsApproachResult';
+    const data = await apiPost(url);
+    showResult(resultId, data);
+    vsStatus(mode);
+    return data;
+  }, `${mode} servo stopped`);
 }
 async function vsStatus(mode) {
   const url = mode === 'overhead' ? '/api/servo/visual-servo/status' : '/api/servo/status';
@@ -3255,16 +3368,105 @@ function wsCalibStopStreams() {
     if (img) img.src = '';
   }
 }
+function wsCalibSetStatus(msg, color) {
+  const el = document.getElementById('wsCalibStatus');
+  if (!msg) { el.style.display = 'none'; return; }
+  el.style.display = 'block'; el.style.color = color || '#ff0'; el.textContent = msg;
+}
+function wsCalibShowPreview(camId) {
+  const box = document.getElementById('wsCalibPreviewBox');
+  const img = document.getElementById('wsCalibLivePreview');
+  box.style.display = 'block';
+  img.src = getMjpegUrl(camId);
+  document.getElementById('wsCalibCameraInfo').style.display = 'block';
+  document.getElementById('wsCalibCameraInfo').textContent = `Active: Camera ${camId} (${({0:'Side',1:'Arm',2:'Overhead'})[camId] || 'Unknown'})`;
+}
+function wsCalibHidePreview() {
+  const img = document.getElementById('wsCalibLivePreview');
+  img.src = '';
+  document.getElementById('wsCalibPreviewBox').style.display = 'none';
+}
 async function wsCalibScale() {
-  const sq = parseFloat(document.getElementById('wsCalibSquareMm').value) || 25;
-  showResult('wsCalibResult', await apiPost('/api/bifocal/calibrate-scale', {square_size_mm: sq}));
+  const btn = document.getElementById('wsCalibBtn');
+  const diagEl = document.getElementById('wsCalibDiagnosis');
+  diagEl.style.display = 'none';
+  btn.disabled = true;
+
+  // Show live preview of calibration camera (overhead = 2)
+  wsCalibShowPreview(2);
+  wsCalibSetStatus('Checking cameras...', '#ff0');
+
+  try {
+    // Step 1: Check checkerboard on all cameras
+    const check = await apiPost('/api/bifocal/check-checkerboard', {});
+    if (!check.ok) { wsCalibSetStatus('Camera check failed: ' + (check.error || ''), '#f44'); btn.disabled = false; return; }
+
+    const overhead = check.cameras && check.cameras['2'];
+    if (!overhead || !overhead.found) {
+      // Gatekeeping: checkerboard not found
+      const camName = overhead ? overhead.name : 'Overhead';
+      wsCalibSetStatus(`No checkerboard detected in Camera 2 (${camName}). Ensure the checkerboard is flat, well-lit, and fully visible.`, '#f44');
+      showResult('wsCalibResult', {ok: false, error: `Checkerboard not found in Camera 2 (${camName})`});
+
+      // Vision diagnosis via Gemini
+      wsCalibSetStatus('Asking Gemini for diagnosis...', '#fa0');
+      try {
+        const diag = await apiPost('/api/bifocal/diagnose-checkerboard', {});
+        if (diag.ok && diag.diagnosis) {
+          diagEl.style.display = 'block';
+          diagEl.innerHTML = '<strong>🔍 Gemini Diagnosis:</strong> ' + diag.diagnosis;
+        }
+      } catch(e) { /* ignore diagnosis failure */ }
+      wsCalibSetStatus('Checkerboard not detected — see guidance above', '#f44');
+      btn.disabled = false;
+      return;
+    }
+
+    // Step 2: Checkerboard found, proceed with calibration
+    wsCalibSetStatus('Detecting checkerboard... ✓ Found! Calibrating...', '#0f0');
+    document.getElementById('wsCalibCameraInfo').textContent = `Active: Camera 2 (${overhead.name}) — ${overhead.resolution[0]}×${overhead.resolution[1]}`;
+
+    const sq = parseFloat(document.getElementById('wsCalibSquareMm').value) || 25;
+    const result = await apiPost('/api/bifocal/calibrate-scale', {square_size_mm: sq});
+
+    if (result.ok) {
+      wsCalibSetStatus('Calibration complete ✓', '#0f0');
+      if (result.camera) {
+        result.message = (result.message || '') + ` [Camera ${result.camera.id} (${result.camera.name}) ${result.camera.resolution[0]}×${result.camera.resolution[1]}]`;
+      }
+    } else {
+      wsCalibSetStatus('Calibration failed: ' + (result.error || ''), '#f44');
+    }
+    showResult('wsCalibResult', result);
+  } catch(e) {
+    wsCalibSetStatus('Error: ' + e.message, '#f44');
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function wsCalibCheckAll() {
+  wsCalibSetStatus('Checking all cameras for checkerboard...', '#ff0');
+  try {
+    const data = await apiPost('/api/bifocal/check-checkerboard', {});
+    if (data.ok && data.cameras) {
+      let lines = [];
+      for (const [id, info] of Object.entries(data.cameras)) {
+        const icon = info.found ? '✅' : '❌';
+        lines.push(`${icon} Camera ${id} (${info.name}): ${info.found ? info.corners_count + ' corners' : 'not found'}${info.resolution ? ' [' + info.resolution.join('×') + ']' : ''}`);
+      }
+      showResult('wsCalibResult', {ok: true, message: lines.join('\n')});
+    } else {
+      showResult('wsCalibResult', data);
+    }
+  } catch(e) { showResult('wsCalibResult', {ok: false, error: e.message}); }
+  wsCalibSetStatus('', '');
 }
 async function wsCalibPreview() {
-  // Grab fresh snapshots from all cameras and display them
   for (let i = 0; i < 3; i++) {
     const img = document.getElementById(`wsCalibImg${i}`);
     if (img) img.src = getSnapUrl(i) + '?t=' + Date.now();
   }
+  wsCalibShowPreview(2);
   showResult('wsCalibResult', {ok: true, message: 'Camera snapshots refreshed'});
 }
 
@@ -4427,6 +4629,22 @@ async function pickCfgReset() {
 // =====================================================
 let _objPanelEnabled = false;
 let _objPanelObjects = [];
+let _objPanelSelectedId = null; // Shared selection state (item 12)
+
+// Item 7: Consistent color palette for object classes
+const _OBJ_COLORS = [
+  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+  '#DDA0DD', '#FF8C42', '#98D8C8', '#F7DC6F', '#BB8FCE',
+  '#85C1E9', '#F0B27A', '#82E0AA', '#F1948A', '#AED6F1'
+];
+const _objColorMap = {};
+function _getObjColor(label) {
+  if (!_objColorMap[label]) {
+    const idx = Object.keys(_objColorMap).length % _OBJ_COLORS.length;
+    _objColorMap[label] = _OBJ_COLORS[idx];
+  }
+  return _objColorMap[label];
+}
 
 async function objPanelToggle() {
   try {
@@ -4534,7 +4752,10 @@ function _objPanelRenderList(objects) {
         const reach = o.within_reach
           ? '<span style="color:var(--success);font-weight:bold">REACHABLE</span>'
           : '<span style="color:var(--warning)">Out of reach</span>';
-        return `<div style="margin-bottom:6px;padding:4px;border-left:3px solid ${o.within_reach ? 'var(--success)' : 'var(--warning)'}">` +
+        const sel = _objPanelSelectedId === o.id;
+        const border = sel ? '3px solid #fff' : `3px solid ${o.within_reach ? 'var(--success)' : 'var(--warning)'}`;
+        const bg = sel ? 'rgba(74,144,217,0.15)' : 'transparent';
+        return `<div id="objListItem-${o.id}" data-obj-id="${o.id}" style="margin-bottom:6px;padding:4px;border-left:${border};background:${bg};cursor:pointer;transition:background 0.15s;" onclick="_objPanelSelectObj(${o.id})">` +
           `<span style="color:${o.color_hex}">\u25A0</span> <strong>${o.label}</strong> — ${reach}<br>` +
           `Pos: (${o.x_mm}, ${o.y_mm}, ${o.z_mm}) mm<br>` +
           `Size: ${o.width_mm}x${o.depth_mm}x${o.height_mm} mm<br>` +
@@ -4544,11 +4765,54 @@ function _objPanelRenderList(objects) {
   }
 }
 
+/** Shared selection handler — selects/deselects an object across map, list, and overlay */
+function _objPanelSelectObj(objId) {
+  _objPanelSelectedId = (_objPanelSelectedId === objId) ? null : objId;
+  _objPanelRenderList(_objPanelObjects);
+  _objPanelDrawWorkspace(_objPanelObjects);
+  // Scroll list item into view
+  if (_objPanelSelectedId !== null) {
+    const el = document.getElementById('objListItem-' + _objPanelSelectedId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  // Highlight on camera overlay (redraw detection image with highlight)
+  _objPanelHighlightOverlay();
+}
+
+/** Draw highlight rectangle on camera overlay for selected object */
+function _objPanelHighlightOverlay() {
+  const img = document.getElementById('objDetectCamImg');
+  const container = document.getElementById('objDetectCamView');
+  if (!img || !container) return;
+  // Remove existing highlights
+  container.querySelectorAll('.obj-highlight-overlay').forEach(e => e.remove());
+  if (_objPanelSelectedId === null || !img.naturalWidth) return;
+  const obj = _objPanelObjects.find(o => o.id === _objPanelSelectedId);
+  if (!obj || !obj.bbox) return;
+  const [bx, by, bw, bh] = obj.bbox;
+  if (bw === 0 && bh === 0) return;
+  // Scale bbox to displayed image size
+  const dispW = img.clientWidth;
+  const dispH = img.clientHeight;
+  const natW = img.naturalWidth;
+  const natH = img.naturalHeight;
+  const sx = dispW / natW;
+  const sy = dispH / natH;
+  const rect = document.createElement('div');
+  rect.className = 'obj-highlight-overlay';
+  rect.style.cssText = `position:absolute;left:${img.offsetLeft + bx*sx}px;top:${img.offsetTop + by*sy}px;width:${bw*sx}px;height:${bh*sy}px;border:2px solid #fff;box-shadow:0 0 8px rgba(255,255,255,0.6);pointer-events:none;z-index:10;border-radius:3px;`;
+  container.appendChild(rect);
+}
+
+// Store object hit areas for click detection (item 12)
+let _objMapHitAreas = [];
+
 /**
  * Draw a 2D top-down workspace map on canvas showing:
  * - Grid lines
  * - Arm reach circle (550mm)
  * - Arm base at center
+ * - Arm EE position (from live state)
  * - Detected objects as colored dots with labels
  */
 function _objPanelDrawWorkspace(objects) {
@@ -4566,6 +4830,8 @@ function _objPanelDrawWorkspace(objects) {
   const WS_RANGE = 800; // mm total
   const REACH_MM = 550;
   const scale = W / WS_RANGE; // px per mm
+
+  _objMapHitAreas = [];
 
   // Clear
   ctx.fillStyle = '#0a0f1a';
@@ -4621,6 +4887,51 @@ function _objPanelDrawWorkspace(objects) {
   ctx.textAlign = 'center';
   ctx.fillText('ARM BASE', cx, cy + 14);
 
+  // Draw arm EE position if available (item 11)
+  if (window._lastArmState && window._lastArmState.joints) {
+    try {
+      // Simple 2-joint FK approximation for top-down view:
+      // L1 = 350mm (upper arm), L2 = 200mm (forearm)
+      const j = window._lastArmState.joints;
+      const j0rad = j[0] * Math.PI / 180; // base rotation
+      const j1rad = j[1] * Math.PI / 180; // shoulder
+      const j2rad = j[2] * Math.PI / 180; // elbow
+      const L1 = 350, L2 = 200;
+      const reach = L1 * Math.cos(j1rad) + L2 * Math.cos(j1rad + j2rad);
+      const eeX = reach * Math.sin(j0rad); // mm
+      const eeY = reach * Math.cos(j0rad); // mm
+      const eePx = cx + eeX * scale;
+      const eePy = cy - eeY * scale;
+
+      // Draw line from base to EE
+      ctx.strokeStyle = '#4a90d9';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(eePx, eePy);
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+
+      // EE dot
+      ctx.fillStyle = '#4a90d9';
+      ctx.beginPath();
+      ctx.arc(eePx, eePy, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#6ab0ff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(eePx, eePy, 5, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // EE label
+      ctx.fillStyle = '#6ab0ff';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('EE', eePx, eePy - 8);
+    } catch (e) { /* ignore FK errors */ }
+  }
+
   // Draw each detected object
   for (const obj of objects) {
     // Convert mm to canvas px
@@ -4630,6 +4941,7 @@ function _objPanelDrawWorkspace(objects) {
 
     const color = obj.within_reach ? '#44ff88' : '#ff8844';
     const objColor = obj.color_hex || '#ff8800';
+    const isSelected = (_objPanelSelectedId === obj.id);
 
     // Distance line from base to object
     ctx.strokeStyle = color;
@@ -4646,24 +4958,35 @@ function _objPanelDrawWorkspace(objects) {
     // Object circle (size based on object dimensions)
     const objRadius = Math.max(6, Math.max(obj.width_mm || 20, obj.depth_mm || 20) * scale * 0.5);
 
+    // Selection glow ring
+    if (isSelected) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.arc(objPx, objPy, objRadius + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+    }
+
     // Filled circle with object's actual color
     ctx.fillStyle = objColor;
-    ctx.globalAlpha = 0.6;
+    ctx.globalAlpha = isSelected ? 0.9 : 0.6;
     ctx.beginPath();
     ctx.arc(objPx, objPy, objRadius, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1.0;
 
     // Outline
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = isSelected ? '#fff' : color;
+    ctx.lineWidth = isSelected ? 2.5 : 2;
     ctx.beginPath();
     ctx.arc(objPx, objPy, objRadius, 0, Math.PI * 2);
     ctx.stroke();
 
     // Label
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = isSelected ? '#fff' : '#ccc';
+    ctx.font = (isSelected ? 'bold 11px' : 'bold 10px') + ' monospace';
     ctx.textAlign = 'center';
     ctx.fillText(obj.label.toUpperCase(), objPx, objPy - objRadius - 8);
 
@@ -4676,6 +4999,9 @@ function _objPanelDrawWorkspace(objects) {
     ctx.fillStyle = color;
     ctx.font = '8px monospace';
     ctx.fillText(obj.within_reach ? 'REACH' : 'FAR', objPx, objPy + objRadius + 10);
+
+    // Store hit area for click detection (item 12)
+    _objMapHitAreas.push({ id: obj.id, x: objPx, y: objPy, r: Math.max(objRadius, 12) });
   }
 
   // Legend
