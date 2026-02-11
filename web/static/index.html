@@ -1241,15 +1241,15 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <h3>Scan Control</h3>
       <div class="status-indicator stopped" id="scan3dStatus">IDLE</div>
       <div class="btn-row" style="margin-top:8px;">
-        <button class="btn primary" onclick="scan3dStart()">▶ START SCAN</button>
-        <button class="btn danger" onclick="scan3dStop()">⏹ STOP</button>
+        <button class="btn primary" onclick="scan3dStart(this)">▶ START SCAN</button>
+        <button class="btn danger" onclick="scan3dStop(this)">⏹ STOP</button>
         <button class="btn" onclick="scan3dRefresh()">↻ STATUS</button>
       </div>
       <div class="result-box" id="scan3dResult" style="margin-top:8px;display:none;"></div>
     </div>
     <div class="panel-card">
       <h3>Scan History</h3>
-      <button class="btn" onclick="scan3dList()">📋 LIST SCANS</button>
+      <button class="btn" onclick="scan3dList(this)">📋 LIST SCANS</button>
       <div class="result-box" id="scan3dListResult" style="margin-top:8px;display:none;"></div>
     </div>
   </div>
@@ -3566,10 +3566,10 @@ async function wsCalibPreview() {
 }
 
 // --- 3D Scan ---
-async function scan3dStart() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiPost('/api/scan/start'); showResult('scan3dResult', d); scan3dRefresh(); return d; }, 'Scan started'); }
-async function scan3dStop() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiPost('/api/scan/stop'); showResult('scan3dResult', d); scan3dRefresh(); return d; }, 'Scan stopped'); }
+async function scan3dStart(btn) { await withFeedback(btn, async () => { const d = await apiPost('/api/scan/start'); showResult('scan3dResult', d); scan3dRefresh(); return d; }, 'Scan started'); }
+async function scan3dStop(btn) { await withFeedback(btn, async () => { const d = await apiPost('/api/scan/stop'); showResult('scan3dResult', d); scan3dRefresh(); return d; }, 'Scan stopped'); }
 async function scan3dRefresh() { const data = await apiCall('/api/scan/status'); const el = document.getElementById('scan3dStatus'); el.textContent = data.phase || 'idle'; el.className = 'status-indicator ' + (data.running ? 'running' : 'stopped'); }
-async function scan3dList() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/scan/list'); showResult('scan3dListResult', d); return d; }); }
+async function scan3dList(btn) { await withFeedback(btn, async () => { const d = await apiCall('/api/scan/list'); showResult('scan3dListResult', d); return d; }); }
 
 // --- Calibration Health & Simplified Workflow ---
 let _calibHealthData = null;
