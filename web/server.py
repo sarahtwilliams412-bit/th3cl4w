@@ -2719,18 +2719,19 @@ async def bifocal_calibrate_scale(req: CalibScaleRequest = CalibScaleRequest()):
         )
 
     import httpx, cv2
+    from src.vision.calibration import IndependentCalibrator
+    from src.config.camera_config import CAM_OVERHEAD
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp0 = await cam_snap(client, 0)
-            resp1 = await cam_snap(client, 1)
+            resp = await cam_snap(client, CAM_OVERHEAD)
 
-        left = cv2.imdecode(np.frombuffer(resp0.content, np.uint8), cv2.IMREAD_COLOR)
-        right = cv2.imdecode(np.frombuffer(resp1.content, np.uint8), cv2.IMREAD_COLOR)
-        if left is None or right is None:
-            return JSONResponse({"ok": False, "error": "Failed to decode frames"}, status_code=502)
+        image = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
+        if image is None:
+            return JSONResponse({"ok": False, "error": "Failed to decode overhead frame"}, status_code=502)
 
-        result = workspace_mapper.calibrate_scale_from_checkerboard(left, right, req.square_size_mm)
+        calibrator = IndependentCalibrator(square_size_mm=req.square_size_mm)
+        result = workspace_mapper.calibrate_scale_from_checkerboard(image, calibrator, req.square_size_mm)
         if result["ok"]:
             action_log.add(
                 "CALIBRATION", f"Scale calibrated: factor={result['scale_factor']}", "info"
