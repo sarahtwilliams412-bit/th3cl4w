@@ -70,3 +70,4 @@ calibration_results/
 # QA Sidecar output (generated per-cycle)
 qa_sidecar/issues/
 data/reference_poses/*.jpg
+data/camera_assignments.json

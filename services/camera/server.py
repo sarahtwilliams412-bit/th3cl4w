@@ -50,38 +50,31 @@ logger = logging.getLogger("th3cl4w.camera")
 # Camera registry — single source of truth for camera hardware
 # ---------------------------------------------------------------------------
 
-CAMERA_REGISTRY = {
-    0: {
-        "id": 0,
-        "device": "/dev/video0",
-        "name": "Side",
-        "role": "side_profile",
-        "mount": "fixed",
-        "resolution": [1920, 1080],
-        "fov_deg": 78,
-        "description": "Fixed side-view camera. Used for height (Z) estimation of objects on workspace.",
-    },
-    1: {
-        "id": 1,
-        "device": "/dev/video4",
-        "name": "Arm-mounted",
-        "role": "end_effector",
-        "mount": "arm",
-        "resolution": [1920, 1080],
-        "fov_deg": 78,
-        "description": "Camera attached to end-effector. Moves with arm. Used for close-up inspection and visual servo.",
-    },
-    2: {
-        "id": 2,
-        "device": "/dev/video6",
-        "name": "Overhead",
-        "role": "overhead",
-        "mount": "fixed",
-        "resolution": [1920, 1080],
-        "fov_deg": 78,
-        "description": "Logitech BRIO mounted above workspace, looking straight down. Primary camera for object detection X/Y positioning.",
-    },
-}
+def _build_registry_from_config() -> dict:
+    """Build camera registry from saved assignments config."""
+    try:
+        from shared.config.camera_assignments import get_cam_id_assignments, ROLE_METADATA
+        assignments = get_cam_id_assignments()
+        registry = {}
+        for role, meta in ROLE_METADATA.items():
+            cam_id = meta["cam_id"]
+            if cam_id in assignments:
+                registry[cam_id] = {
+                    "id": cam_id,
+                    "device": f"/dev/video{assignments[cam_id]}",
+                    "name": meta["name"],
+                    "role": role,
+                    "mount": meta["mount"],
+                    "resolution": [1920, 1080],
+                    "fov_deg": 78,
+                    "description": meta["description"],
+                }
+        return registry
+    except ImportError:
+        logger.warning("camera_assignments module not available — using empty registry")
+        return {}
+
+CAMERA_REGISTRY = _build_registry_from_config()
 
 # ---------------------------------------------------------------------------
 # Camera capture thread
@@ -547,15 +540,6 @@ def main():
     global startup_scanner
 
     parser = argparse.ArgumentParser(description="th3cl4w Camera Streaming Server")
-    parser.add_argument(
-        "--cam0", type=int, default=0, help="Device index for camera 0 (default: 0)"
-    )
-    parser.add_argument(
-        "--cam1", type=int, default=4, help="Device index for camera 1 (default: 4)"
-    )
-    parser.add_argument(
-        "--cam2", type=int, default=6, help="Device index for camera 2 (default: 6)"
-    )
     parser.add_argument("--port", type=int, default=8081, help="HTTP port (default: 8081)")
     parser.add_argument("--width", type=int, default=1920, help="Capture width (default: 1920)")
     parser.add_argument("--height", type=int, default=1080, help="Capture height (default: 1080)")
@@ -573,16 +557,16 @@ def main():
     from shared.utils.logging_config import setup_logging
     setup_logging(server_name="camera", debug=args.debug, log_dir=args.log_dir)
 
-    # Start camera threads
-    cameras[0] = CameraThread(args.cam0, args.width, args.height, args.fps, args.jpeg_quality)
-    cameras[1] = CameraThread(args.cam1, args.width, args.height, args.fps, args.jpeg_quality)
+    # Load camera assignments from config
+    global CAMERA_REGISTRY
+    CAMERA_REGISTRY = _build_registry_from_config()
 
-    # Try to open cam2 — don't crash if it fails
-    try:
-        cam2 = CameraThread(args.cam2, args.width, args.height, args.fps, args.jpeg_quality)
-        cameras[2] = cam2
-    except Exception as e:
-        logger.warning("Failed to create camera 2 (dev %d): %s — continuing with 2 cameras", args.cam2, e)
+    for cam_id, info in CAMERA_REGISTRY.items():
+        dev_idx = int(info["device"].replace("/dev/video", ""))
+        try:
+            cameras[cam_id] = CameraThread(dev_idx, args.width, args.height, args.fps, args.jpeg_quality)
+        except Exception as e:
+            logger.warning("Failed to create camera %d (dev %d): %s", cam_id, dev_idx, e)
 
     for cam in cameras.values():
         cam.start()

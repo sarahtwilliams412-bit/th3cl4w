@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>th3cl4w — Camera Setup</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --card: #16213e;
+  --card-border: #1a2744;
+  --primary: #0f3460;
+  --danger: #e94560;
+  --success: #53d769;
+  --warning: #f0ad4e;
+  --info: #4a90d9;
+  --text: #e0e0e0;
+  --text-dim: #8892a4;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 24px; }
+h1 { font-family: var(--mono); font-size: 24px; color: var(--danger); letter-spacing: 3px; margin-bottom: 8px; }
+.subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 24px; }
+.status-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; font-family: var(--mono); font-size: 12px; }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; }
+.status-dot.ok { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.status-dot.warn { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+.status-dot.err { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+
+.devices-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; width: 100%; max-width: 1100px; margin-bottom: 24px; }
+.device-card { background: var(--card); border: 2px solid var(--card-border); border-radius: 8px; padding: 16px; transition: border-color 0.2s; }
+.device-card.assigned { border-color: var(--info); }
+.device-card .dev-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.device-card .dev-name { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.device-card .dev-path { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+.device-card .preview { width: 100%; aspect-ratio: 16/9; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; object-fit: contain; margin-bottom: 10px; }
+.device-card .preview.loading { display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 12px; }
+.device-card select { width: 100%; font-family: var(--mono); font-size: 12px; padding: 8px; background: #0d1525; border: 1px solid var(--card-border); border-radius: 4px; color: var(--text); cursor: pointer; }
+.device-card select:focus { border-color: var(--info); outline: none; }
+.device-card select option { background: #0d1525; }
+
+.actions { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+.btn { font-family: var(--mono); font-size: 13px; padding: 10px 24px; border: 2px solid var(--card-border); border-radius: 6px; cursor: pointer; background: var(--card); color: var(--text); transition: all 0.15s; text-transform: uppercase; letter-spacing: 1px; }
+.btn:hover:not(:disabled) { background: var(--primary); border-color: var(--info); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: rgba(74,144,217,0.15); border-color: var(--info); color: var(--info); font-weight: 700; }
+.btn.primary:hover:not(:disabled) { background: rgba(74,144,217,0.3); }
+.btn.success { background: rgba(83,215,105,0.15); border-color: var(--success); color: var(--success); }
+.btn.success:hover:not(:disabled) { background: rgba(83,215,105,0.3); }
+.feedback { font-family: var(--mono); font-size: 12px; padding: 8px 14px; border-radius: 4px; display: none; }
+.feedback.ok { display: block; background: rgba(10,61,32,0.5); color: var(--success); border: 1px solid rgba(83,215,105,0.3); }
+.feedback.err { display: block; background: rgba(61,10,10,0.5); color: var(--danger); border: 1px solid rgba(233,69,96,0.3); }
+.back-link { font-family: var(--mono); font-size: 12px; color: var(--text-dim); text-decoration: none; margin-top: 16px; }
+.back-link:hover { color: var(--info); }
+.no-devices { font-family: var(--mono); font-size: 14px; color: var(--warning); padding: 24px; text-align: center; }
+.role-label { display: inline-block; font-family: var(--mono); font-size: 10px; padding: 2px 8px; border-radius: 3px; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.role-label.side_profile { background: #1a3d5c; color: #6ab0ff; }
+.role-label.end_effector { background: #3d1a5c; color: #b06aff; }
+.role-label.overhead { background: #1a5c3d; color: #6affb0; }
+.role-label.unassigned { background: #2a2a3e; color: #666; }
+</style>
+</head>
+<body>
+
+<h1>th3cl4w</h1>
+<p class="subtitle">Camera Setup — Assign detected cameras to workspace roles</p>
+
+<div class="status-bar">
+  <div class="status-dot" id="statusDot"></div>
+  <span id="statusText">Detecting cameras...</span>
+</div>
+
+<div class="devices-grid" id="devicesGrid">
+  <div class="no-devices" id="noDevices" style="display:none">No cameras detected. Connect USB cameras and refresh.</div>
+</div>
+
+<div class="actions">
+  <button class="btn success" id="btnSave" disabled>💾 Save & Start Cameras</button>
+  <button class="btn" id="btnRefresh">🔄 Refresh</button>
+  <div class="feedback" id="feedback"></div>
+</div>
+
+<a href="/" class="back-link">← Back to Control Panel</a>
+
+<script>
+const CAM_PORT = 8081;
+const CAM_BASE = `http://${location.hostname}:${CAM_PORT}`;
+const API_BASE = `http://${location.hostname}:${location.port || 8080}`;
+const ROLES = [
+  { value: '', label: '— Unassigned —' },
+  { value: 'side_profile', label: '📐 Side Profile (fixed)' },
+  { value: 'end_effector', label: '🦾 Arm-mounted (end effector)' },
+  { value: 'overhead', label: '🔍 Overhead (looking down)' },
+];
+
+let devices = [];
+let currentConfig = {};
+
+async function loadDevices() {
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  dot.className = 'status-dot warn';
+  text.textContent = 'Detecting cameras...';
+
+  try {
+    const [devResp, cfgResp] = await Promise.all([
+      fetch(`${API_BASE}/api/cameras/devices`),
+      fetch(`${API_BASE}/api/cameras/assignments`),
+    ]);
+    const devData = await devResp.json();
+    currentConfig = await cfgResp.json();
+    devices = devData.devices || [];
+
+    if (devices.length === 0) {
+      dot.className = 'status-dot err';
+      text.textContent = 'No cameras detected';
+      document.getElementById('noDevices').style.display = 'block';
+      document.getElementById('btnSave').disabled = true;
+      return;
+    }
+
+    dot.className = 'status-dot ok';
+    text.textContent = `${devices.length} camera${devices.length > 1 ? 's' : ''} detected`;
+    document.getElementById('noDevices').style.display = 'none';
+    renderDevices();
+  } catch (e) {
+    dot.className = 'status-dot err';
+    text.textContent = 'Camera server unavailable';
+    console.error(e);
+  }
+}
+
+function getAssignedRole(devicePath) {
+  const assignments = currentConfig.assignments || {};
+  for (const [role, path] of Object.entries(assignments)) {
+    if (path === devicePath) return role;
+  }
+  return '';
+}
+
+function renderDevices() {
+  const grid = document.getElementById('devicesGrid');
+  grid.innerHTML = '';
+
+  for (const dev of devices) {
+    const card = document.createElement('div');
+    card.className = 'device-card';
+    const assignedRole = getAssignedRole(dev.device);
+    if (assignedRole) card.classList.add('assigned');
+
+    // Try to get a preview thumbnail from the camera server
+    // We need to find which cam_id this device is currently assigned to (if any)
+    const camId = findCamIdForDevice(dev.index);
+    const previewSrc = camId !== null ? `${CAM_BASE}/snap/${camId}?t=${Date.now()}` : '';
+
+    card.innerHTML = `
+      <div class="dev-header">
+        <div>
+          <div class="dev-name">${dev.name}</div>
+          <div class="dev-path">${dev.device}</div>
+        </div>
+      </div>
+      ${previewSrc
+        ? `<img class="preview" src="${previewSrc}" alt="Preview" onerror="this.style.display='none'">`
+        : `<div class="preview loading">No preview (not yet assigned)</div>`}
+      <select data-device="${dev.device}" onchange="onRoleChange(this)">
+        ${ROLES.map(r => `<option value="${r.value}" ${r.value === assignedRole ? 'selected' : ''}>${r.label}</option>`).join('')}
+      </select>
+      <span class="role-label ${assignedRole || 'unassigned'}" id="rl-${dev.index}">${assignedRole || 'unassigned'}</span>
+    `;
+    grid.appendChild(card);
+  }
+  updateSaveButton();
+}
+
+function findCamIdForDevice(devIndex) {
+  // Check if this device index maps to a cam_id in current assignments
+  const assignments = currentConfig.assignments || {};
+  const roleToId = { side_profile: 0, end_effector: 1, overhead: 2 };
+  for (const [role, path] of Object.entries(assignments)) {
+    if (path === `/dev/video${devIndex}` && role in roleToId) {
+      return roleToId[role];
+    }
+  }
+  return null;
+}
+
+function onRoleChange(select) {
+  const device = select.dataset.device;
+  const role = select.value;
+
+  // Clear this role from any other device
+  if (role) {
+    document.querySelectorAll('select[data-device]').forEach(sel => {
+      if (sel !== select && sel.value === role) {
+        sel.value = '';
+        const idx = sel.dataset.device.replace('/dev/video', '');
+        const rl = document.getElementById(`rl-${idx}`);
+        if (rl) { rl.className = 'role-label unassigned'; rl.textContent = 'unassigned'; }
+        sel.closest('.device-card').classList.remove('assigned');
+      }
+    });
+  }
+
+  // Update visual
+  const idx = device.replace('/dev/video', '');
+  const rl = document.getElementById(`rl-${idx}`);
+  if (rl) { rl.className = `role-label ${role || 'unassigned'}`; rl.textContent = role || 'unassigned'; }
+  select.closest('.device-card').classList.toggle('assigned', !!role);
+
+  updateSaveButton();
+}
+
+function updateSaveButton() {
+  // Enable save if at least one role is assigned
+  const selects = document.querySelectorAll('select[data-device]');
+  let hasAssignment = false;
+  selects.forEach(s => { if (s.value) hasAssignment = true; });
+  document.getElementById('btnSave').disabled = !hasAssignment;
+}
+
+function gatherAssignments() {
+  const assignments = {};
+  document.querySelectorAll('select[data-device]').forEach(sel => {
+    if (sel.value) {
+      assignments[sel.value] = sel.dataset.device;
+    }
+  });
+  return assignments;
+}
+
+async function saveAssignments() {
+  const btn = document.getElementById('btnSave');
+  const fb = document.getElementById('feedback');
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving...';
+  fb.className = 'feedback';
+  fb.style.display = 'none';
+
+  try {
+    const assignments = gatherAssignments();
+    const resp = await fetch(`${API_BASE}/api/cameras/assignments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignments }),
+    });
+    const result = await resp.json();
+
+    if (result.ok) {
+      fb.className = 'feedback ok';
+      fb.textContent = '✓ Cameras configured and started!';
+      fb.style.display = 'block';
+      btn.textContent = '✓ Saved';
+      // Reload after short delay to show previews
+      setTimeout(() => loadDevices(), 2000);
+    } else {
+      fb.className = 'feedback err';
+      fb.textContent = `✗ ${result.error || 'Save failed'}`;
+      fb.style.display = 'block';
+    }
+  } catch (e) {
+    fb.className = 'feedback err';
+    fb.textContent = `✗ Error: ${e.message}`;
+    fb.style.display = 'block';
+  }
+
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.textContent = '💾 Save & Start Cameras';
+  }, 2000);
+}
+
+document.getElementById('btnSave').onclick = saveAssignments;
+document.getElementById('btnRefresh').onclick = loadDevices;
+
+// Initial load
+loadDevices();
+
+// Poll for device changes every 10s
+setInterval(loadDevices, 10000);
+</script>
+</body>
+</html>
