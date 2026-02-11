@@ -4892,66 +4892,218 @@ async function objPanelSyncToSim() {
 }
 
 async function scanTable(btn) {
+  const statusEl = document.getElementById('scanTableStatus');
   await withFeedback(btn, async () => {
-    // Enable detection if needed
-    if (!_objPanelEnabled) {
-      await fetch('/api/objects/toggle', { method: 'POST' });
-      _objPanelEnabled = true; _objPanelUpdateUI();
-    }
-    // Run detection with annotated snapshot
-    const snapResp = await fetch('/api/objects/detect/snapshot', { method: 'POST' });
-    if (snapResp.ok) {
-      const blob = await snapResp.blob();
-      const img = document.getElementById('objDetectCamImg');
-      const placeholder = document.getElementById('objDetectCamPlaceholder');
-      if (img) { img.src = URL.createObjectURL(blob); img.style.display = 'block'; }
-      if (placeholder) placeholder.style.display = 'none';
-      // Also show in review panel
-      const scanOverhead = document.getElementById('scanOverheadImg');
-      if (scanOverhead) scanOverhead.src = img.src;
-    }
-    // Fetch side cam snap for review
-    try {
-      const sideImg = document.getElementById('scanSideImg');
-      if (sideImg) sideImg.src = `http://${location.hostname}:8081/snap/0?t=${Date.now()}`;
-    } catch(e){}
-    // Fetch object list
-    const listResp = await fetch('/api/objects/list');
-    const data = await listResp.json();
+    if (statusEl) { statusEl.style.display = 'inline'; statusEl.textContent = '⏳ Capturing + detecting...'; statusEl.style.color = 'var(--info)'; }
+
+    const resp = await fetch('/api/objects/scan-table', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || 'Scan failed');
+
     _objPanelObjects = data.objects || [];
+    _objPanelEnabled = true;
+    _objPanelUpdateUI();
     _objPanelRenderList(_objPanelObjects);
     _objPanelDrawWorkspace(_objPanelObjects);
-    // Show review panel and accept button
-    document.getElementById('scanReviewPanel').style.display = '';
-    document.getElementById('btnAcceptDetections').style.display = '';
-    // Build scan object table
-    const tableEl = document.getElementById('scanObjectTable');
-    if (tableEl && _objPanelObjects.length) {
-      tableEl.innerHTML = _objPanelObjects.map(o =>
-        `<div style="padding:3px 0;border-bottom:1px solid #333;"><span style="color:${o.color_hex}">■</span> <b>${o.label}</b> — (${o.x_mm}, ${o.y_mm}, ${o.z_mm})mm — ${o.within_reach ? '✅ reachable' : '⚠ out of reach'}</div>`
-      ).join('');
+
+    // Show annotated overhead
+    if (data.overhead_image) {
+      const img = document.getElementById('objDetectCamImg');
+      const ph = document.getElementById('objDetectCamPlaceholder');
+      if (img) { img.src = 'data:image/jpeg;base64,' + data.overhead_image; img.style.display = 'block'; }
+      if (ph) ph.style.display = 'none';
+      const reviewPanel = document.getElementById('scanReviewPanel');
+      if (reviewPanel) reviewPanel.style.display = 'block';
+      const ohImg = document.getElementById('scanOverheadImg');
+      if (ohImg) ohImg.src = 'data:image/jpeg;base64,' + data.overhead_image;
     }
-    // Log
+    if (data.side_image) {
+      const sideImg = document.getElementById('scanSideImg');
+      if (sideImg) sideImg.src = 'data:image/jpeg;base64,' + data.side_image;
+    }
+
+    if (statusEl) { statusEl.textContent = `✓ Found ${data.count} objects`; statusEl.style.color = 'var(--success)'; }
     const logEl = document.getElementById('detectionLog');
     if (logEl) {
       const ts = new Date().toLocaleTimeString();
-      logEl.innerHTML = `<div>[${ts}] Scanned: ${_objPanelObjects.length} objects found</div>` + logEl.innerHTML;
+      logEl.innerHTML = `<div>[${ts}] Table scan: ${data.count} objects detected</div>` + logEl.innerHTML;
     }
     return { ok: true };
   }, `Scan complete: ${_objPanelObjects.length} objects found`);
 }
 
-async function acceptDetections(btn) {
-  await withFeedback(btn, async () => {
-    // Sync to simulator
-    if (window._sim && _objPanelObjects.length) {
-      window._sim.updateDetectedObjects(_objPanelObjects);
-      window._sim.toggleDetectedObjects(true);
+// === Item 14: Side Camera Enrichment ===
+async function objPanelEnrich(objId, label) {
+  const card = document.getElementById('objEnrichCard');
+  const labelEl = document.getElementById('objEnrichLabel');
+  const imgEl = document.getElementById('objEnrichImg');
+  const analysisEl = document.getElementById('objEnrichAnalysis');
+  if (labelEl) labelEl.textContent = label;
+  if (analysisEl) analysisEl.textContent = 'Capturing side view...';
+  if (card) card.style.display = 'block';
+  card.scrollIntoView({ behavior: 'smooth' });
+
+  try {
+    const resp = await fetch(`/api/objects/${objId}/enrich`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.side_image && imgEl) imgEl.src = 'data:image/jpeg;base64,' + data.side_image;
+      if (data.gemini_analysis && analysisEl) {
+        const a = data.gemini_analysis;
+        if (a.error) {
+          analysisEl.textContent = 'Gemini: ' + a.error;
+        } else {
+          analysisEl.textContent = `Name: ${a.name || '?'}\nDescription: ${a.description || '?'}\nWidth: ${a.estimated_width_mm || '?'} mm\nHeight: ${a.estimated_height_mm || '?'} mm\nDepth: ${a.estimated_depth_mm || '?'} mm`;
+        }
+      } else if (analysisEl) {
+        analysisEl.textContent = 'Side view captured (no Gemini key set)';
+      }
+      if (data.object) {
+        const idx = _objPanelObjects.findIndex(o => String(o.id) === String(objId));
+        if (idx >= 0) _objPanelObjects[idx] = data.object;
+        _objPanelRenderList(_objPanelObjects);
+      }
+    } else {
+      if (analysisEl) analysisEl.textContent = 'Error: ' + (data.error || 'unknown');
     }
-    toast(`${_objPanelObjects.length} objects accepted and synced`, 'success');
-    document.getElementById('btnAcceptDetections').style.display = 'none';
-    return { ok: true };
-  }, 'Detections accepted');
+  } catch (e) {
+    if (analysisEl) analysisEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+// === Item 13: 3D Object Inspection ===
+let _inspectScene = null, _inspectCamera = null, _inspectRenderer = null, _inspectControls = null, _inspectAnimId = null;
+
+function openObjInspect3D(obj) {
+  const card = document.getElementById('objInspect3DCard');
+  const canvas = document.getElementById('objInspect3DCanvas');
+  const labelEl = document.getElementById('objInspectLabel');
+  const infoEl = document.getElementById('objInspectInfo');
+  if (!card || !canvas) return;
+
+  card.style.display = 'block';
+  card.scrollIntoView({ behavior: 'smooth' });
+  if (labelEl) labelEl.textContent = obj.label;
+
+  if (infoEl) {
+    infoEl.innerHTML =
+      `<div><strong>Label:</strong> ${obj.label}</div>` +
+      `<div><strong>Position:</strong></div>` +
+      `<div>&nbsp; X: ${obj.x_mm} mm</div><div>&nbsp; Y: ${obj.y_mm} mm</div><div>&nbsp; Z: ${obj.z_mm} mm</div>` +
+      `<div><strong>Dimensions:</strong></div>` +
+      `<div>&nbsp; W: ${obj.width_mm} mm</div><div>&nbsp; D: ${obj.depth_mm} mm</div><div>&nbsp; H: ${obj.height_mm} mm</div>` +
+      `<div><strong>Shape:</strong> ${obj.shape || 'box'}</div>` +
+      `<div><strong>Distance:</strong> ${obj.distance_mm} mm</div>` +
+      `<div><strong>Reachable:</strong> ${obj.within_reach ? 'Yes ✓' : 'No ✗'}</div>` +
+      (obj.category ? `<div><strong>Category:</strong> ${obj.category}</div>` : '');
+  }
+
+  if (_inspectAnimId) cancelAnimationFrame(_inspectAnimId);
+  if (_inspectRenderer) _inspectRenderer.dispose();
+
+  const w = canvas.clientWidth || 400;
+  const h = 280;
+  canvas.width = w; canvas.height = h;
+  _inspectScene = new THREE.Scene();
+  _inspectScene.background = new THREE.Color(0x0a0f1a);
+  _inspectCamera = new THREE.PerspectiveCamera(50, w / h, 0.01, 10);
+  _inspectRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  _inspectRenderer.setSize(w, h);
+  _inspectRenderer.setPixelRatio(window.devicePixelRatio);
+  _inspectControls = new THREE.OrbitControls(_inspectCamera, canvas);
+  _inspectControls.enableDamping = true;
+
+  _inspectScene.add(new THREE.AmbientLight(0x404040, 1.5));
+  const dl = new THREE.DirectionalLight(0xffffff, 1); dl.position.set(1, 2, 1); _inspectScene.add(dl);
+  _inspectScene.add(new THREE.GridHelper(0.6, 12, 0x333355, 0x222244));
+
+  const wm = (obj.width_mm || 40) / 1000, dm = (obj.depth_mm || 40) / 1000, hm = (obj.height_mm || 40) / 1000;
+  const color = obj.color_hex || '#ff8800';
+  let mesh;
+  if (obj.shape === 'cylinder') {
+    mesh = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(wm,dm)/2, Math.max(wm,dm)/2, hm, 24), new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.85 }));
+    mesh.position.y = hm / 2;
+  } else if (obj.shape === 'sphere') {
+    const r = Math.max(wm,dm,hm)/2;
+    mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 24), new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.85 }));
+    mesh.position.y = r;
+  } else {
+    mesh = new THREE.Mesh(new THREE.BoxGeometry(wm, hm, dm), new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.85 }));
+    mesh.position.y = hm / 2;
+  }
+  _inspectScene.add(mesh);
+
+  const wire = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(wm, hm, dm)), new THREE.LineBasicMaterial({ color: 0x88aaff }));
+  wire.position.y = hm / 2;
+  _inspectScene.add(wire);
+
+  const maxDim = Math.max(wm, dm, hm, 0.05);
+  _inspectCamera.position.set(maxDim*2, maxDim*2, maxDim*2);
+  _inspectControls.target.set(0, hm/2, 0);
+  _inspectControls.update();
+
+  function animate() { _inspectAnimId = requestAnimationFrame(animate); _inspectControls.update(); _inspectRenderer.render(_inspectScene, _inspectCamera); }
+  animate();
+}
+
+function closeObjInspect3D() {
+  document.getElementById('objInspect3DCard').style.display = 'none';
+  if (_inspectAnimId) cancelAnimationFrame(_inspectAnimId);
+  if (_inspectRenderer) { _inspectRenderer.dispose(); _inspectRenderer = null; }
+}
+
+// === Item 16: Sync to 3D (map server + local sim) ===
+async function objPanelSyncTo3D() {
+  const statusEl = document.getElementById('sync3DStatus');
+  const btn = document.getElementById('btnSyncTo3D');
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing...'; }
+  try {
+    const listResp = await fetch('/api/objects/list');
+    const listData = await listResp.json();
+    const objects = listData.objects || [];
+
+    const mapObjects = objects.map(o => ({
+      id: String(o.id), label: o.label,
+      position_mm: [o.x_mm, o.y_mm, o.z_mm],
+      bbox_mm: [o.width_mm || 40, o.depth_mm || 40, o.height_mm || 40],
+      confidence: o.confidence || 0,
+    }));
+
+    const mapResp = await fetch(`http://${location.hostname}:8083/api/map/objects`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ objects: mapObjects }),
+    });
+    const mapData = await mapResp.json();
+
+    if (mapData.ok) {
+      if (statusEl) { statusEl.textContent = `✓ Synced ${mapData.count} objects to 3D`; statusEl.style.color = 'var(--success)'; }
+    } else {
+      if (statusEl) { statusEl.textContent = '✗ ' + (mapData.error || 'Map server error'); statusEl.style.color = 'var(--danger)'; }
+    }
+
+    if (window._sim) { window._sim.updateDetectedObjects(objects); window._sim.toggleDetectedObjects(true); }
+  } catch (e) {
+    console.error('syncTo3D:', e);
+    if (statusEl) { statusEl.textContent = '✗ ' + e.message; statusEl.style.color = 'var(--danger)'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Sync to 3D'; }
+  }
+}
+
+// === Item 18: Embedded Simulator Toggle ===
+function toggleEmbeddedSim() {
+  const card = document.getElementById('embeddedSimCard');
+  const frame = document.getElementById('embeddedSimFrame');
+  if (!card) return;
+  const visible = card.style.display !== 'none';
+  if (visible) {
+    card.style.display = 'none';
+    if (frame) frame.src = '';
+  } else {
+    card.style.display = 'block';
+    if (frame && !frame.src.includes('map3d')) frame.src = `http://${location.hostname}:8083/static/map3d.html`;
+    card.scrollIntoView({ behavior: 'smooth' });
+  }
 }
 
 function _objPanelUpdateUI() {
@@ -5018,6 +5170,8 @@ function _objPanelRenderList(objects) {
             `<button class="btn" onclick="_objReview(${idx},'confirmed')" style="background:#27ae60;color:#fff;padding:3px 10px;font-size:11px;">✓ Confirm</button>` +
             `<button class="btn" onclick="_objReview(${idx},'rejected')" style="background:#e74c3c;color:#fff;padding:3px 10px;font-size:11px;">✗ Reject</button>` +
             `<button class="btn" onclick="_objReview(${idx},'false_positive')" style="background:#f39c12;color:#fff;padding:3px 10px;font-size:11px;">⚠ False +</button>` +
+            `<button class="btn" onclick="openObjInspect3D(_objPanelObjects[${idx}])" style="padding:3px 10px;font-size:11px;">🔍 3D Inspect</button>` +
+            `<button class="btn" onclick="objPanelEnrich('${o.id}','${o.label}')" style="padding:3px 10px;font-size:11px;">📷 Side View</button>` +
           `</div>` +
         `</div>`;
       }).join('');
