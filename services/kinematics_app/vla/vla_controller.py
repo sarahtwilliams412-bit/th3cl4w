@@ -18,7 +18,7 @@ import httpx
 
 from .vla_model import VLABackend, GeminiVLABackend, Observation, ActionPlan
 from .action_decoder import ActionDecoder, ArmAction, ActionType
-from src.control.contact_detector import GripperContactDetector  # TODO: Replace with HTTP call to control_plane service
+from shared.control.contact_detector import GripperContactDetector
 
 logger = logging.getLogger(__name__)
 

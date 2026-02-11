@@ -17,9 +17,9 @@ from typing import Any, Optional
 
 import httpx
 
-from src.control.arm_operations import ArmOps  # TODO: Replace with HTTP call to control_plane service
-from src.telemetry.pick_episode import PickEpisodeRecorder  # TODO: Replace with shared module or HTTP call when telemetry service is extracted
-from src.telemetry.pick_recorder import PickVideoRecorder  # TODO: Replace with shared module or HTTP call when telemetry service is extracted
+from shared.control.arm_operations import ArmOps
+from shared.telemetry.pick_episode import PickEpisodeRecorder
+from shared.telemetry.pick_recorder import PickVideoRecorder
 from shared.config.camera_config import CAM_OVERHEAD, snap_url
 
 logger = logging.getLogger("th3cl4w.planning.auto_pick")
