@@ -19,7 +19,7 @@ With these files, COLMAP can skip feature matching and pose estimation,
 running only dense reconstruction (patch_match_stereo + stereo_fusion).
 
 Usage:
-    from src.vision.colmap_export import export_colmap_workspace
+    from services.positioning.spatial.colmap_export import export_colmap_workspace
     export_colmap_workspace(
         image_dir="scan_data/images",
         camera_poses=list_of_T_world_cam,

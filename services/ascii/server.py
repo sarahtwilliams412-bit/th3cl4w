@@ -32,10 +32,10 @@ _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from src.ascii.converter import fetch_and_convert, CHARSETS
-from src.ascii.streamer import AsciiStreamer, StreamConfig
-from src.ascii.session import SessionManager
-from src.vision.ascii_converter import CHARSET_STANDARD
+from .converter import fetch_and_convert, CHARSETS
+from .streamer import AsciiStreamer, StreamConfig
+from .session import SessionManager
+from .ascii_converter import CHARSET_STANDARD
 
 # Logging configured at __main__ via setup_logging(); fall back for import-time usage
 logger = logging.getLogger("th3cl4w.ascii_server")
@@ -51,7 +51,7 @@ def _get_analyst():
     global analyst
     if analyst is None:
         try:
-            from src.ascii.llm_analyst import AsciiAnalyst
+            from .llm_analyst import AsciiAnalyst
             analyst = AsciiAnalyst()
             logger.info("LLM analyst initialized (model: %s)", analyst._model_name)
         except Exception as e:
@@ -332,7 +332,7 @@ if __name__ == "__main__":
     _parser.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
     _args = _parser.parse_args()
 
-    from src.utils.logging_config import setup_logging
+    from shared.utils.logging_config import setup_logging
     setup_logging(server_name="ascii", debug=_args.debug, log_dir=_args.log_dir)
 
     uvicorn.run(app, host="0.0.0.0", port=_args.port, log_level="info")

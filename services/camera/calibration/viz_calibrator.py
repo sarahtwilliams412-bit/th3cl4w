@@ -47,7 +47,7 @@ MAX_ANGLE = 45  # maximum angle to reach
 CONVERGENCE_THRESHOLD = 50.0  # average px residual to consider "good"
 STABLE_ROUNDS_NEEDED = 2  # rounds residual must be stable to stop
 
-from src.config.camera_config import snap_url as _snap_url
+from shared.config.camera_config import snap_url as _snap_url
 CAMERA_URL = _snap_url(1)
 ARM_API = "http://localhost:8080"
 SETTLE_TIME = 2.0  # seconds to wait after moving
@@ -444,7 +444,7 @@ async def check_for_stall(api_base: str = ARM_API, timeout_s: float = 3.0) -> Op
     After a move, check if any joint is stalled (commanded != actual beyond threshold).
     Returns the stalled joint id or None.
     """
-    from src.safety.collision_detector import CollisionDetector
+    from shared.safety.collision_detector import CollisionDetector
 
     detector = CollisionDetector(position_error_deg=3.0, stall_duration_s=0.3)
     t0 = time.time()

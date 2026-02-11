@@ -29,21 +29,21 @@ from typing import Optional
 
 import numpy as np
 
-from src.planning.motion_planner import (
+from .motion_planner import (
     MotionPlanner,
     Waypoint,
     Trajectory,
     NUM_ARM_JOINTS,
     JOINT_LIMITS_DEG,
 )
-from src.planning.task_planner import (
+from .task_planner import (
     TaskPlanner,
     TaskResult,
     TaskStatus,
     HOME_POSE,
     READY_POSE,
 )
-from src.vision.scene_analyzer import SceneDescription, SceneObject
+from src.vision.scene_analyzer import SceneDescription, SceneObject  # TODO: Replace with shared module or HTTP call when vision service is extracted
 
 logger = logging.getLogger("th3cl4w.planning.vision_task_planner")
 
@@ -571,7 +571,7 @@ class VisionTaskPlanner:
                 np.clip(place_pose[0], JOINT_LIMITS_DEG[0, 0], JOINT_LIMITS_DEG[0, 1])
             )
 
-        from src.config.pick_config import get_pick_config
+        from shared.config.pick_config import get_pick_config
 
         cfg = get_pick_config()
         return self.task_planner.pick_and_place(

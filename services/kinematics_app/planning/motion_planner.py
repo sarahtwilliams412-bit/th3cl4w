@@ -24,9 +24,9 @@ from typing import Optional
 
 import numpy as np
 
-from src.kinematics.kinematics import D1Kinematics
-from src.control.smooth_trajectory import minimum_jerk_scalar, fitts_law_duration
-from src.control.joint_service import (
+from shared.kinematics.kinematics import D1Kinematics
+from src.control.smooth_trajectory import minimum_jerk_scalar, fitts_law_duration  # TODO: Replace with HTTP call to control_plane service
+from shared.arm_model.joint_service import (
     NUM_ARM_JOINTS,
     NUM_JOINTS,
     joint_limits_deg_array,

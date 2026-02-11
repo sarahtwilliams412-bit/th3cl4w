@@ -16,8 +16,8 @@ from typing import Optional
 
 import numpy as np
 
-from src.kinematics.kinematics import D1Kinematics
-from src.planning.motion_planner import Trajectory, NUM_ARM_JOINTS
+from shared.kinematics.kinematics import D1Kinematics
+from .motion_planner import Trajectory, NUM_ARM_JOINTS
 
 logger = logging.getLogger("th3cl4w.planning.collision_preview")
 

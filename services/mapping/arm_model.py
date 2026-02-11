@@ -11,8 +11,8 @@ from typing import List, Optional
 
 import numpy as np
 
-from src.kinematics.kinematics import D1Kinematics
-from src.map.scene import ArmSkeletonData
+from shared.kinematics.kinematics import D1Kinematics
+from .scene import ArmSkeletonData
 
 logger = logging.getLogger(__name__)
 

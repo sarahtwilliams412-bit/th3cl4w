@@ -21,11 +21,11 @@ except ImportError:
 from .detector import UnifiedDetector, DetectionResult, gemini_rate_limited
 from .world_model import LocationWorldModel
 from .reachability import ARM_MAX_REACH_MM
-from src.config.pick_config import get_pick_config as _get_pick_config
+from shared.config.pick_config import get_pick_config as _get_pick_config
 
 logger = logging.getLogger("th3cl4w.location.tracker")
 
-from src.config.camera_config import CAMERA_SERVER_URL as CAMERA_SERVER, latest_url, CAM_OVERHEAD
+from shared.config.camera_config import CAMERA_SERVER_URL as CAMERA_SERVER, latest_url, CAM_OVERHEAD
 
 # Camera IDs
 CAMERA_IDS = [0, 1, 2]  # overhead, side, arm

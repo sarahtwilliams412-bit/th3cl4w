@@ -30,7 +30,7 @@ from typing import Any
 
 import numpy as np
 
-from src.introspection.feedback_generator import Feedback
+from .feedback_generator import Feedback
 
 logger = logging.getLogger("th3cl4w.introspection.code_improver")
 

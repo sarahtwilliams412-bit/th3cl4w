@@ -16,13 +16,13 @@ from typing import Optional
 
 import numpy as np
 
-from src.planning.motion_planner import (
+from .motion_planner import (
     MotionPlanner,
     Waypoint,
     Trajectory,
     TrajectoryPoint,
 )
-from src.control.joint_service import (
+from shared.arm_model.joint_service import (
     NUM_ARM_JOINTS,
     GRIPPER_MIN_MM,
     GRIPPER_MAX_MM,

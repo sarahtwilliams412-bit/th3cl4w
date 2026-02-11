@@ -191,3 +191,47 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
+  # Introspection (self-feedback & analysis)
+  introspection:
+    build:
+      context: ..
+      dockerfile: services/introspection/Dockerfile
+    ports:
+      - "8092:8092"
+    environment:
+      - INTROSPECTION_PORT=8092
+      - REDIS_URL=redis://redis:6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ASCII Video
+  ascii:
+    build:
+      context: ..
+      dockerfile: services/ascii/Dockerfile
+    ports:
+      - "8093:8093"
+    environment:
+      - ASCII_PORT=8093
+      - REDIS_URL=redis://redis:6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Calibration
+  calibration:
+    build:
+      context: ..
+      dockerfile: services/calibration/Dockerfile
+    ports:
+      - "8094:8094"
+    environment:
+      - CALIBRATION_PORT=8094
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy

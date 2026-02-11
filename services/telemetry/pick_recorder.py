@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx
 
-from src.config.camera_config import latest_url, CAM_OVERHEAD, CAM_ARM, CAM_SIDE
+from shared.config.camera_config import latest_url, CAM_OVERHEAD, CAM_ARM, CAM_SIDE
 
 logger = logging.getLogger("th3cl4w.telemetry.pick_recorder")
 

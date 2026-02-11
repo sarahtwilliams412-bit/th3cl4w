@@ -31,11 +31,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from src.introspection.replay_buffer import ReplayBuffer, TaskContext, Episode
-from src.introspection.world_model import WorldModel, TrajectoryReconstruction
-from src.introspection.episode_analyzer import EpisodeAnalyzer, EpisodeAssessment, Verdict
-from src.introspection.feedback_generator import FeedbackGenerator, Feedback
-from src.introspection.code_improver import CodeImprover, Improvement
+from .replay_buffer import ReplayBuffer, TaskContext, Episode
+from .world_model import WorldModel, TrajectoryReconstruction
+from .episode_analyzer import EpisodeAnalyzer, EpisodeAssessment, Verdict
+from .feedback_generator import FeedbackGenerator, Feedback
+from .code_improver import CodeImprover, Improvement
 
 logger = logging.getLogger("th3cl4w.introspection.manager")
 

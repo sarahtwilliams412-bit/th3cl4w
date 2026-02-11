@@ -13,7 +13,7 @@ import math
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-from src.planning.motion_planner import (
+from .motion_planner import (
     Trajectory,
     TrajectoryPoint,
     NUM_ARM_JOINTS,

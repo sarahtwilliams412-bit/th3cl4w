@@ -13,8 +13,8 @@ Pipeline:
     (orchestrated by IntrospectionManager)
 
 Quick start:
-    from src.introspection import IntrospectionManager
-    from src.telemetry.collector import get_collector
+    from services.introspection import IntrospectionManager
+    from services.telemetry.collector import get_collector
 
     manager = IntrospectionManager()
     manager.start(get_collector())
@@ -27,12 +27,12 @@ Quick start:
     logger.info(report.verdict)    # "success", "partial", or "failure"
 """
 
-from src.introspection.manager import IntrospectionManager, IntrospectionReport
-from src.introspection.replay_buffer import ReplayBuffer, Episode, TaskContext
-from src.introspection.world_model import WorldModel, TrajectoryReconstruction
-from src.introspection.episode_analyzer import EpisodeAnalyzer, EpisodeAssessment, Verdict
-from src.introspection.feedback_generator import FeedbackGenerator, Feedback
-from src.introspection.code_improver import CodeImprover
+from .manager import IntrospectionManager, IntrospectionReport
+from .replay_buffer import ReplayBuffer, Episode, TaskContext
+from .world_model import WorldModel, TrajectoryReconstruction
+from .episode_analyzer import EpisodeAnalyzer, EpisodeAssessment, Verdict
+from .feedback_generator import FeedbackGenerator, Feedback
+from .code_improver import CodeImprover
 
 __all__ = [
     "IntrospectionManager",

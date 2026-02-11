@@ -52,6 +52,29 @@ class Topics:
     # Telemetry (published by Telemetry service)
     TELEMETRY_EVENT = "telemetry.event"
 
+    # World Model scanning
+    WORLD_SCAN_REQUESTED = "world.scan_requested"
+
+    # Gripper (published by Control Plane)
+    GRIPPER_COMMAND = "gripper.command"
+    GRIPPER_STATE = "gripper.state"
+
+    # Safety alerts (published by Control Plane / Safety Monitor)
+    SAFETY_ALERT = "safety.alert"
+    SAFETY_STALL = "safety.stall"
+
+    # Calibration (published by Calibration service)
+    CALIBRATION_STARTED = "calibration.started"
+    CALIBRATION_COMPLETED = "calibration.completed"
+    CALIBRATION_FAILED = "calibration.failed"
+
+    # Introspection (published by Introspection service)
+    INTROSPECTION_ANALYSIS = "introspection.analysis"
+    INTROSPECTION_IMPROVEMENT = "introspection.improvement"
+
+    # Service health (published by any service)
+    SERVICE_HEALTH = "service.health"
+
     @classmethod
     def camera_frame(cls, cam_id: int) -> str:
         """Topic for a specific camera's frame notifications."""

@@ -18,14 +18,14 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from src.interface.d1_connection import D1Connection, D1State, D1Command
+from ..hardware.d1_connection import D1Connection, D1State, D1Command
 from shared.arm_model.joint_service import NUM_JOINTS
-from src.control.smooth_trajectory import (
+from .smooth_trajectory import (
     minimum_jerk_waypoint,
     compute_movement_duration,
 )
-from src.control.command_filter import SmoothCommandPipeline
-from src.control.gravity_compensation import GravityCompensator, ThermalMonitor
+from .command_filter import SmoothCommandPipeline
+from .gravity_comp import GravityCompensator, ThermalMonitor
 
 logger = logging.getLogger(__name__)
 

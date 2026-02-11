@@ -16,14 +16,14 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from src.vla.vla_model import VLABackend, GeminiVLABackend, Observation, ActionPlan
-from src.vla.action_decoder import ActionDecoder, ArmAction, ActionType
-from src.control.contact_detector import GripperContactDetector
+from .vla_model import VLABackend, GeminiVLABackend, Observation, ActionPlan
+from .action_decoder import ActionDecoder, ArmAction, ActionType
+from src.control.contact_detector import GripperContactDetector  # TODO: Replace with HTTP call to control_plane service
 
 logger = logging.getLogger(__name__)
 
 ARM_API = "http://localhost:8080"
-from src.config.camera_config import CAMERA_SERVER_URL as CAM_API, CAM_SIDE, CAM_ARM, snap_url
+from shared.config.camera_config import CAMERA_SERVER_URL as CAM_API, CAM_SIDE, CAM_ARM, snap_url
 
 
 class TaskState(Enum):

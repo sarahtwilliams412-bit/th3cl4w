@@ -7,20 +7,20 @@ import logging
 import os
 from pathlib import Path
 
-from src.calibration.calibration_runner import CalibrationRunner, CalibrationSession
-from src.calibration.results_reporter import (
+from .calibration_runner import CalibrationRunner, CalibrationSession
+from .results_reporter import (
     CalibrationReporter,
     CalibrationSession as ReporterSession,
     ComparisonReport,
     ComparisonResult,
     JointComparison,
 )
-from src.vision.joint_detector import JointDetector, DetectionSource, JOINT_NAMES
-from src.vision.arm_segmenter import ArmSegmenter
-from src.vision.fk_engine import fk_positions, project_to_camera_pinhole
+from src.vision.joint_detector import JointDetector, DetectionSource, JOINT_NAMES  # TODO: Replace with HTTP call to local_model service
+from src.vision.arm_segmenter import ArmSegmenter  # TODO: Replace with HTTP call to local_model service
+from shared.kinematics.fk_engine import fk_positions, project_to_camera_pinhole
 
 try:
-    from src.vision.llm_detector import LLMJointDetector
+    from src.vision.llm_detector import LLMJointDetector  # TODO: Replace with HTTP call to object_id service
 except Exception:
     LLMJointDetector = None
 

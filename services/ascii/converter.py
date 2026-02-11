@@ -7,7 +7,7 @@ from typing import Optional
 from urllib.request import urlopen
 from urllib.error import URLError
 
-from src.vision.ascii_converter import (
+from .ascii_converter import (
     AsciiConverter,
     CHARSET_STANDARD,
     CHARSET_DETAILED,
@@ -15,7 +15,7 @@ from src.vision.ascii_converter import (
     CHARSET_MINIMAL,
 )
 
-from src.config.camera_config import CAMERA_SERVER_URL, latest_url
+from shared.config.camera_config import CAMERA_SERVER_URL, latest_url
 
 logger = logging.getLogger("th3cl4w.ascii.converter")
 

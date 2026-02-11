@@ -22,7 +22,7 @@ import numpy as np
 logger = logging.getLogger("th3cl4w.location.detector")
 
 # Use centralized rate limiter
-from src.utils.gemini_limiter import gemini_limiter
+from shared.utils.gemini_limiter import gemini_limiter
 
 
 def gemini_rate_limited() -> bool:
@@ -58,14 +58,14 @@ class UnifiedDetector:
 
     def _get_hsv_detector(self):
         if self._hsv_detector is None:
-            from src.vision.realtime_detector import detect_object
+            from ..detection.realtime_detector import detect_object
 
             self._hsv_detector = detect_object
         return self._hsv_detector
 
     def _get_cv_detector(self):
         if self._cv_detector is None:
-            from src.vision.object_detection import ObjectDetector
+            from ..detection.object_detection import ObjectDetector
 
             self._cv_detector = ObjectDetector(min_area=300)
         return self._cv_detector

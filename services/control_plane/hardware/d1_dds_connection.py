@@ -25,7 +25,7 @@ from cyclonedds.topic import Topic
 from .d1_connection import D1State, NUM_JOINTS
 
 try:
-    from src.telemetry import get_collector, EventType
+    from src.telemetry import get_collector, EventType  # TODO: Replace with HTTP call to telemetry service
 
     _HAS_TELEMETRY = True
 except ImportError:

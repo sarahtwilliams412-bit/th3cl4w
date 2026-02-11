@@ -17,7 +17,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-from src.config.camera_config import CAMERA_SERVER_URL as CAMERA_SERVER
+from shared.config.camera_config import CAMERA_SERVER_URL as CAMERA_SERVER
 MOVE_DELTA_DEG = 10.0
 SETTLE_TIME_S = 2.0
 

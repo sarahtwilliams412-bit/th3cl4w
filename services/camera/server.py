@@ -22,22 +22,22 @@ project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 try:
-    from src.telemetry.camera_monitor import CameraHealthMonitor
+    from src.telemetry.camera_monitor import CameraHealthMonitor  # TODO: Replace with HTTP call to telemetry service
 
     _HAS_MONITOR = True
 except ImportError:
     _HAS_MONITOR = False
 
 try:
-    from src.telemetry import get_collector
+    from src.telemetry import get_collector  # TODO: Replace with HTTP call to telemetry service
 
     _HAS_TELEMETRY = True
 except ImportError:
     _HAS_TELEMETRY = False
 
 try:
-    from src.vision.startup_scanner import StartupScanner
-    from src.vision.world_model import WorldModel
+    from src.vision.startup_scanner import StartupScanner  # TODO: Replace with HTTP call to local_model service
+    from src.vision.world_model import WorldModel  # TODO: Replace with HTTP call to introspection service
 
     _HAS_SCANNER = True
 except ImportError:
@@ -570,7 +570,7 @@ def main():
     parser.add_argument("--log-dir", type=str, default=None, help="Custom log output directory (default: logs/)")
     args = parser.parse_args()
 
-    from src.utils.logging_config import setup_logging
+    from shared.utils.logging_config import setup_logging
     setup_logging(server_name="camera", debug=args.debug, log_dir=args.log_dir)
 
     # Start camera threads

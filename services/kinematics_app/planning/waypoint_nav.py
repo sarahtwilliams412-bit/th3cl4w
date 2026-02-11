@@ -27,8 +27,8 @@ from typing import Optional
 
 import numpy as np
 
-from src.kinematics.kinematics import D1Kinematics
-from src.planning.motion_planner import (
+from shared.kinematics.kinematics import D1Kinematics
+from .motion_planner import (
     MotionPlanner,
     Waypoint,
     Trajectory,
@@ -38,7 +38,7 @@ from src.planning.motion_planner import (
     GRIPPER_MIN_MM,
     GRIPPER_MAX_MM,
 )
-from src.planning.task_planner import TaskPlanner, TaskResult, TaskStatus, HOME_POSE
+from .task_planner import TaskPlanner, TaskResult, TaskStatus, HOME_POSE
 
 logger = logging.getLogger("th3cl4w.planning.waypoint_navigator")
 

@@ -19,7 +19,7 @@ Output: List of (position, look_at_target) pairs that can be converted
 to joint angles via IK.
 
 Usage:
-    from src.vision.room_scan_trajectory import generate_scan_trajectory
+    from services.object_id.analysis.room_scan import generate_scan_trajectory
     poses = generate_scan_trajectory(num_points=50, radii=[0.30, 0.45])
     for pos, target in poses:
         # Convert to joint angles via IK and execute

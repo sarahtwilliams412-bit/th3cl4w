@@ -21,9 +21,9 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from src.safety.limits import MAX_WORKSPACE_RADIUS_MM
+from shared.safety.limits import MAX_WORKSPACE_RADIUS_MM
 
-from src.vision.object_labeler import ObjectLabeler
+from .object_labeler import ObjectLabeler
 
 logger = logging.getLogger("th3cl4w.vision.object_detector")
 

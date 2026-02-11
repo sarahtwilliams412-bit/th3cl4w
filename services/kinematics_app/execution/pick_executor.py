@@ -22,15 +22,15 @@ from typing import Optional
 
 import numpy as np
 
-from src.kinematics.kinematics import D1Kinematics
-from src.planning.motion_planner import (
+from shared.kinematics.kinematics import D1Kinematics
+from ..planning.motion_planner import (
     MotionPlanner,
     Trajectory,
     TrajectoryPoint,
     Waypoint,
     NUM_ARM_JOINTS,
 )
-from src.planning.task_planner import TaskPlanner, TaskResult, TaskStatus, HOME_POSE, READY_POSE
+from ..planning.task_planner import TaskPlanner, TaskResult, TaskStatus, HOME_POSE, READY_POSE
 
 logger = logging.getLogger("th3cl4w.planning.pick_executor")
 

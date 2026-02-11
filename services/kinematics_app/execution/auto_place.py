@@ -13,9 +13,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from src.control.arm_operations import ArmOps
-from src.planning.auto_pick import AutoPick
-from src.telemetry.pick_episode import PickEpisodeRecorder
+from src.control.arm_operations import ArmOps  # TODO: Replace with HTTP call to control_plane service
+from .auto_pick import AutoPick
+from src.telemetry.pick_episode import PickEpisodeRecorder  # TODO: Replace with shared module or HTTP call when telemetry service is extracted
 
 logger = logging.getLogger("th3cl4w.planning.auto_place")
 

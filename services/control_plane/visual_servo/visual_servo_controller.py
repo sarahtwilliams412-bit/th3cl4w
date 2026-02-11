@@ -16,8 +16,8 @@ from typing import Optional
 import httpx
 import numpy as np
 
-from src.vision.realtime_detector import detect_object, detect_gripper, Detection
-from src.vision.overhead_calibrator import OverheadCalibrator
+from src.vision.realtime_detector import detect_object, detect_gripper, Detection  # TODO: Replace with HTTP call to object_id service
+from src.vision.overhead_calibrator import OverheadCalibrator  # TODO: Replace with HTTP call to camera service
 from shared.kinematics.kinematics import D1Kinematics
 
 logger = logging.getLogger(__name__)

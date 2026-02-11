@@ -29,7 +29,7 @@ class IngestConfig:
         use_ws: bool = True,
     ):
         self.main_server_url = main_server_url
-        from src.config.camera_config import CAMERA_SERVER_URL
+        from shared.config.camera_config import CAMERA_SERVER_URL
         self.camera_server_url = camera_server_url or CAMERA_SERVER_URL
         self.location_server_url = location_server_url
         self.arm_poll_hz = arm_poll_hz

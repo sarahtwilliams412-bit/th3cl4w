@@ -4,7 +4,7 @@ The arm is a sensor — every move is verified by taking a photo and asking
 the LLM where the gripper and target are. No blind moves.
 
 Usage:
-    from src.control.visual_servo import VisualServo
+    from services.control_plane.visual_servo.visual_servo import VisualServo
     servo = VisualServo()
     result = await servo.approach("red bull can")
 """

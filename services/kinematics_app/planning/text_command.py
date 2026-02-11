@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-from src.config.pick_config import get_pick_config as _get_pick_config
+from shared.config.pick_config import get_pick_config as _get_pick_config
 
 logger = logging.getLogger(__name__)
 

@@ -17,10 +17,10 @@ from typing import Any, Optional
 
 import httpx
 
-from src.control.arm_operations import ArmOps
-from src.telemetry.pick_episode import PickEpisodeRecorder
-from src.telemetry.pick_recorder import PickVideoRecorder
-from src.config.camera_config import CAM_OVERHEAD, snap_url
+from src.control.arm_operations import ArmOps  # TODO: Replace with HTTP call to control_plane service
+from src.telemetry.pick_episode import PickEpisodeRecorder  # TODO: Replace with shared module or HTTP call when telemetry service is extracted
+from src.telemetry.pick_recorder import PickVideoRecorder  # TODO: Replace with shared module or HTTP call when telemetry service is extracted
+from shared.config.camera_config import CAM_OVERHEAD, snap_url
 
 logger = logging.getLogger("th3cl4w.planning.auto_pick")
 
@@ -285,7 +285,7 @@ class AutoPick:
             self.episode_recorder.start_phase("verify")
 
             if actual_mode == "simulation":
-                from src.planning.virtual_grip import VirtualGripDetector
+                from ..execution.virtual_grip import VirtualGripDetector
                 detector = VirtualGripDetector()
                 try:
                     async with httpx.AsyncClient(timeout=3.0) as client:

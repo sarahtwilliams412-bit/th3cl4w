@@ -126,7 +126,7 @@ def compute_camera_pose_from_joints(
     T_cam_world : 4x4 camera pose in world frame
     """
     try:
-        from src.kinematics.kinematics import D1Kinematics
+        from shared.kinematics.kinematics import D1Kinematics
     except ImportError:
         logger.warning("Kinematics module not available, returning identity pose")
         return np.eye(4)

@@ -97,8 +97,8 @@ class EpisodeAnalyzer:
         motion_summary : from WorldModel.summarize_motion()
         tracking_error : from WorldModel.compute_tracking_error()
         """
-        from src.introspection.replay_buffer import Episode
-        from src.introspection.world_model import TrajectoryReconstruction
+        from .replay_buffer import Episode
+        from .world_model import TrajectoryReconstruction
 
         assessment = EpisodeAssessment(
             episode_id=episode.episode_id,

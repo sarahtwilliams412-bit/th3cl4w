@@ -21,7 +21,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from src.planning.auto_pick import AutoPick, AutoPickPhase, PickResult
+from src.planning.auto_pick import AutoPick, AutoPickPhase, PickResult  # TODO: Replace with HTTP call to kinematics_app service
 
 logger = logging.getLogger("th3cl4w.planning.sim_rehearsal")
 

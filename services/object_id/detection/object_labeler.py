@@ -386,7 +386,7 @@ class ObjectLabeler:
 
     def _can_call(self) -> bool:
         """Check rate limit via centralized limiter."""
-        from src.utils.gemini_limiter import gemini_limiter
+        from shared.utils.gemini_limiter import gemini_limiter
 
         return not gemini_limiter.is_limited
 
@@ -397,7 +397,7 @@ class ObjectLabeler:
         shape_hint: str,
     ) -> Optional[dict]:
         """Send cropped images of a single object to Gemini and parse response."""
-        from src.utils.gemini_limiter import gemini_limiter
+        from shared.utils.gemini_limiter import gemini_limiter
 
         if not gemini_limiter.acquire():
             logger.debug("Skipping Gemini call — rate-limited")

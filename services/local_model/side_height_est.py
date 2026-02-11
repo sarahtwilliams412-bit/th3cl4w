@@ -15,7 +15,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from src.config.pick_config import get_pick_config as _get_pick_config
+from shared.config.pick_config import get_pick_config as _get_pick_config
 
 logger = logging.getLogger(__name__)
 

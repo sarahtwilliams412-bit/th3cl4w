@@ -17,8 +17,8 @@ from typing import Optional
 
 import numpy as np
 
-from src.kinematics.kinematics import D1Kinematics
-from src.planning.motion_planner import (
+from shared.kinematics.kinematics import D1Kinematics
+from ..planning.motion_planner import (
     MotionPlanner,
     JOINT_LIMITS_DEG,
     NUM_ARM_JOINTS,

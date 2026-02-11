@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from src.vision.ascii_converter import AsciiConverter, CHARSET_STANDARD
+from .ascii_converter import AsciiConverter, CHARSET_STANDARD
 from .converter import fetch_jpeg, CHARSETS
 
 logger = logging.getLogger("th3cl4w.ascii.streamer")

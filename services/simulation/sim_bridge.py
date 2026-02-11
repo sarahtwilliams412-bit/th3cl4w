@@ -139,7 +139,7 @@ class SimTelemetryBridge:
         if self._collector is None:
             return
         try:
-            from src.telemetry.collector import EventType
+            from shared.messages.events import EventType
 
             et = EventType(event_type_str)
             self._collector.emit(source="sim_bridge", event_type=et, payload=payload)

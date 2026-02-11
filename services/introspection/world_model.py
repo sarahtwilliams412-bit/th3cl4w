@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from src.kinematics.kinematics import D1Kinematics
+from shared.kinematics.kinematics import D1Kinematics
 
 logger = logging.getLogger("th3cl4w.introspection.world_model")
 
@@ -105,7 +105,7 @@ class WorldModel:
         -------
         TrajectoryReconstruction with per-frame spatial data and aggregate metrics.
         """
-        from src.introspection.replay_buffer import Episode
+        from .replay_buffer import Episode
 
         recon = TrajectoryReconstruction()
 

@@ -118,7 +118,7 @@ class GeminiVLABackend(VLABackend):
         logger.info("GeminiVLABackend initialized with model=%s", model_name)
 
     def _get_system_prompt(self) -> str:
-        from src.vla.prompts import SYSTEM_PROMPT
+        from .prompts import SYSTEM_PROMPT
 
         return SYSTEM_PROMPT
 
@@ -132,7 +132,7 @@ class GeminiVLABackend(VLABackend):
         task: str,
         history: Optional[List[str]] = None,
     ) -> str:
-        from src.vla.prompts import OBSERVE_TEMPLATE
+        from .prompts import OBSERVE_TEMPLATE
 
         hist_str = "\n".join(history[-10:]) if history else "None (first step)"
         return OBSERVE_TEMPLATE.format(
@@ -154,7 +154,7 @@ class GeminiVLABackend(VLABackend):
         task: str,
         actions_taken: List[str],
     ) -> str:
-        from src.vla.prompts import VERIFY_TEMPLATE
+        from .prompts import VERIFY_TEMPLATE
 
         return VERIFY_TEMPLATE.format(
             actions_taken="\n".join(actions_taken[-5:]),

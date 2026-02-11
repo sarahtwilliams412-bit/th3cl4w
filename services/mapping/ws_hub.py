@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional, Set
 
 from fastapi import WebSocket
 
-from src.map.scene import Scene
+from .scene import Scene
 
 logger = logging.getLogger(__name__)
 

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.introspection.episode_analyzer import EpisodeAssessment, Verdict
+from .episode_analyzer import EpisodeAssessment, Verdict
 
 logger = logging.getLogger("th3cl4w.introspection.feedback_generator")
 

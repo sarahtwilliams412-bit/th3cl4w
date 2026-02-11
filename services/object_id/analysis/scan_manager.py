@@ -17,7 +17,7 @@ import numpy as np
 
 import httpx
 
-from src.config.camera_config import CAM_OVERHEAD, CAMERA_SERVER_URL as _DEFAULT_CAMERA_URL
+from shared.config.camera_config import CAM_OVERHEAD, CAMERA_SERVER_URL as _DEFAULT_CAMERA_URL
 
 logger = logging.getLogger(__name__)
 
@@ -171,8 +171,8 @@ class ScanManager:
 
     async def _run_scan(self, poses: List[Dict[str, float]]):
         """Execute the scan sequence."""
-        from src.vision import depth_estimator
-        from src.vision.pointcloud_generator import (
+        from src.vision import depth_estimator  # TODO: move depth_estimator to shared or this service
+        from src.vision.pointcloud_generator import (  # TODO: move pointcloud_generator to shared or this service
             backproject_depth,
             compute_camera_pose_from_joints,
             merge_point_clouds,
