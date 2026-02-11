@@ -77,7 +77,9 @@ class AutoPlace:
             "planned_joints": self.state.planned_joints,
             "error": self.state.error,
             "running": self._running,
-            "elapsed_s": round(time.time() - self.state.started_at, 1) if self.state.started_at else 0,
+            "elapsed_s": (
+                round(time.time() - self.state.started_at, 1) if self.state.started_at else 0
+            ),
             "log": self.state.log[-20:],
         }
         ep = self.episode_recorder.current
@@ -157,7 +159,9 @@ class AutoPlace:
 
     async def execute(self, x_mm: float, y_mm: float) -> PlaceResult:
         """Full autonomous place pipeline with episode recording."""
-        episode = self.episode_recorder.start(mode="physical", target=f"place@({x_mm:.0f},{y_mm:.0f})")
+        episode = self.episode_recorder.start(
+            mode="physical", target=f"place@({x_mm:.0f},{y_mm:.0f})"
+        )
 
         try:
             # 1. PLAN

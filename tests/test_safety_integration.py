@@ -83,10 +83,10 @@ class TestUnifiedLimits:
         assert len(JOINT_LIMITS_RAD_MIN) == NUM_JOINTS
         assert len(JOINT_LIMITS_RAD_MAX) == NUM_JOINTS
 
-    def test_j1_j2_j4_have_80_deg_limit(self):
+    def test_j1_j2_j4_have_90_deg_limit(self):
         for j in [1, 2, 4]:
-            assert JOINT_LIMITS_DEG[j, 0] == -80.0
-            assert JOINT_LIMITS_DEG[j, 1] == 80.0
+            assert JOINT_LIMITS_DEG[j, 0] == -90.0
+            assert JOINT_LIMITS_DEG[j, 1] == 90.0
 
     def test_rad_limits_match_deg(self):
         import math
@@ -197,8 +197,8 @@ class TestSmootherSafetyIntegration:
         monitor = SafetyMonitor()
         sm = _make_smoother(arm=arm, safety_monitor=monitor)
 
-        # Make feedback stale
-        sm._last_feedback_time = time.time() - 1.0  # 1s old > 500ms threshold
+        # Make feedback stale (>5s triggers the wall-clock staleness check)
+        sm._last_feedback_time = time.time() - 6.0  # 6s old > 5s threshold
         arm.reset_mock()
 
         sm.set_joint_target(0, 10.0)

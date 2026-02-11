@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>th3cl4w — 3D Scan Viewer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #111; color: #0f0; font-family: 'Courier New', monospace; overflow: hidden; }
+#container { width: 100vw; height: 100vh; position: relative; }
+canvas { display: block; }
+#hud {
+    position: absolute; top: 10px; left: 10px; z-index: 10;
+    background: rgba(0,0,0,0.8); padding: 12px; border: 1px solid #0f0;
+    border-radius: 4px; font-size: 13px; max-width: 300px;
+}
+#hud h2 { margin-bottom: 8px; font-size: 15px; }
+#hud .status { color: #0a0; margin-bottom: 6px; }
+#hud button {
+    background: #0f0; color: #000; border: none; padding: 6px 14px;
+    cursor: pointer; font-family: inherit; font-weight: bold;
+    margin: 3px 3px 3px 0; border-radius: 2px;
+}
+#hud button:hover { background: #0c0; }
+#hud button.danger { background: #f44; color: #fff; }
+#hud button:disabled { opacity: 0.4; cursor: not-allowed; }
+#scan-list {
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+    background: rgba(0,0,0,0.8); padding: 12px; border: 1px solid #0f0;
+    border-radius: 4px; font-size: 12px; max-width: 250px; max-height: 300px;
+    overflow-y: auto;
+}
+#scan-list h3 { margin-bottom: 6px; }
+.scan-item { padding: 4px 0; border-bottom: 1px solid #030; cursor: pointer; }
+.scan-item:hover { color: #fff; }
+#info { position: absolute; bottom: 10px; left: 10px; z-index: 10; font-size: 11px; color: #080; }
+</style>
+</head>
+<body>
+<div id="container">
+    <div id="hud">
+        <h2>🔍 3D Scan</h2>
+        <div id="status" class="status">Ready</div>
+        <div id="progress"></div>
+        <button id="btn-scan" onclick="startScan()">Start Scan</button>
+        <button id="btn-stop" class="danger" onclick="stopScan()" disabled>Stop</button>
+        <button id="btn-load" onclick="loadLatest()">Load Latest</button>
+        <br>
+        <button onclick="listScans()">List Scans</button>
+        <a href="/ui/" style="color:#0f0;margin-left:10px;">← Back</a>
+    </div>
+    <div id="scan-list"><h3>Previous Scans</h3><div id="scans"></div></div>
+    <div id="info">Drag to orbit · Scroll to zoom · Points: <span id="point-count">0</span></div>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "/static/lib/three-0.162.0/three.module.js",
+        "three/addons/": "/static/lib/three-0.162.0/examples/jsm/"
+    }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+
+const container = document.getElementById('container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111111);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(0.5, 0.5, 0.5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+container.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.1;
+
+// Grid helper
+const grid = new THREE.GridHelper(2, 20, 0x003300, 0x002200);
+scene.add(grid);
+
+// Axes
+const axes = new THREE.AxesHelper(0.3);
+scene.add(axes);
+
+// Ambient light
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+let currentPoints = null;
+
+window.loadPLY = function(url) {
+    const loader = new PLYLoader();
+    document.getElementById('status').textContent = 'Loading PLY...';
+
+    loader.load(url, (geometry) => {
+        if (currentPoints) scene.remove(currentPoints);
+
+        geometry.computeBoundingBox();
+        const center = new THREE.Vector3();
+        geometry.boundingBox.getCenter(center);
+        geometry.translate(-center.x, -center.y, -center.z);
+
+        let material;
+        if (geometry.hasAttribute('color')) {
+            material = new THREE.PointsMaterial({ size: 0.003, vertexColors: true });
+        } else {
+            material = new THREE.PointsMaterial({ size: 0.003, color: 0x00ff00 });
+        }
+
+        currentPoints = new THREE.Points(geometry, material);
+        scene.add(currentPoints);
+
+        const count = geometry.attributes.position.count;
+        document.getElementById('point-count').textContent = count.toLocaleString();
+        document.getElementById('status').textContent = `Loaded: ${count.toLocaleString()} points`;
+
+        // Fit camera
+        const bbox = geometry.boundingBox;
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z);
+        camera.position.set(maxDim, maxDim * 0.8, maxDim);
+        controls.target.set(0, 0, 0);
+        controls.update();
+    },
+    (progress) => {
+        if (progress.total) {
+            const pct = Math.round(progress.loaded / progress.total * 100);
+            document.getElementById('status').textContent = `Loading... ${pct}%`;
+        }
+    },
+    (error) => {
+        document.getElementById('status').textContent = 'Failed to load PLY';
+        console.error(error);
+    });
+};
+
+window.loadLatest = function() {
+    window.loadPLY('/api/scan/result');
+};
+
+window.loadScan = function(scanId) {
+    window.loadPLY(`/api/scan/result?scan_id=${scanId}`);
+};
+
+// Animation loop
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Scan control
+let pollInterval = null;
+
+window.startScan = async function() {
+    const resp = await fetch('/api/scan/start', { method: 'POST' });
+    const data = await resp.json();
+    document.getElementById('status').textContent = data.ok
+        ? `Scan started (${data.total_poses} poses)`
+        : `Error: ${data.error}`;
+
+    if (data.ok) {
+        document.getElementById('btn-scan').disabled = true;
+        document.getElementById('btn-stop').disabled = false;
+        pollInterval = setInterval(pollStatus, 1000);
+    }
+};
+
+window.stopScan = async function() {
+    await fetch('/api/scan/stop', { method: 'POST' });
+    document.getElementById('btn-scan').disabled = false;
+    document.getElementById('btn-stop').disabled = true;
+    if (pollInterval) clearInterval(pollInterval);
+};
+
+async function pollStatus() {
+    try {
+        const resp = await fetch('/api/scan/status');
+        const s = await resp.json();
+        const el = document.getElementById('status');
+        el.textContent = `${s.phase} — pose ${s.current_pose}/${s.total_poses} (${s.points_total} pts, ${s.elapsed_seconds}s)`;
+
+        if (!s.running && s.phase !== 'idle') {
+            document.getElementById('btn-scan').disabled = false;
+            document.getElementById('btn-stop').disabled = true;
+            if (pollInterval) clearInterval(pollInterval);
+            if (s.phase === 'done') {
+                el.textContent = `Done! ${s.points_total} points in ${s.elapsed_seconds}s`;
+                setTimeout(() => window.loadLatest(), 500);
+            } else if (s.error) {
+                el.textContent = `Error: ${s.error}`;
+            }
+        }
+    } catch(e) { console.error(e); }
+}
+
+window.listScans = async function() {
+    try {
+        const resp = await fetch('/api/scan/list');
+        const data = await resp.json();
+        const el = document.getElementById('scans');
+        if (!data.scans || data.scans.length === 0) {
+            el.innerHTML = '<div style="color:#555">No scans yet</div>';
+            return;
+        }
+        el.innerHTML = data.scans.map(s =>
+            `<div class="scan-item" onclick="loadScan('${s.scan_id}')">` +
+            `${s.scan_id} — ${(s.total_points||0).toLocaleString()} pts</div>`
+        ).join('');
+    } catch(e) { console.error(e); }
+};
+
+// Auto-list scans on load
+window.listScans();
+</script>
+</body>
+</html>

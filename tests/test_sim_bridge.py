@@ -52,7 +52,9 @@ class TestSimTelemetryBridge:
         await bridge.stop()
 
     def test_emit_feedback_funcode1_and_3(self):
-        arm = _make_mock_arm(angles=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 0.0], powered=True, enabled=True)
+        arm = _make_mock_arm(
+            angles=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 0.0], powered=True, enabled=True
+        )
         collector = _make_mock_collector()
         bridge = SimTelemetryBridge(arm, collector)
 

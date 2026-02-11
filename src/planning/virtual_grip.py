@@ -156,11 +156,13 @@ class VirtualGripDetector:
 
         for obj in detected_objects:
             obj_pos = obj.get("position", {})
-            op = np.array([
-                obj_pos.get("x", 0.0),
-                obj_pos.get("y", 0.0),
-                obj_pos.get("z", 0.0),
-            ])
+            op = np.array(
+                [
+                    obj_pos.get("x", 0.0),
+                    obj_pos.get("y", 0.0),
+                    obj_pos.get("z", 0.0),
+                ]
+            )
             dist = float(np.linalg.norm(pos - op))
             if dist < closest_dist:
                 closest_dist = dist

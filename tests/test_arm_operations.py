@@ -15,8 +15,12 @@ def ops():
 class TestMoveJointVerified:
     @pytest.mark.asyncio
     async def test_success_on_first_try(self, ops):
-        with patch.object(ops, "_set_joint", new_callable=AsyncMock) as mock_set, \
-             patch.object(ops, "_get_joints", new_callable=AsyncMock, return_value=[0, 25.0, 0, 0, 0, 0]):
+        with (
+            patch.object(ops, "_set_joint", new_callable=AsyncMock) as mock_set,
+            patch.object(
+                ops, "_get_joints", new_callable=AsyncMock, return_value=[0, 25.0, 0, 0, 0, 0]
+            ),
+        ):
             result = await ops.move_joint_verified(1, 25.0, tolerance_deg=5.0, settle_time=0.01)
             assert result is True
             mock_set.assert_called_once_with(1, 25.0)
@@ -24,28 +28,39 @@ class TestMoveJointVerified:
     @pytest.mark.asyncio
     async def test_retries_on_feedback_miss(self, ops):
         call_count = [0]
+
         async def fake_joints():
             call_count[0] += 1
             if call_count[0] < 3:
                 return [0, 0, 0, 0, 0, 0]  # wrong position
             return [0, 25.0, 0, 0, 0, 0]  # correct
 
-        with patch.object(ops, "_set_joint", new_callable=AsyncMock), \
-             patch.object(ops, "_get_joints", side_effect=fake_joints):
+        with (
+            patch.object(ops, "_set_joint", new_callable=AsyncMock),
+            patch.object(ops, "_get_joints", side_effect=fake_joints),
+        ):
             result = await ops.move_joint_verified(1, 25.0, tolerance_deg=5.0, settle_time=0.01)
             assert result is True
 
     @pytest.mark.asyncio
     async def test_fails_after_max_retries(self, ops):
-        with patch.object(ops, "_set_joint", new_callable=AsyncMock), \
-             patch.object(ops, "_get_joints", new_callable=AsyncMock, return_value=[0, 0, 0, 0, 0, 0]):
-            result = await ops.move_joint_verified(1, 25.0, tolerance_deg=5.0, settle_time=0.01, max_retries=2)
+        with (
+            patch.object(ops, "_set_joint", new_callable=AsyncMock),
+            patch.object(
+                ops, "_get_joints", new_callable=AsyncMock, return_value=[0, 0, 0, 0, 0, 0]
+            ),
+        ):
+            result = await ops.move_joint_verified(
+                1, 25.0, tolerance_deg=5.0, settle_time=0.01, max_retries=2
+            )
             assert result is False
 
     @pytest.mark.asyncio
     async def test_handles_none_feedback(self, ops):
-        with patch.object(ops, "_set_joint", new_callable=AsyncMock), \
-             patch.object(ops, "_get_joints", new_callable=AsyncMock, return_value=None):
+        with (
+            patch.object(ops, "_set_joint", new_callable=AsyncMock),
+            patch.object(ops, "_get_joints", new_callable=AsyncMock, return_value=None),
+        ):
             result = await ops.move_joint_verified(1, 25.0, settle_time=0.01, max_retries=2)
             assert result is False
 
@@ -54,11 +69,16 @@ class TestStagedReach:
     @pytest.mark.asyncio
     async def test_moves_low_torque_first(self, ops):
         calls = []
+
         async def track_set(j, a):
             calls.append(j)
 
-        with patch.object(ops, "_set_joint", side_effect=track_set), \
-             patch.object(ops, "_get_joints", new_callable=AsyncMock, return_value=[0, 0, 0, 0, 0, 0]):
+        with (
+            patch.object(ops, "_set_joint", side_effect=track_set),
+            patch.object(
+                ops, "_get_joints", new_callable=AsyncMock, return_value=[0, 0, 0, 0, 0, 0]
+            ),
+        ):
             await ops.staged_reach([30, 25, 10, 15, 85, 10], step_deg=50, step_delay=0.01)
             # J0, J3, J5 should come before J1, J2, J4
             low_torque_indices = [i for i, j in enumerate(calls) if j in (0, 3, 5)]
@@ -77,11 +97,16 @@ class TestStagedRetract:
     @pytest.mark.asyncio
     async def test_retracts_distal_first(self, ops):
         calls = []
+
         async def track_set(j, a):
             calls.append(j)
 
-        with patch.object(ops, "_set_joint", side_effect=track_set), \
-             patch.object(ops, "_get_joints", new_callable=AsyncMock, return_value=[30, 25, 10, 15, 85, 10]):
+        with (
+            patch.object(ops, "_set_joint", side_effect=track_set),
+            patch.object(
+                ops, "_get_joints", new_callable=AsyncMock, return_value=[30, 25, 10, 15, 85, 10]
+            ),
+        ):
             await ops.staged_retract([0, 0, 0, 0, 0, 0], step_deg=50, step_delay=0.01)
             # J4 should come before J2, J2 before J1
             pitch_calls = [(i, j) for i, j in enumerate(calls) if j in (1, 2, 4)]
@@ -117,7 +142,9 @@ class TestFullRecovery:
 class TestRetreatHome:
     @pytest.mark.asyncio
     async def test_calls_staged_retract_to_zeros(self, ops):
-        with patch.object(ops, "staged_retract", new_callable=AsyncMock, return_value=MoveResult(True, [0]*6)) as mock:
+        with patch.object(
+            ops, "staged_retract", new_callable=AsyncMock, return_value=MoveResult(True, [0] * 6)
+        ) as mock:
             result = await ops.retreat_home()
             assert result.success
             mock.assert_called_once_with([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -126,23 +153,40 @@ class TestRetreatHome:
 class TestPickSequence:
     @pytest.mark.asyncio
     async def test_retreats_home_on_approach_failure(self, ops):
-        with patch.object(ops, "_set_gripper", new_callable=AsyncMock), \
-             patch.object(ops, "approach_from_above", new_callable=AsyncMock,
-                         return_value=MoveResult(False, [], "failed")), \
-             patch.object(ops, "retreat_home", new_callable=AsyncMock,
-                         return_value=MoveResult(True, [0]*6)) as mock_retreat:
+        with (
+            patch.object(ops, "_set_gripper", new_callable=AsyncMock),
+            patch.object(
+                ops,
+                "approach_from_above",
+                new_callable=AsyncMock,
+                return_value=MoveResult(False, [], "failed"),
+            ),
+            patch.object(
+                ops, "retreat_home", new_callable=AsyncMock, return_value=MoveResult(True, [0] * 6)
+            ) as mock_retreat,
+        ):
             result = await ops.pick_sequence([0, 25, 6, 0, 88, 0])
             assert not result.success
             # approach_from_above already calls retreat_home on failure
 
     @pytest.mark.asyncio
     async def test_full_success_path(self, ops):
-        with patch.object(ops, "_set_gripper", new_callable=AsyncMock), \
-             patch.object(ops, "approach_from_above", new_callable=AsyncMock,
-                         return_value=MoveResult(True, [0, 25, 6, 0, 88, 0])), \
-             patch.object(ops, "grip_and_verify", new_callable=AsyncMock, return_value=True), \
-             patch.object(ops, "lift_from_pick", new_callable=AsyncMock,
-                         return_value=MoveResult(True, [0, 5, 6, 0, 88, 0])):
+        with (
+            patch.object(ops, "_set_gripper", new_callable=AsyncMock),
+            patch.object(
+                ops,
+                "approach_from_above",
+                new_callable=AsyncMock,
+                return_value=MoveResult(True, [0, 25, 6, 0, 88, 0]),
+            ),
+            patch.object(ops, "grip_and_verify", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                ops,
+                "lift_from_pick",
+                new_callable=AsyncMock,
+                return_value=MoveResult(True, [0, 5, 6, 0, 88, 0]),
+            ),
+        ):
             result = await ops.pick_sequence([0, 25, 6, 0, 88, 0])
             assert result.success
 

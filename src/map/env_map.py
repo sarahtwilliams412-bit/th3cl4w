@@ -199,6 +199,7 @@ class MapScanManager:
     ):
         from src.vision.scan_manager import ScanManager, ScanStatus
         from src.config.camera_config import CAMERA_SERVER_URL
+
         camera_url = camera_url or CAMERA_SERVER_URL
 
         self._env_map = env_map

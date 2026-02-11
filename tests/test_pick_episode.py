@@ -1,4 +1,5 @@
 """Tests for pick episode recorder."""
+
 import json
 import time
 from pathlib import Path

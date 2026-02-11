@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>th3cl4w — ASCII Video</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --panel: #12121a;
+    --border: #2a2a3a;
+    --text: #c0c0d0;
+    --accent: #00ff88;
+    --accent2: #ff6b35;
+    --dim: #555568;
+    --chat-bg: #0d0d15;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  header h1 { font-size: 14px; color: var(--accent); }
+  header .info { font-size: 11px; color: var(--dim); }
+  .cameras {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .cam-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    min-width: 0;
+  }
+  .cam-panel:last-child { border-right: none; }
+  .cam-header {
+    padding: 4px 8px;
+    font-size: 11px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .cam-header .label { color: var(--accent); font-weight: bold; }
+  .cam-header .status { color: var(--dim); font-size: 10px; }
+  .cam-feed {
+    flex: 1;
+    overflow: hidden;
+    padding: 2px;
+    font-size: 7px;
+    line-height: 1.1;
+    white-space: pre;
+    color: var(--accent);
+    background: #000;
+    min-height: 0;
+  }
+  .cam-actions {
+    padding: 4px 8px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+  }
+  .cam-actions button {
+    background: var(--border);
+    color: var(--text);
+    border: none;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 3px;
+    font-family: inherit;
+  }
+  .cam-actions button:hover { background: var(--accent); color: #000; }
+  .chat-area {
+    height: 220px;
+    display: flex;
+    flex-direction: column;
+    background: var(--chat-bg);
+  }
+  .chat-header {
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--accent2);
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+  }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .msg { margin-bottom: 6px; }
+  .msg.user { color: var(--accent); }
+  .msg.user::before { content: "You: "; font-weight: bold; }
+  .msg.assistant { color: var(--text); }
+  .msg.assistant::before { content: "Analyst: "; color: var(--accent2); font-weight: bold; }
+  .msg.system { color: var(--dim); font-style: italic; font-size: 11px; }
+  .chat-input {
+    display: flex;
+    padding: 6px 12px;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .chat-input input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 3px;
+  }
+  .chat-input input:focus { outline: none; border-color: var(--accent); }
+  .chat-input button {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 3px;
+    font-family: inherit;
+    font-weight: bold;
+  }
+  .chat-input button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .chat-input button.secondary {
+    background: var(--border);
+    color: var(--text);
+  }
+  .settings {
+    padding: 4px 12px;
+    font-size: 11px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .settings label { color: var(--dim); }
+  .settings select, .settings input[type=number] {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 2px 6px;
+    font-size: 11px;
+    font-family: inherit;
+    border-radius: 2px;
+    width: 60px;
+  }
+  .settings select { width: 100px; }
+  .loading { color: var(--dim); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔤 th3cl4w ASCII Video Server</h1>
+  <div class="info" id="server-info">Connecting...</div>
+</header>
+
+<div class="cameras" id="cameras"></div>
+
+<div class="chat-area">
+  <div class="chat-header">
+    <span>💬 ASCII Art Analysis Chat</span>
+    <span id="session-info"></span>
+  </div>
+  <div class="chat-messages" id="chat-messages">
+    <div class="msg system">Click "📸 Capture & Ask" on any camera to start analysis.</div>
+  </div>
+  <div class="chat-input">
+    <input type="text" id="chat-input" placeholder="Ask about what the ASCII art shows..."
+           onkeydown="if(event.key==='Enter')sendChat()">
+    <button onclick="sendChat()" id="send-btn">Send</button>
+    <button class="secondary" onclick="newSession()">New Chat</button>
+  </div>
+</div>
+
+<div class="settings">
+  <label>Width: <input type="number" id="cfg-width" value="120" min="20" max="300"></label>
+  <label>Height: <input type="number" id="cfg-height" value="60" min="10" max="150"></label>
+  <label>Charset:
+    <select id="cfg-charset">
+      <option value="standard">Standard</option>
+      <option value="detailed">Detailed</option>
+      <option value="blocks">Blocks</option>
+      <option value="minimal">Minimal</option>
+    </select>
+  </label>
+  <label>FPS: <input type="number" id="cfg-fps" value="5" min="1" max="30" step="1"></label>
+  <button onclick="applyConfig()" style="background:var(--border);color:var(--text);border:none;padding:3px 10px;font-size:11px;cursor:pointer;border-radius:3px;font-family:inherit;">Apply</button>
+</div>
+
+<script>
+const API = window.location.origin;
+const CAMS = [
+  {id: 0, label: "Cam 0: Overhead"},
+  {id: 1, label: "Cam 1: Side (Brio)"},
+  {id: 2, label: "Cam 2: Arm-mounted"},
+];
+
+let sessionId = null;
+let activeCam = 0;
+let wsConnections = {};
+
+// Build camera panels
+const camerasEl = document.getElementById('cameras');
+CAMS.forEach(cam => {
+  const panel = document.createElement('div');
+  panel.className = 'cam-panel';
+  panel.innerHTML = `
+    <div class="cam-header">
+      <span class="label">${cam.label}</span>
+      <span class="status" id="status-${cam.id}">connecting...</span>
+    </div>
+    <div class="cam-feed" id="feed-${cam.id}"></div>
+    <div class="cam-actions">
+      <button onclick="captureAndAsk(${cam.id})">📸 Capture & Ask</button>
+    </div>
+  `;
+  camerasEl.appendChild(panel);
+});
+
+// Connect WebSockets for live feeds
+function connectWS(camId) {
+  const wsUrl = `ws://${window.location.host}/ws/ascii/${camId}`;
+  const ws = new WebSocket(wsUrl);
+  const feedEl = document.getElementById(`feed-${camId}`);
+  const statusEl = document.getElementById(`status-${camId}`);
+  let frameCount = 0;
+
+  ws.onopen = () => {
+    statusEl.textContent = 'connected';
+    statusEl.style.color = '#00ff88';
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.lines) {
+        feedEl.textContent = data.lines.join('\n');
+        frameCount++;
+        statusEl.textContent = `#${data.frame_number}`;
+      }
+    } catch(e) {
+      feedEl.textContent = event.data;
+    }
+  };
+
+  ws.onclose = () => {
+    statusEl.textContent = 'disconnected';
+    statusEl.style.color = '#ff4444';
+    // Reconnect after 2s
+    setTimeout(() => connectWS(camId), 2000);
+  };
+
+  ws.onerror = () => {
+    statusEl.textContent = 'error';
+    statusEl.style.color = '#ff4444';
+  };
+
+  wsConnections[camId] = ws;
+}
+
+// Start all WS connections
+CAMS.forEach(cam => connectWS(cam.id));
+
+// Fallback: poll HTTP if WS fails
+async function pollFallback(camId) {
+  try {
+    const resp = await fetch(`${API}/api/ascii/stream/${camId}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      document.getElementById(`feed-${camId}`).textContent = data.lines.join('\n');
+    }
+  } catch(e) {}
+}
+
+// Chat functions
+function addMessage(role, text) {
+  const el = document.createElement('div');
+  el.className = `msg ${role}`;
+  el.textContent = text;
+  const container = document.getElementById('chat-messages');
+  container.appendChild(el);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function captureAndAsk(camId) {
+  activeCam = camId;
+  const question = document.getElementById('chat-input').value.trim()
+    || "Describe what you see in this ASCII frame. Identify any objects, the arm position, and spatial relationships.";
+
+  document.getElementById('chat-input').value = '';
+  addMessage('user', `[Cam ${camId}] ${question}`);
+  addMessage('system', 'Analyzing...');
+
+  const sendBtn = document.getElementById('send-btn');
+  sendBtn.disabled = true;
+
+  try {
+    const resp = await fetch(`${API}/api/ascii/analyze`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cam_id: camId, question, session_id: sessionId}),
+    });
+    const data = await resp.json();
+
+    // Remove "Analyzing..." message
+    const msgs = document.getElementById('chat-messages');
+    const lastSystem = msgs.querySelector('.msg.system:last-child');
+    if (lastSystem && lastSystem.textContent === 'Analyzing...') msgs.removeChild(lastSystem);
+
+    if (data.answer) {
+      sessionId = data.session_id;
+      addMessage('assistant', data.answer);
+      document.getElementById('session-info').textContent =
+        `Session: ${sessionId} | ${data.tokens_used} tokens | ${data.latency_ms}ms`;
+    } else {
+      addMessage('system', `Error: ${data.error || 'Unknown error'}`);
+    }
+  } catch(e) {
+    addMessage('system', `Error: ${e.message}`);
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const question = input.value.trim();
+  if (!question) return;
+  input.value = '';
+  await captureAndAsk(activeCam);
+}
+
+function newSession() {
+  sessionId = null;
+  const msgs = document.getElementById('chat-messages');
+  msgs.innerHTML = '<div class="msg system">New session started. Click "📸 Capture & Ask" on any camera.</div>';
+  document.getElementById('session-info').textContent = '';
+}
+
+// Config
+async function applyConfig() {
+  const body = {
+    width: parseInt(document.getElementById('cfg-width').value),
+    height: parseInt(document.getElementById('cfg-height').value),
+    charset_name: document.getElementById('cfg-charset').value,
+    fps: parseFloat(document.getElementById('cfg-fps').value),
+  };
+  try {
+    const resp = await fetch(`${API}/api/ascii/config`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      addMessage('system', `Config updated: ${body.width}x${body.height}, ${body.charset_name}, ${body.fps} FPS`);
+    }
+  } catch(e) {
+    addMessage('system', `Config error: ${e.message}`);
+  }
+}
+
+// Load initial config
+fetch(`${API}/api/ascii/config`).then(r => r.json()).then(data => {
+  if (data.width) document.getElementById('cfg-width').value = data.width;
+  if (data.height) document.getElementById('cfg-height').value = data.height;
+  if (data.charset_name) document.getElementById('cfg-charset').value = data.charset_name;
+  if (data.fps) document.getElementById('cfg-fps').value = data.fps;
+  document.getElementById('server-info').textContent =
+    `${data.width}x${data.height} | ${data.charset_name} | ${data.fps} FPS | Cams: ${(data.cam_ids||[]).join(', ')}`;
+}).catch(() => {
+  document.getElementById('server-info').textContent = 'Server unavailable';
+});
+</script>
+</body>
+</html>

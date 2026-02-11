@@ -102,6 +102,7 @@ class TestPickVideoRecorder:
     def test_uses_config_urls(self):
         """Verify we use camera_config URLs, not hardcoded ones."""
         from src.config.camera_config import latest_url
+
         # Should use the config module's URL builder
         url = latest_url(0)
         assert "/latest/0" in url
@@ -125,6 +126,7 @@ class TestPickRecordingAPI:
         """ALL_CAMS includes all 3 camera IDs."""
         assert len(ALL_CAMS) == 3
         from src.config.camera_config import CAM_OVERHEAD, CAM_ARM, CAM_SIDE
+
         assert CAM_OVERHEAD in ALL_CAMS
         assert CAM_ARM in ALL_CAMS
         assert CAM_SIDE in ALL_CAMS

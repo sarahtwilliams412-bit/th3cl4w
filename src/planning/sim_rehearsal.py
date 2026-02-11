@@ -141,7 +141,9 @@ class SimRehearsalRunner:
             "required_successes": self.state.required_successes,
             "jitter_mm": self.state.jitter_mm,
             "running": self._running,
-            "elapsed_s": round(time.time() - self.state.started_at, 1) if self.state.started_at else 0,
+            "elapsed_s": (
+                round(time.time() - self.state.started_at, 1) if self.state.started_at else 0
+            ),
             "log": self.state.log[-30:],
             "error": self.state.error,
             "report": self._report_to_dict(self._last_report) if self._last_report else None,
@@ -258,9 +260,7 @@ class SimRehearsalRunner:
     ) -> RehearsalReport:
         t0 = time.time()
         try:
-            report = await self._rehearsal_loop(
-                target, max_attempts, required_successes, jitter_mm
-            )
+            report = await self._rehearsal_loop(target, max_attempts, required_successes, jitter_mm)
             report.total_duration_s = time.time() - t0
             self._last_report = report
 
@@ -329,9 +329,7 @@ class SimRehearsalRunner:
                 self._log(f"Position jitter: ({jx:+.1f}, {jy:+.1f}) mm")
 
             # Run a single sim attempt
-            result = await self._run_single_attempt(
-                target, attempt_num, jitter_xy_mm=(jx, jy)
-            )
+            result = await self._run_single_attempt(target, attempt_num, jitter_xy_mm=(jx, jy))
             attempts.append(result)
 
             if result.success:
@@ -549,15 +547,17 @@ class SimRehearsalRunner:
                 }
                 for a in report.attempts
             ],
-            "physical_result": {
-                "success": report.physical_result.success,
-                "phase": report.physical_result.phase.value,
-                "joints": report.physical_result.joints,
-                "error": report.physical_result.error,
-                "duration_s": round(report.physical_result.duration_s, 1),
-            }
-            if report.physical_result
-            else None,
+            "physical_result": (
+                {
+                    "success": report.physical_result.success,
+                    "phase": report.physical_result.phase.value,
+                    "joints": report.physical_result.joints,
+                    "error": report.physical_result.error,
+                    "duration_s": round(report.physical_result.duration_s, 1),
+                }
+                if report.physical_result
+                else None
+            ),
         }
 
 

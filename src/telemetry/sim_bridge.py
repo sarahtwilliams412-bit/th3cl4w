@@ -116,10 +116,7 @@ class SimTelemetryBridge:
 
         # --- state_update on angle change ---
         if self._last_angles is not None:
-            changed = any(
-                abs(a - b) > 0.05
-                for a, b in zip(arm_angles, self._last_angles)
-            )
+            changed = any(abs(a - b) > 0.05 for a, b in zip(arm_angles, self._last_angles))
         else:
             changed = True  # first reading
 

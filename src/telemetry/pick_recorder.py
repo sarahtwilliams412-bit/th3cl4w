@@ -77,9 +77,7 @@ class PickVideoRecorder:
                     except Exception:
                         pass  # lightweight — don't fail the pick
                 try:
-                    await asyncio.wait_for(
-                        self._stop_event.wait(), timeout=FRAME_INTERVAL
-                    )
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=FRAME_INTERVAL)
                     break  # stop event was set
                 except asyncio.TimeoutError:
                     pass  # continue recording

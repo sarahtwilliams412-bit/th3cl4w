@@ -22,7 +22,12 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from src.config.camera_config import CAMERA_SERVER_URL as _CAM_API_DEFAULT, CAM_SIDE, CAM_ARM, snap_url
+from src.config.camera_config import (
+    CAMERA_SERVER_URL as _CAM_API_DEFAULT,
+    CAM_SIDE,
+    CAM_ARM,
+    snap_url,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -428,9 +428,7 @@ class ObjectLabeler:
                     _gtypes.Part.from_bytes(data=_img_bytes, mime_type="image/jpeg"),
                     self._prompt,
                 ],
-                config=_gtypes.GenerateContentConfig(
-                    temperature=0.1, max_output_tokens=1024
-                ),
+                config=_gtypes.GenerateContentConfig(temperature=0.1, max_output_tokens=1024),
             )
 
             text = response.text.strip()

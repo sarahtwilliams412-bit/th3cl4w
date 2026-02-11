@@ -220,11 +220,22 @@ class TestAnalysis:
     def test_phase_failure_counts(self):
         runner = self._make_runner()
         attempts = [
-            AttemptResult(attempt_number=1, success=False, phase_reached="detecting", error="No object"),
-            AttemptResult(attempt_number=2, success=False, phase_reached="gripping", error="Grip failed"),
-            AttemptResult(attempt_number=3, success=False, phase_reached="gripping", error="Grip failed"),
-            AttemptResult(attempt_number=4, success=True, phase_reached="done",
-                         joints=[1.0, 25.9, 6.7, 0.0, 90.0, 0.0], grip_distance_mm=10.0),
+            AttemptResult(
+                attempt_number=1, success=False, phase_reached="detecting", error="No object"
+            ),
+            AttemptResult(
+                attempt_number=2, success=False, phase_reached="gripping", error="Grip failed"
+            ),
+            AttemptResult(
+                attempt_number=3, success=False, phase_reached="gripping", error="Grip failed"
+            ),
+            AttemptResult(
+                attempt_number=4,
+                success=True,
+                phase_reached="done",
+                joints=[1.0, 25.9, 6.7, 0.0, 90.0, 0.0],
+                grip_distance_mm=10.0,
+            ),
         ]
         report = runner._analyse("redbull", attempts, required_successes=1)
         assert report.phase_failure_counts == {"detecting": 1, "gripping": 2}
@@ -233,19 +244,28 @@ class TestAnalysis:
         runner = self._make_runner()
         attempts = [
             AttemptResult(
-                attempt_number=1, success=True, phase_reached="done",
+                attempt_number=1,
+                success=True,
+                phase_reached="done",
                 joints=[10.0, 25.0, 7.0, 0.0, 90.0, 0.0],
-                target_xy_mm=(100.0, 0.0), grip_distance_mm=20.0,
+                target_xy_mm=(100.0, 0.0),
+                grip_distance_mm=20.0,
             ),
             AttemptResult(
-                attempt_number=2, success=True, phase_reached="done",
+                attempt_number=2,
+                success=True,
+                phase_reached="done",
                 joints=[10.0, 26.0, 7.5, 0.0, 90.0, 0.0],
-                target_xy_mm=(102.0, 1.0), grip_distance_mm=8.0,
+                target_xy_mm=(102.0, 1.0),
+                grip_distance_mm=8.0,
             ),
             AttemptResult(
-                attempt_number=3, success=True, phase_reached="done",
+                attempt_number=3,
+                success=True,
+                phase_reached="done",
                 joints=[10.0, 24.5, 6.5, 0.0, 90.0, 0.0],
-                target_xy_mm=(98.0, -1.0), grip_distance_mm=15.0,
+                target_xy_mm=(98.0, -1.0),
+                grip_distance_mm=15.0,
             ),
         ]
         report = runner._analyse("redbull", attempts, required_successes=2)
@@ -256,10 +276,20 @@ class TestAnalysis:
     def test_avg_grip_distance(self):
         runner = self._make_runner()
         attempts = [
-            AttemptResult(attempt_number=1, success=True, phase_reached="done",
-                         joints=[1.0, 25.0, 7.0, 0.0, 90.0, 0.0], grip_distance_mm=10.0),
-            AttemptResult(attempt_number=2, success=True, phase_reached="done",
-                         joints=[1.0, 25.0, 7.0, 0.0, 90.0, 0.0], grip_distance_mm=20.0),
+            AttemptResult(
+                attempt_number=1,
+                success=True,
+                phase_reached="done",
+                joints=[1.0, 25.0, 7.0, 0.0, 90.0, 0.0],
+                grip_distance_mm=10.0,
+            ),
+            AttemptResult(
+                attempt_number=2,
+                success=True,
+                phase_reached="done",
+                joints=[1.0, 25.0, 7.0, 0.0, 90.0, 0.0],
+                grip_distance_mm=20.0,
+            ),
             AttemptResult(attempt_number=3, success=False, phase_reached="failed"),
         ]
         report = runner._analyse("redbull", attempts, required_successes=2)

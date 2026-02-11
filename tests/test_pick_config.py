@@ -9,13 +9,13 @@ from unittest.mock import patch
 
 def _fresh_config(tmp_path):
     """Create a fresh PickConfig pointing at tmp_path."""
-    import src.config.pick_config as mod
+    import shared.config.pick_config as shared_mod
 
     # Reset singleton
-    mod.PickConfig._instance = None
-    mod._CONFIG_DIR = tmp_path
-    mod._CONFIG_FILE = tmp_path / "pick_config.json"
-    from src.config.pick_config import get_pick_config
+    shared_mod.PickConfig._instance = None
+    shared_mod._CONFIG_DIR = tmp_path
+    shared_mod._CONFIG_FILE = tmp_path / "pick_config.json"
+    from shared.config.pick_config import get_pick_config
 
     return get_pick_config()
 

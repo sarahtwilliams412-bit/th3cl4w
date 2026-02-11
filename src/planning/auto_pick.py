@@ -25,16 +25,16 @@ from src.config.camera_config import CAM_OVERHEAD, snap_url
 logger = logging.getLogger("th3cl4w.planning.auto_pick")
 
 # Arm geometry (mm)
-D0 = 121.5   # base height
-L1 = 208.5   # upper arm
-L2 = 208.5   # forearm
-L3 = 113.0   # wrist length
+D0 = 121.5  # base height
+L1 = 208.5  # upper arm
+L2 = 208.5  # forearm
+L3 = 113.0  # wrist length
 
 # Pixel-to-mm conversion for overhead camera (rough)
 # Workspace ~800mm across 1920px
 PX_TO_MM = 0.417
-IMG_CX = 960   # image center X
-IMG_CY = 540   # image center Y
+IMG_CX = 960  # image center X
+IMG_CY = 540  # image center Y
 
 # Default server URL
 DEFAULT_SERVER = "http://localhost:8080"
@@ -108,7 +108,9 @@ class AutoPick:
             "planned_joints": self.state.planned_joints,
             "error": self.state.error,
             "running": self._running,
-            "elapsed_s": round(time.time() - self.state.started_at, 1) if self.state.started_at else 0,
+            "elapsed_s": (
+                round(time.time() - self.state.started_at, 1) if self.state.started_at else 0
+            ),
             "log": self.state.log[-20:],
             "mode": self._current_mode or "unknown",
         }
@@ -116,7 +118,11 @@ class AutoPick:
         if ep:
             status["episode_id"] = ep.episode_id
             status["episode_phases"] = [
-                {"name": p.name, "success": p.success, "duration_s": round(p.end_time - p.start_time, 2) if p.end_time else 0}
+                {
+                    "name": p.name,
+                    "success": p.success,
+                    "duration_s": round(p.end_time - p.start_time, 2) if p.end_time else 0,
+                }
                 for p in ep.phases
             ]
         return status
@@ -155,7 +161,9 @@ class AutoPick:
         except _StopRequested:
             self.state.phase = AutoPickPhase.STOPPED
             self._log("Stopped by user")
-            return PickResult(phase=AutoPickPhase.STOPPED, error="Stopped by user", duration_s=time.time() - t0)
+            return PickResult(
+                phase=AutoPickPhase.STOPPED, error="Stopped by user", duration_s=time.time() - t0
+            )
         except Exception as e:
             self.state.phase = AutoPickPhase.FAILED
             self.state.error = str(e)
@@ -286,6 +294,7 @@ class AutoPick:
 
             if actual_mode == "simulation":
                 from src.planning.virtual_grip import VirtualGripDetector
+
                 detector = VirtualGripDetector()
                 try:
                     async with httpx.AsyncClient(timeout=3.0) as client:
@@ -294,9 +303,13 @@ class AutoPick:
                         current_joints = state_data.get("joints", joints)
                         gripper_w = state_data.get("gripper", 32.5)
                         # Try to get detected objects
-                        obj_resp = await client.get(f"{self.server_url}/api/virtual-grip/check",
-                                                    params={"joints": ",".join(str(j) for j in current_joints),
-                                                            "gripper": str(gripper_w)})
+                        obj_resp = await client.get(
+                            f"{self.server_url}/api/virtual-grip/check",
+                            params={
+                                "joints": ",".join(str(j) for j in current_joints),
+                                "gripper": str(gripper_w),
+                            },
+                        )
                         obj_data = obj_resp.json()
                         verified = obj_data.get("gripped", False)
                         gripped_label = obj_data.get("object_label", target)
@@ -439,14 +452,14 @@ class AutoPick:
         j0 = math.degrees(math.atan2(y_mm, x_mm))
 
         # Horizontal distance from base
-        r_mm = math.sqrt(x_mm ** 2 + y_mm ** 2)
+        r_mm = math.sqrt(x_mm**2 + y_mm**2)
 
         # Empirical model calibrated from reference pose
         # Reference: r ≈ 100mm → J1 = 25.9°, J2 = 6.7°
         # Scale factors derived from reference
-        R_REF = 100.0   # reference horizontal distance mm
-        J1_REF = 25.9    # reference shoulder angle
-        J2_REF = 6.7     # reference elbow angle
+        R_REF = 100.0  # reference horizontal distance mm
+        J1_REF = 25.9  # reference shoulder angle
+        J2_REF = 6.7  # reference elbow angle
 
         # Linear scaling: J1 is primary reach control
         # At r=0 the arm hangs straight down (J1≈0)
