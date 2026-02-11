@@ -626,34 +626,29 @@ def main():
     from src.utils.logging_config import setup_logging
     setup_logging(server_name="camera", debug=args.debug, log_dir=args.log_dir)
 
-    # Auto-detect cameras, with CLI args as overrides
+    # Auto-detect cameras, with explicit CLI args as overrides
     global CAMERA_REGISTRY
     detected = auto_detect_cameras()
     
-    # CLI args override auto-detection
-    if args.cam0 != 0 or 0 not in detected:
-        detected[0] = args.cam0
-    if args.cam1 != 4 or 1 not in detected:
-        detected[1] = args.cam1
-    if args.cam2 != 6 or 2 not in detected:
-        detected.setdefault(2, args.cam2)
+    # Only override auto-detection if user explicitly passed a --cam arg
+    # (We check against defaults to know if it was explicit)
+    cli_overrides = {k: v for k, v in {0: args.cam0, 1: args.cam1, 2: args.cam2}.items()
+                     if v != {0: 0, 1: 4, 2: 6}[k]}
+    detected.update(cli_overrides)
     
     CAMERA_REGISTRY = build_camera_registry(detected)
 
-    # Start camera threads
-    cameras[0] = CameraThread(detected[0], args.width, args.height, args.fps, args.jpeg_quality)
-    cameras[1] = CameraThread(detected[1], args.width, args.height, args.fps, args.jpeg_quality)
-
-    # Try to open cam2 — don't crash if it fails
-    cam2_dev = detected.get(2)
-    if cam2_dev is not None:
+    # Start camera threads for detected cameras
+    for cam_id in sorted(detected):
+        dev = detected[cam_id]
         try:
-            cam2 = CameraThread(cam2_dev, args.width, args.height, args.fps, args.jpeg_quality)
-            cameras[2] = cam2
+            cameras[cam_id] = CameraThread(dev, args.width, args.height, args.fps, args.jpeg_quality)
         except Exception as e:
-            logger.warning("Failed to create camera 2 (dev %d): %s — continuing with 2 cameras", cam2_dev, e)
-    else:
-        logger.warning("No device found for cam2 (overhead) — continuing with 2 cameras")
+            logger.warning("Failed to create camera %d (dev %d): %s", cam_id, dev, e)
+    
+    if not cameras:
+        logger.error("No cameras available!")
+        sys.exit(1)
 
     for cam in cameras.values():
         cam.start()
