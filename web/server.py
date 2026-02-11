@@ -3632,16 +3632,33 @@ async def objects_detect_with_ai():
         if resp_side is not None and resp_side.status_code == 200:
             side_frame = cv2.imdecode(np.frombuffer(resp_side.content, np.uint8), cv2.IMREAD_COLOR)
 
-        # 2. Gemini pre-detection inventory (raw overhead image)
+        # 2. Gemini pre-detection inventory (overhead + side for cross-validation)
         raw_b64 = base64.b64encode(overhead_jpeg).decode("ascii")
-        gemini_inventory = await _gemini_vision_call(
-            overhead_jpeg,
-            "List every distinct object you can see on this workspace table. "
-            "For each object, provide: 1) A specific real-world name (e.g., 'Red Bull energy drink can', not 'red cylinder'), "
-            "2) Estimated dimensions in mm (width × height × depth), "
-            "3) Approximate pixel location (center x, y). "
-            "Return as JSON array with keys: name, width_mm, height_mm, depth_mm, pixel_x, pixel_y."
+        side_jpeg = resp_side.content if resp_side and resp_side.status_code == 200 else None
+
+        inventory_prompt = (
+            "You are looking at a robotic arm workspace from TWO camera angles.\n"
+            "Image 1: OVERHEAD view (looking straight down at the table).\n"
+            "Image 2: SIDE PROFILE view (looking at the table from the side).\n\n"
+            "The robotic arm is mounted at the back/center of the table. "
+            "ONLY list objects that are physically ON the workspace table surface and within ~50cm of the arm base. "
+            "Do NOT include: the arm itself, cables, tape, items on shelves behind the table, "
+            "items on the floor, monitors, or anything NOT on the actual work surface.\n\n"
+            "Use the side view to confirm which items are actually sitting ON the table vs background objects.\n\n"
+            "For each object on the table, provide:\n"
+            "1) A specific real-world name (e.g., 'Red Bull 250ml energy drink can')\n"
+            "2) Estimated dimensions in mm (width × height × depth)\n"
+            "3) Approximate pixel location in the OVERHEAD image (center x, y)\n"
+            "Return as JSON array with keys: name, width_mm, height_mm, depth_mm, pixel_x, pixel_y, on_table_confidence (0-1)"
         )
+
+        if side_jpeg:
+            gemini_inventory = await _gemini_multi_image_call(
+                [overhead_jpeg, side_jpeg],
+                inventory_prompt,
+            )
+        else:
+            gemini_inventory = await _gemini_vision_call(overhead_jpeg, inventory_prompt)
 
         # 3. Run CV detection
         if workspace_mapper is not None and workspace_mapper.scale_calibrated:
@@ -3654,16 +3671,26 @@ async def objects_detect_with_ai():
         annotated_jpeg = ann_buf.tobytes()
         annotated_b64 = base64.b64encode(annotated_jpeg).decode("ascii")
 
-        # 5. Gemini post-detection verification (annotated image)
-        gemini_verification = await _gemini_vision_call(
-            annotated_jpeg,
-            "I've run computer vision detection on this workspace image. "
-            "The colored circles/boxes show detected objects. For each detection, tell me: "
-            "1) What real-world object this actually is (specific name), "
-            "2) Is the detection correct (covers the right area)? "
-            "3) Are there any objects on the table that were MISSED by the detection? "
-            "Return as JSON with keys: detections (array of {name, correct, notes}), missed (array of {name, pixel_x, pixel_y})."
+        # 5. Gemini post-detection verification (annotated overhead + raw side)
+        verification_prompt = (
+            "Image 1: OVERHEAD view with CV detection annotations (colored circles/boxes).\n"
+            "Image 2: SIDE PROFILE view of the same workspace (no annotations).\n\n"
+            "For each colored detection in the overhead image:\n"
+            "1) What real-world object is it? (specific name)\n"
+            "2) Is it actually ON the workspace table? Use the side view to verify.\n"
+            "3) Is the detection correct (right area)?\n"
+            "4) Should it be KEPT (real object on table) or REMOVED (false positive, background item, not on table)?\n\n"
+            "Also list any objects ON the table that were MISSED.\n"
+            "Return JSON: {detections: [{name, on_table: bool, correct: bool, recommendation: 'keep'|'remove', notes}], "
+            "missed: [{name, pixel_x, pixel_y}]}"
         )
+        if side_jpeg:
+            gemini_verification = await _gemini_multi_image_call(
+                [annotated_jpeg, side_jpeg],
+                verification_prompt,
+            )
+        else:
+            gemini_verification = await _gemini_vision_call(annotated_jpeg, verification_prompt)
 
         # 6. Merge Gemini labels/dimensions with CV objects
         objects = object_detector.get_objects()
@@ -3711,6 +3738,13 @@ async def objects_detect_with_ai():
                     od["gemini_confidence"] = 0.7
                 if vd.get("correct") is False:
                     od["gemini_confidence"] = max(0, od["gemini_confidence"] - 0.3)
+                # Auto-flag items Gemini says aren't on the table
+                if vd.get("on_table") is False or vd.get("recommendation") == "remove":
+                    od["review_status"] = "auto-remove"
+                    od["gemini_confidence"] = max(0, od["gemini_confidence"] - 0.5)
+                    od["removal_reason"] = vd.get("notes", "Not on workspace table")
+                elif vd.get("on_table") is True and vd.get("recommendation") == "keep":
+                    od["review_status"] = "suggested-keep"
 
             # Store gemini data on the actual object for persistence
             o.category = od.get("gemini_label") or o.category

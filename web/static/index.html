@@ -1140,6 +1140,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
     <!-- Object list with per-object actions (Items 13 + 14) -->
     <div class="panel-card">
       <h3>Detected Objects <span id="objPanelCountBadge" style="background:#333;color:#aaa;padding:2px 8px;border-radius:10px;font-size:11px;margin-left:8px;">0</span></h3>
+      <div id="objPanelBulkActions" style="display:none;margin-bottom:6px;gap:6px;display:flex;">
+        <button class="btn" onclick="_objRemoveAllFlagged()" style="background:#e74c3c;color:#fff;padding:4px 12px;font-size:11px;">🗑 Remove All Flagged</button>
+        <button class="btn" onclick="_objKeepAllSuggested()" style="background:#27ae60;color:#fff;padding:4px 12px;font-size:11px;">✓ Keep All Suggested</button>
+      </div>
       <div class="result-box" id="objPanelList" style="max-height:400px;overflow-y:auto;">No objects detected</div>
     </div>
 
@@ -5153,6 +5157,13 @@ function _objPanelRenderList(objects) {
   if (totalEl) totalEl.textContent = objects.length;
   const reachable = objects.filter(o => o.within_reach);
   if (reachEl) reachEl.textContent = reachable.length;
+  // Show bulk actions if there are flagged items
+  const bulkEl = document.getElementById('objPanelBulkActions');
+  if (bulkEl) {
+    const hasFlagged = objects.some(o => (o.review_status || o._review_status) === 'auto-remove');
+    const hasSuggested = objects.some(o => (o.review_status || o._review_status) === 'suggested-keep');
+    bulkEl.style.display = (hasFlagged || hasSuggested) ? 'flex' : 'none';
+  }
   if (listEl) {
     if (objects.length === 0) {
       listEl.innerHTML = '<span style="color:#556;">No objects detected</span>';
@@ -5170,9 +5181,14 @@ function _objPanelRenderList(objects) {
           ? '<span style="color:#2ecc71;font-weight:bold;">✓ KEEP</span>'
           : reviewStatus === 'remove'
           ? '<span style="color:#e74c3c;font-weight:bold;">✗ REMOVED</span>'
+          : reviewStatus === 'auto-remove'
+          ? '<span style="color:#e74c3c;font-weight:bold;">⚠ NOT ON TABLE</span>'
+          : reviewStatus === 'suggested-keep'
+          ? '<span style="color:#2ecc71;">✓ Looks good</span>'
           : reviewStatus === 're-evaluate'
           ? '<span style="color:#f39c12;font-weight:bold;">🔄 RE-EVALUATED</span>'
           : '<span style="color:#95a5a6;">⏳ Pending</span>';
+        const removalReason = o.removal_reason ? `<div style="font-size:10px;color:#e74c3c;margin-top:2px;">⚠ ${o.removal_reason}</div>` : '';
 
         // Gemini label display
         const cvLabel = o.cv_label || o.label || '?';
@@ -5210,6 +5226,7 @@ function _objPanelRenderList(objects) {
             `Pos: (${o.x_mm}, ${o.y_mm}, ${o.z_mm}) mm | Dist: ${o.distance_mm}mm | Conf: ${(o.confidence * 100).toFixed(0)}%` +
           `</div>` +
           (dimInfo ? `<div style="margin-bottom:4px;">${dimInfo}</div>` : '') +
+          removalReason +
           `<div class="btn-row" style="margin:0;gap:4px;" onclick="event.stopPropagation()">` +
             `<button class="btn" onclick="_objKeep(${idx})" style="background:#27ae60;color:#fff;padding:3px 10px;font-size:11px;">✓ KEEP</button>` +
             `<button class="btn" onclick="_objRemove(${idx})" style="background:#e74c3c;color:#fff;padding:3px 10px;font-size:11px;">✗ REMOVE</button>` +
@@ -5224,6 +5241,21 @@ function _objPanelRenderList(objects) {
 }
 
 // Keep/Remove/Re-evaluate actions
+async function _objRemoveAllFlagged() {
+  const flagged = _objPanelObjects.filter(o => (o.review_status || o._review_status) === 'auto-remove');
+  for (let i = 0; i < _objPanelObjects.length; i++) {
+    const o = _objPanelObjects[i];
+    if ((o.review_status || o._review_status) === 'auto-remove') await _objRemove(i);
+  }
+}
+
+async function _objKeepAllSuggested() {
+  for (let i = 0; i < _objPanelObjects.length; i++) {
+    const o = _objPanelObjects[i];
+    if ((o.review_status || o._review_status) === 'suggested-keep') await _objKeep(i);
+  }
+}
+
 async function _objKeep(idx) {
   const o = _objPanelObjects[idx];
   if (!o) return;
