@@ -52,7 +52,10 @@ logger = logging.getLogger("th3cl4w.camera")
 
 def detect_video_devices() -> dict[int, str]:
     """Scan /sys/class/video4linux/ and return {device_index: device_name}.
-    Only returns capture-capable devices (V4L2 index=0)."""
+
+    Returns ALL connected capture-capable USB video devices (V4L2 index=0).
+    No filtering by brand or model — all cameras are included.
+    """
     import glob
     devices = {}
     for path in sorted(glob.glob("/sys/class/video4linux/video*")):
@@ -73,38 +76,36 @@ def detect_video_devices() -> dict[int, str]:
     return devices
 
 
-def auto_detect_cameras() -> dict[int, int]:
-    """Auto-detect camera assignments. Returns {cam_id: device_index}.
-    
-    Camera roles:
-      cam0 = Side (first Logitech BRIO found)
-      cam1 = Arm-mounted (second Logitech BRIO found)  
-      cam2 = Overhead (third Logitech BRIO found)
-    
-    MX Brio is excluded (it's a webcam, not a workspace camera).
-    Falls back to hardcoded defaults if detection fails.
+def load_camera_assignments() -> dict[int, int]:
+    """Load camera role-to-device assignments from config file.
+
+    Returns {cam_id: device_index} based on saved configuration.
+    If not configured (or devices changed), returns empty dict — cameras
+    won't start until user assigns them via the web UI settings page.
     """
+    try:
+        from shared.config.camera_assignments import (
+            get_cam_id_assignments, is_configured, check_device_changes,
+        )
+    except ImportError:
+        logger.warning("camera_assignments module not available")
+        return {}
+
     devices = detect_video_devices()
     logger.info("Detected video devices: %s", {f"/dev/video{k}": v for k, v in devices.items()})
-    
-    # Find all Logitech BRIOs (exclude MX Brio)
-    brios = sorted([idx for idx, name in devices.items() 
-                     if "BRIO" in name and "MX" not in name])
-    
-    assignments = {}
-    defaults = {0: 0, 1: 4, 2: 6}  # fallback
-    
-    for cam_id, dev_idx in enumerate(brios):
-        if cam_id > 2:
-            break
-        assignments[cam_id] = dev_idx
-        
-    if not assignments:
-        logger.warning("No BRIO cameras detected, using defaults: %s", defaults)
-        return defaults
-    
-    logger.info("Auto-detected camera assignments: %s", 
-                {f"cam{k}": f"/dev/video{v}" for k, v in assignments.items()})
+
+    if check_device_changes(devices):
+        logger.warning("Camera devices changed since last config — requires re-assignment via UI")
+        return {}
+
+    if not is_configured():
+        logger.info("Camera assignments not configured — waiting for user setup via web UI")
+        return {}
+
+    assignments = get_cam_id_assignments()
+    if assignments:
+        logger.info("Loaded camera assignments: %s",
+                    {f"cam{k}": f"/dev/video{v}" for k, v in assignments.items()})
     return assignments
 
 
@@ -118,7 +119,7 @@ _CAMERA_ROLES = {
     1: {"name": "Arm-mounted", "role": "end_effector", "mount": "arm",
         "description": "Camera attached to end-effector. Moves with arm. Used for close-up inspection and visual servo."},
     2: {"name": "Overhead", "role": "overhead", "mount": "fixed",
-        "description": "Logitech BRIO mounted above workspace, looking straight down. Primary camera for object detection X/Y positioning."},
+        "description": "Overhead camera looking straight down. Primary camera for object detection X/Y positioning."},
 }
 
 def build_camera_registry(assignments: dict[int, int]) -> dict:
@@ -134,7 +135,7 @@ def build_camera_registry(assignments: dict[int, int]) -> dict:
         }
     return registry
 
-CAMERA_REGISTRY = build_camera_registry({0: 0, 1: 4, 2: 6})  # default, rebuilt at startup
+CAMERA_REGISTRY = {}  # built at startup from saved config
 
 # ---------------------------------------------------------------------------
 # Camera capture thread
@@ -339,6 +340,16 @@ class CameraHandler(BaseHTTPRequestHandler):
             self._handle_world_model()
         elif self.path == "/scan":
             self._handle_scan_report()
+        elif self.path == "/devices":
+            self._handle_devices()
+        elif self.path == "/config":
+            self._handle_config()
+        else:
+            self.send_error(404)
+
+    def do_POST(self):
+        if self.path == "/config":
+            self._handle_save_config()
         else:
             self.send_error(404)
 
@@ -533,6 +544,104 @@ class CameraHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _handle_devices(self):
+        """Return all detected video devices (for camera setup UI)."""
+        import json
+        devices = detect_video_devices()
+        # Format: list of {device: "/dev/videoN", name: "...", index: N}
+        device_list = [
+            {"device": f"/dev/video{idx}", "name": name, "index": idx}
+            for idx, name in sorted(devices.items())
+        ]
+        body = json.dumps({"devices": device_list}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_config(self):
+        """Return current camera assignment config."""
+        import json
+        try:
+            from shared.config.camera_assignments import load_config, CAMERA_ROLES
+            cfg = load_config()
+            cfg["roles"] = CAMERA_ROLES
+        except ImportError:
+            cfg = {"assignments": {}, "configured": False, "roles": []}
+        body = json.dumps(cfg).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_save_config(self):
+        """Save camera assignments and (re)start camera threads."""
+        import json
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length)
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+
+        try:
+            from shared.config.camera_assignments import load_config, save_config
+        except ImportError:
+            self.send_error(500, "camera_assignments module not available")
+            return
+
+        assignments = data.get("assignments", {})
+        devices = detect_video_devices()
+
+        cfg = load_config()
+        cfg["assignments"] = assignments
+        cfg["configured"] = True
+        cfg["detected_devices"] = {str(k): v for k, v in devices.items()}
+        save_config(cfg)
+
+        # Restart camera threads with new assignments
+        _restart_cameras_from_config()
+
+        resp = json.dumps({"ok": True}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(resp)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(resp)
+
+
+def _restart_cameras_from_config():
+    """Stop existing camera threads and start new ones from saved config."""
+    global CAMERA_REGISTRY
+
+    # Stop existing cameras
+    for cam in cameras.values():
+        cam.stop()
+    cameras.clear()
+
+    assignments = load_camera_assignments()
+    CAMERA_REGISTRY = build_camera_registry(assignments)
+
+    for cam_id in sorted(assignments):
+        dev = assignments[cam_id]
+        try:
+            cameras[cam_id] = CameraThread(dev, 1920, 1080, 15, 92)
+            cameras[cam_id].start()
+        except Exception as e:
+            logger.warning("Failed to create camera %d (dev %d): %s", cam_id, dev, e)
+
+    if cameras:
+        cam_list = ", ".join(f"cam{i}=/dev/video{cameras[i].device_id}" for i in sorted(cameras))
+        logger.info("Cameras restarted from config: %s", cam_list)
+    else:
+        logger.info("No cameras started (not configured)")
+
 
 class ThreadedHTTPServer(HTTPServer):
     """Handle each request in a bounded thread pool."""
@@ -600,15 +709,6 @@ def main():
     global startup_scanner
 
     parser = argparse.ArgumentParser(description="th3cl4w Camera Streaming Server")
-    parser.add_argument(
-        "--cam0", type=int, default=0, help="Device index for camera 0 (default: 0)"
-    )
-    parser.add_argument(
-        "--cam1", type=int, default=4, help="Device index for camera 1 (default: 4)"
-    )
-    parser.add_argument(
-        "--cam2", type=int, default=6, help="Device index for camera 2 (default: 6)"
-    )
     parser.add_argument("--port", type=int, default=8081, help="HTTP port (default: 8081)")
     parser.add_argument("--width", type=int, default=1920, help="Capture width (default: 1920)")
     parser.add_argument("--height", type=int, default=1080, help="Capture height (default: 1080)")
@@ -626,35 +726,27 @@ def main():
     from src.utils.logging_config import setup_logging
     setup_logging(server_name="camera", debug=args.debug, log_dir=args.log_dir)
 
-    # Auto-detect cameras, with explicit CLI args as overrides
+    # Load camera assignments from config (set via web UI)
     global CAMERA_REGISTRY
-    detected = auto_detect_cameras()
-    
-    # Only override auto-detection if user explicitly passed a --cam arg
-    # (We check against defaults to know if it was explicit)
-    cli_overrides = {k: v for k, v in {0: args.cam0, 1: args.cam1, 2: args.cam2}.items()
-                     if v != {0: 0, 1: 4, 2: 6}[k]}
-    detected.update(cli_overrides)
-    
+    detected = load_camera_assignments()
     CAMERA_REGISTRY = build_camera_registry(detected)
 
-    # Start camera threads for detected cameras
+    # Start camera threads for configured cameras
     for cam_id in sorted(detected):
         dev = detected[cam_id]
         try:
             cameras[cam_id] = CameraThread(dev, args.width, args.height, args.fps, args.jpeg_quality)
         except Exception as e:
             logger.warning("Failed to create camera %d (dev %d): %s", cam_id, dev, e)
-    
-    if not cameras:
-        logger.error("No cameras available!")
-        sys.exit(1)
 
     for cam in cameras.values():
         cam.start()
 
-    cam_list = ", ".join(f"cam{i}=/dev/video{cameras[i].device_id}" for i in sorted(cameras))
-    logger.info("Cameras started: %s", cam_list)
+    if cameras:
+        cam_list = ", ".join(f"cam{i}=/dev/video{cameras[i].device_id}" for i in sorted(cameras))
+        logger.info("Cameras started: %s", cam_list)
+    else:
+        logger.info("No cameras configured — server running in setup mode. Visit web UI to assign cameras.")
 
     # Launch startup scanner — immediately begins assessing the environment
     if _HAS_SCANNER and not args.no_scan:

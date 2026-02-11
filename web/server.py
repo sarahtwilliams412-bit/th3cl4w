@@ -850,6 +850,55 @@ async def api_cameras_config_set(req: CameraConfigRequest):
     return {"ok": True, "config": config}
 
 
+# ── Camera Assignment endpoints (device → role mapping) ──────
+
+
+@app.get("/api/cameras/assignments")
+async def api_cameras_assignments():
+    """Return camera device assignment config (which device → which role)."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(f"{CAM_SERVER}/config")
+            return resp.json()
+    except Exception:
+        return {"assignments": {}, "configured": False, "roles": []}
+
+
+@app.get("/api/cameras/devices")
+async def api_cameras_devices():
+    """Return all detected video devices from camera server."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(f"{CAM_SERVER}/devices")
+            return resp.json()
+    except Exception:
+        return {"devices": [], "error": "Camera server unavailable"}
+
+
+class CameraAssignmentRequest(BaseModel):
+    assignments: Dict[str, str]  # role → device path
+
+
+@app.post("/api/cameras/assignments")
+async def api_cameras_assignments_save(req: CameraAssignmentRequest):
+    """Save camera device-to-role assignments."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                f"{CAM_SERVER}/config",
+                json={"assignments": req.assignments},
+            )
+            result = resp.json()
+            if result.get("ok"):
+                action_log.add("CAMERA_SETUP", f"Camera assignments saved: {req.assignments}", "info")
+            return result
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 # ── Camera Orientation endpoints ──────────────────────────────
 
 
@@ -7755,6 +7804,14 @@ async def serve_root():
     from starlette.responses import RedirectResponse
 
     return RedirectResponse(url="/ui/")
+
+
+@app.get("/camera-setup.html")
+async def serve_camera_setup():
+    """Serve camera setup page."""
+    from fastapi.responses import FileResponse
+    setup_path = Path(__file__).parent / "static" / "camera-setup.html"
+    return FileResponse(str(setup_path), media_type="text/html")
 
 
 # ---------------------------------------------------------------------------
