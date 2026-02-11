@@ -1137,18 +1137,44 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       </div>
     </div>
 
-    <!-- Object list / Review Panel -->
+    <!-- Object list with per-object actions (Items 13 + 14) -->
     <div class="panel-card">
       <h3>Detected Objects <span id="objPanelCountBadge" style="background:#333;color:#aaa;padding:2px 8px;border-radius:10px;font-size:11px;margin-left:8px;">0</span></h3>
       <div class="result-box" id="objPanelList" style="max-height:400px;overflow-y:auto;">No objects detected</div>
     </div>
 
-    <!-- Scan & Review Workflow -->
+    <!-- 3D Object Inspection Mini-View (Item 13) -->
+    <div class="panel-card" id="objInspect3DCard" style="margin-top:10px;display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 style="margin:0;">3D Object Inspection — <span id="objInspectLabel">—</span></h3>
+        <button class="btn" onclick="closeObjInspect3D()" style="font-size:10px;padding:3px 8px;">✕ Close</button>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:8px;">
+        <div style="flex:1;background:#0a0f1a;border-radius:4px;overflow:hidden;position:relative;">
+          <canvas id="objInspect3DCanvas" style="width:100%;height:280px;display:block;"></canvas>
+        </div>
+        <div id="objInspectInfo" style="width:200px;font-family:var(--mono);font-size:10px;color:var(--text-dim);line-height:1.8;"></div>
+      </div>
+    </div>
+
+    <!-- Side Camera Enrichment Result (Item 14) -->
+    <div class="panel-card" id="objEnrichCard" style="margin-top:10px;display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 style="margin:0;">Side View Enrichment — <span id="objEnrichLabel">—</span></h3>
+        <button class="btn" onclick="document.getElementById('objEnrichCard').style.display='none'" style="font-size:10px;padding:3px 8px;">✕ Close</button>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:8px;">
+        <img id="objEnrichImg" style="max-width:300px;border-radius:4px;background:#0a0f1a;" alt="Side view">
+        <div id="objEnrichAnalysis" style="flex:1;font-family:var(--mono);font-size:10px;color:var(--text-dim);line-height:1.6;white-space:pre-wrap;"></div>
+      </div>
+    </div>
+
+    <!-- Scan & Review Workflow (Item 15) -->
     <div class="panel-card" style="margin-top:10px;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
         <h3 style="margin:0;">Scan & Review</h3>
         <button class="btn primary" id="btnScanTable" style="font-size:12px;padding:8px 16px;font-weight:700;letter-spacing:1px">🔍 SCAN TABLE</button>
-        <button class="btn" id="btnAcceptDetections" style="display:none">✓ Accept & Update</button>
+        <span id="scanTableStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);display:none;"></span>
       </div>
     </div>
 
@@ -1176,18 +1202,31 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
       <div id="detectionLog" style="font-family:var(--mono);font-size:10px;max-height:120px;overflow-y:auto;color:var(--text-dim);line-height:1.6;">No scans yet</div>
     </div>
 
-    <!-- Simulator Integration -->
+    <!-- Simulator Integration (Items 16, 17, 18) -->
     <div class="panel-card" style="margin-top:10px;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
         <h3 style="margin:0;">Simulator Integration</h3>
         <div class="btn-row" style="margin:0;">
-          <button class="btn primary" onclick="objPanelSyncToSim()">Sync to 3D Simulator</button>
-          <button class="btn" onclick="showPanel(document.querySelector('[data-panel=simulator]'))">Open Simulator</button>
+          <button class="btn primary" id="btnSyncTo3D" onclick="objPanelSyncTo3D()">Sync to 3D</button>
+          <button class="btn" onclick="window.open('#simulator','_blank')">Open Simulator ↗</button>
+          <button class="btn" id="btnToggleEmbedSim" onclick="toggleEmbeddedSim()">Toggle 3D View</button>
         </div>
-        <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);">
-          Detected objects are synced to the 3D simulator for pick practice
-        </span>
+        <span id="sync3DStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);"></span>
       </div>
+    </div>
+
+    <!-- Embedded 3D Simulator View (Item 18) -->
+    <div class="panel-card" id="embeddedSimCard" style="margin-top:10px;display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 style="margin:0;">Embedded 3D View</h3>
+        <button class="btn" onclick="toggleEmbeddedSim()" style="font-size:10px;padding:3px 8px;">✕ Close</button>
+      </div>
+      <div style="margin-top:8px;background:#0a0f1a;border-radius:4px;overflow:hidden;">
+        <iframe id="embeddedSimFrame" src="" style="width:100%;height:400px;border:none;display:block;" allow="webgl"></iframe>
+      </div>
+      <p style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:4px;">
+        Live 3D map view showing detected objects and arm position. Orbit with mouse.
+      </p>
     </div>
   </div>
 </div>
@@ -1431,7 +1470,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
   <div class="panel-body">
     <div class="panel-header">📈 Pick Analytics</div>
     <div style="display:flex;gap:8px;margin-bottom:12px;">
-      <button class="btn primary" onclick="paRefresh()">🔄 Refresh</button>
+      <button class="btn primary" onclick="withFeedback(this, paRefresh, 'Analytics refreshed')">🔄 Refresh</button>
     </div>
 
     <!-- Success Rate Big Number -->
@@ -2141,6 +2180,7 @@ function showPanel(navItem, skipHash) {
     if (panelId === 'cameras') refreshCameraPanel();
     if (panelId === 'safety') safetyLoad();
     if (panelId === 'debug' && debugOn) pollDebug();
+    if (panelId === 'object-detect') _objPanelDrawWorkspace(_objPanelObjects);
   }, 100);
 }
 
@@ -2611,6 +2651,7 @@ function connectWS() {
       const jointsDiff = newJoints.some((v, i) => Math.abs(v - vizJoints[i]) > 0.05);
       const otherChanged = data.power !== armState.power || data.enabled !== armState.enabled || data.error !== armState.error;
       armState = data; lastStateTs = Date.now(); wsUpdateCount++;
+      window._lastArmState = data; // Track for workspace map EE position
       if (jointsDiff || otherChanged || !armSynced) vizDirty = true;
       if (!armSynced) { armSynced = true; logLocal('SYNC', 'First arm state received', 'info'); }
       // Feed live state to 3D simulator ghost arm
@@ -3077,11 +3118,20 @@ async function vsStatus(mode) {
 
 // --- Multi-view Pick ---
 async function mvpStart() {
-  const target = document.getElementById('mvpTarget').value.trim();
-  const data = await apiPost('/api/multiview/pick/start', target ? { target } : {});
-  showResult('mvpResult', data); mvpRefresh();
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    const target = document.getElementById('mvpTarget').value.trim();
+    const data = await apiPost('/api/multiview/pick/start', target ? { target } : {});
+    showResult('mvpResult', data); mvpRefresh();
+    return data;
+  }, 'Multi-view pick started');
 }
-async function mvpStop() { const data = await apiPost('/api/multiview/pick/stop'); showResult('mvpResult', data); mvpRefresh(); }
+async function mvpStop() {
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    const data = await apiPost('/api/multiview/pick/stop'); showResult('mvpResult', data); mvpRefresh(); return data;
+  }, 'Multi-view pick stopped');
+}
 async function mvpRefresh() {
   const data = await apiCall('/api/multiview/pick/status');
   const el = document.getElementById('mvpStatus');
@@ -3096,31 +3146,68 @@ async function mvpRefresh() {
 }
 
 // --- Pick Planner ---
-async function ppDetect() { const target = document.getElementById('ppDetectTarget').value || 'redbull'; showResult('ppDetectResult', await apiPost('/api/pick/detect', {target})); }
-async function ppPlan() { const target = document.getElementById('ppTarget').value || 'redbull'; showResult('ppPlanResult', await apiPost('/api/pick/plan', {target})); }
-async function ppFromPos() { const x = parseFloat(document.getElementById('ppPosX').value); const y = parseFloat(document.getElementById('ppPosY').value); const z = parseFloat(document.getElementById('ppPosZ').value); const label = document.getElementById('ppTarget').value || 'redbull'; if (isNaN(x)||isNaN(y)||isNaN(z)) { showResult('ppPlanResult','Enter valid X, Y, Z positions in mm'); return; } showResult('ppPlanResult', await apiPost('/api/pick/from-position', {x_mm:x, y_mm:y, z_mm:z, label})); }
-async function ppCalibrate() { showResult('ppCalibResult', await apiPost('/api/pick/calibrate-camera-arm')); }
+async function ppDetect() {
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    const target = document.getElementById('ppDetectTarget').value || 'redbull';
+    const data = await apiPost('/api/pick/detect', {target});
+    showResult('ppDetectResult', data); return data;
+  }, 'Detection complete');
+}
+async function ppPlan() {
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    const target = document.getElementById('ppTarget').value || 'redbull';
+    const data = await apiPost('/api/pick/plan', {target});
+    showResult('ppPlanResult', data); return data;
+  }, 'Plan generated');
+}
+async function ppFromPos() {
+  const btn = event && event.target;
+  const x = parseFloat(document.getElementById('ppPosX').value);
+  const y = parseFloat(document.getElementById('ppPosY').value);
+  const z = parseFloat(document.getElementById('ppPosZ').value);
+  if (isNaN(x)||isNaN(y)||isNaN(z)) { toast('Enter valid X, Y, Z positions in mm', 'warning'); showResult('ppPlanResult','Enter valid X, Y, Z positions in mm'); return; }
+  await withFeedback(btn, async () => {
+    const label = document.getElementById('ppTarget').value || 'redbull';
+    const data = await apiPost('/api/pick/from-position', {x_mm:x, y_mm:y, z_mm:z, label});
+    showResult('ppPlanResult', data); return data;
+  }, 'Plan from position complete');
+}
+async function ppCalibrate() {
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    const data = await apiPost('/api/pick/calibrate-camera-arm');
+    showResult('ppCalibResult', data); return data;
+  }, 'Camera-arm calibration complete');
+}
 
 // --- VLA ---
 async function vlaRefreshStatus() {
-  const data = await apiCall('/api/vla/status');
-  const el = document.getElementById('vlaStatus');
-  if (!data.available) {
-    el.textContent = 'UNAVAILABLE';
-    el.className = 'status-indicator stopped';
-    return;
-  }
-  const state = data.state || 'UNKNOWN';
-  el.textContent = state.toUpperCase();
-  const running = ['observing','planning','executing','verifying'].includes(state);
-  const done = state === 'completed';
-  el.className = 'status-indicator ' + (running ? 'running' : done ? 'running' : 'stopped');
-  if (data.current_task) el.textContent += ': ' + data.current_task;
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    const data = await apiCall('/api/vla/status');
+    const el = document.getElementById('vlaStatus');
+    if (!data.available) {
+      el.textContent = 'UNAVAILABLE'; el.className = 'status-indicator stopped'; return data;
+    }
+    const state = data.state || 'UNKNOWN';
+    el.textContent = state.toUpperCase();
+    const running = ['observing','planning','executing','verifying'].includes(state);
+    const done = state === 'completed';
+    el.className = 'status-indicator ' + (running ? 'running' : done ? 'running' : 'stopped');
+    if (data.current_task) el.textContent += ': ' + data.current_task;
+    return data;
+  });
 }
 async function vlaAct() {
+  const btn = event && event.target;
   const task = document.getElementById('vlaPrompt').value;
-  if (!task.trim()) { showResult('vlaActResult', {ok:false, error:'Enter a task prompt'}); return; }
-  showResult('vlaActResult', await apiPost('/api/vla/act', {task}));
+  if (!task.trim()) { toast('Enter a task prompt', 'warning'); showResult('vlaActResult', {ok:false, error:'Enter a task prompt'}); return; }
+  await withFeedback(btn, async () => {
+    const data = await apiPost('/api/vla/act', {task});
+    showResult('vlaActResult', data); return data;
+  }, 'VLA action started');
 }
 let _vlaCamPoller = null;
 function vlaPreviewCams() {
@@ -3136,9 +3223,9 @@ function vlaPreviewCams() {
   refresh();
   _vlaCamPoller = setInterval(refresh, 1000);
 }
-async function vlaDemoStart() { const task = document.getElementById('vlaDemoTask').value; showResult('vlaDemoResult', await apiPost('/api/vla/collect', {action:'start', task})); }
-async function vlaDemoStop() { showResult('vlaDemoResult', await apiPost('/api/vla/collect', {action:'stop', success:true})); }
-async function vlaDemoList() { showResult('vlaDemoResult', await apiCall('/api/vla/demos')); }
+async function vlaDemoStart() { const btn = event&&event.target; await withFeedback(btn, async () => { const task = document.getElementById('vlaDemoTask').value; const d = await apiPost('/api/vla/collect', {action:'start', task}); showResult('vlaDemoResult', d); return d; }, 'Demo collection started'); }
+async function vlaDemoStop() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiPost('/api/vla/collect', {action:'stop', success:true}); showResult('vlaDemoResult', d); return d; }, 'Demo stopped'); }
+async function vlaDemoList() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/vla/demos'); showResult('vlaDemoResult', d); return d; }); }
 
 // --- Place Target ---
 let _placeTarget = null; // {x_mm, y_mm}
@@ -3213,6 +3300,7 @@ let _apPollTimer = null;
 async function apStart() {
   const target = document.getElementById('apTarget').value;
   const mode = document.getElementById('autopickMode').value;
+  toast(`Starting auto pick: ${target} (${mode})`, 'info');
   const res = await apiPost('/api/autopick/start', { target, mode });
   if (res && res.ok) {
     document.getElementById('apStartBtn').style.display = 'none';
@@ -3224,6 +3312,7 @@ async function apStart() {
 }
 async function apStop() {
   await apiPost('/api/autopick/stop');
+  toast('Auto pick stopped', 'warning');
 }
 async function apPollStatus() {
   clearTimeout(_apPollTimer);
@@ -3445,8 +3534,9 @@ async function wsCalibScale() {
   }
 }
 async function wsCalibCheckAll() {
-  wsCalibSetStatus('Checking all cameras for checkerboard...', '#ff0');
-  try {
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    wsCalibSetStatus('Checking all cameras for checkerboard...', '#ff0');
     const data = await apiPost('/api/bifocal/check-checkerboard', {});
     if (data.ok && data.cameras) {
       let lines = [];
@@ -3458,23 +3548,28 @@ async function wsCalibCheckAll() {
     } else {
       showResult('wsCalibResult', data);
     }
-  } catch(e) { showResult('wsCalibResult', {ok: false, error: e.message}); }
-  wsCalibSetStatus('', '');
+    wsCalibSetStatus('', '');
+    return data;
+  }, 'Camera check complete');
 }
 async function wsCalibPreview() {
-  for (let i = 0; i < 3; i++) {
-    const img = document.getElementById(`wsCalibImg${i}`);
-    if (img) img.src = getSnapUrl(i) + '?t=' + Date.now();
-  }
-  wsCalibShowPreview(2);
-  showResult('wsCalibResult', {ok: true, message: 'Camera snapshots refreshed'});
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    for (let i = 0; i < 3; i++) {
+      const img = document.getElementById(`wsCalibImg${i}`);
+      if (img) img.src = getSnapUrl(i) + '?t=' + Date.now();
+    }
+    wsCalibShowPreview(2);
+    showResult('wsCalibResult', {ok: true, message: 'Camera snapshots refreshed'});
+    return { ok: true };
+  }, 'Camera preview refreshed');
 }
 
 // --- 3D Scan ---
-async function scan3dStart() { showResult('scan3dResult', await apiPost('/api/scan/start')); scan3dRefresh(); }
-async function scan3dStop() { showResult('scan3dResult', await apiPost('/api/scan/stop')); scan3dRefresh(); }
+async function scan3dStart() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiPost('/api/scan/start'); showResult('scan3dResult', d); scan3dRefresh(); return d; }, 'Scan started'); }
+async function scan3dStop() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiPost('/api/scan/stop'); showResult('scan3dResult', d); scan3dRefresh(); return d; }, 'Scan stopped'); }
 async function scan3dRefresh() { const data = await apiCall('/api/scan/status'); const el = document.getElementById('scan3dStatus'); el.textContent = data.phase || 'idle'; el.className = 'status-indicator ' + (data.running ? 'running' : 'stopped'); }
-async function scan3dList() { showResult('scan3dListResult', await apiCall('/api/scan/list')); }
+async function scan3dList() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/scan/list'); showResult('scan3dListResult', d); return d; }); }
 
 // --- Calibration Health & Simplified Workflow ---
 let _calibHealthData = null;
@@ -3587,12 +3682,12 @@ document.addEventListener('click', (e) => {
 setTimeout(() => { if (document.getElementById('panel-calibration')?.style.display !== 'none') calibCheckHealth(); }, 1000);
 
 // --- Calibration Dashboard ---
-async function calibStartRun(type) { showResult('calibRunResult', await apiPost(`/api/calibration/${type}/start`)); }
-async function calibStopRun() { showResult('calibRunResult', await apiPost('/api/calibration/abort')); }
-async function calibListResults() { showResult('calibResultsBox', await apiCall('/api/calibration/results')); }
-async function calibViewReport() { showResult('calibResultsBox', await apiCall('/api/calibration/report/latest/json')); }
-async function calibViewFrames() { const sid = document.getElementById('calibFrameSession').value; showResult('calibResultsBox', await apiCall(`/api/calibration/frames/${sid}`)); }
-async function calibViewExtrinsics() { showResult('calibExtrinsicsResult', await apiCall('/api/calibration/extrinsics')); }
+async function calibStartRun(type) { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiPost(`/api/calibration/${type}/start`); showResult('calibRunResult', d); return d; }, `${type} calibration started`); }
+async function calibStopRun() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiPost('/api/calibration/abort'); showResult('calibRunResult', d); return d; }, 'Calibration stopped'); }
+async function calibListResults() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/calibration/results'); showResult('calibResultsBox', d); return d; }); }
+async function calibViewReport() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/calibration/report/latest/json'); showResult('calibResultsBox', d); return d; }); }
+async function calibViewFrames() { const btn = event&&event.target; await withFeedback(btn, async () => { const sid = document.getElementById('calibFrameSession').value; const d = await apiCall(`/api/calibration/frames/${sid}`); showResult('calibResultsBox', d); return d; }); }
+async function calibViewExtrinsics() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/calibration/extrinsics'); showResult('calibExtrinsicsResult', d); return d; }); }
 
 // --- ChArUco Calibration (new pipeline) ---
 let _charucoPoller = null;
@@ -3648,7 +3743,8 @@ async function charucoPoll() {
   }
 }
 async function calibCompare() {
-  showResult('calibCompareResult', await apiCall('/api/calibration/compare'));
+  const btn = event&&event.target;
+  await withFeedback(btn, async () => { const d = await apiCall('/api/calibration/compare'); showResult('calibCompareResult', d); return d; });
 }
 // --- Intrinsic Calibration ---
 let _icalPollTimer = null;
@@ -3814,7 +3910,7 @@ async function paRefresh() {
   try {
     const resp = await fetch('/api/pick/analytics');
     const data = await resp.json();
-    if (!data.ok) return;
+    if (!data.ok) return data;
     const s = data.summary;
 
     // Big number
@@ -3895,39 +3991,59 @@ async function paRefresh() {
         </div>`;
       }).join('');
     }
+    return data;
   } catch (e) {
     console.error('paRefresh error:', e);
+    return { ok: false, error: e.message };
   }
 }
 
 // --- Diagnostics ---
-async function diagFeedback() { showResult('diagFeedbackResult', await apiCall('/api/debug/feedback')); }
-async function diagSmoother() { showResult('diagSmootherResult', await apiCall('/api/debug/smoother')); }
-async function diagGpu() { const data = await apiCall('/api/gpu/status'); showResult('diagGpuResult', data); showResult('settingsGpuResult', data); }
+async function diagFeedback() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/debug/feedback'); showResult('diagFeedbackResult', d); return d; }); }
+async function diagSmoother() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/debug/smoother'); showResult('diagSmootherResult', d); return d; }); }
+async function diagGpu() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/gpu/status'); showResult('diagGpuResult', d); showResult('settingsGpuResult', d); return d; }); }
 
 // --- Object Locator ---
 async function locateObject() {
-  const target = document.getElementById('locateTarget').value;
-  const cam = document.getElementById('locateCam').value;
-  const data = await apiPost('/api/locate', { target, camera_id: parseInt(cam) });
-  showResult('locateResult', data);
-  if (data.ok && data.image_url) { const img = document.getElementById('locatePreview'); img.src = data.image_url; img.style.display = 'block'; }
+  const btn = event&&event.target;
+  await withFeedback(btn, async () => {
+    const target = document.getElementById('locateTarget').value;
+    const cam = document.getElementById('locateCam').value;
+    const data = await apiPost('/api/locate', { target, camera_id: parseInt(cam) });
+    showResult('locateResult', data);
+    if (data.ok && data.image_url) { const img = document.getElementById('locatePreview'); img.src = data.image_url; img.style.display = 'block'; }
+    return data;
+  }, 'Object located');
 }
 
 // --- Scene Analysis ---
 async function sceneAnalyze() {
-  const cam = document.getElementById('sceneCam').value;
-  const prompt = document.getElementById('scenePrompt').value;
-  showResult('sceneResult', await apiPost('/api/vision/analyze', { camera_id: parseInt(cam), prompt }));
+  const btn = event&&event.target;
+  await withFeedback(btn, async () => {
+    const cam = document.getElementById('sceneCam').value;
+    const prompt = document.getElementById('scenePrompt').value;
+    const data = await apiPost('/api/vision/analyze', { camera_id: parseInt(cam), prompt });
+    showResult('sceneResult', data); return data;
+  }, 'Scene analysis complete');
 }
 
 // --- Claw Prediction ---
-async function clawPredToggle(on) { const data = await apiPost('/api/claw-prediction/toggle', {enabled:on}); const el = document.getElementById('clawPredStatus'); el.textContent = on ? 'ON' : 'OFF'; el.className = 'status-indicator ' + (on ? 'running' : 'stopped'); }
-async function clawPredSaveHSV() {
-  const body = { h_low: +document.getElementById('cpHL').value, h_high: +document.getElementById('cpHH').value, s_low: +document.getElementById('cpSL').value, s_high: +document.getElementById('cpSH').value, v_low: +document.getElementById('cpVL').value, v_high: +document.getElementById('cpVH').value };
-  await apiPost('/api/claw-prediction/hsv', body);
+async function clawPredToggle(on) {
+  const btn = event&&event.target;
+  await withFeedback(btn, async () => {
+    const data = await apiPost('/api/claw-prediction/toggle', {enabled:on});
+    const el = document.getElementById('clawPredStatus'); el.textContent = on ? 'ON' : 'OFF'; el.className = 'status-indicator ' + (on ? 'running' : 'stopped');
+    return data;
+  }, on ? 'Claw prediction enabled' : 'Claw prediction disabled');
 }
-async function clawPredGetROI() { showResult('cpRoiResult', await apiCall('/api/claw-prediction/roi')); }
+async function clawPredSaveHSV() {
+  const btn = event&&event.target;
+  await withFeedback(btn, async () => {
+    const body = { h_low: +document.getElementById('cpHL').value, h_high: +document.getElementById('cpHH').value, s_low: +document.getElementById('cpSL').value, s_high: +document.getElementById('cpSH').value, v_low: +document.getElementById('cpVL').value, v_high: +document.getElementById('cpVH').value };
+    return await apiPost('/api/claw-prediction/hsv', body);
+  }, 'HSV config saved');
+}
+async function clawPredGetROI() { const btn = event&&event.target; await withFeedback(btn, async () => { const d = await apiCall('/api/claw-prediction/roi'); showResult('cpRoiResult', d); return d; }); }
 
 // --- Safety & Limits ---
 // JOINT_INFO: built dynamically from JOINT_SPECS (loaded from /api/joints)
@@ -4247,9 +4363,13 @@ async function safetyPreset(name) {
 async function simToggle() {
   const msg = armState.sim_mode ? 'Switch to LIVE mode?' : 'Switch to SIM mode?';
   if (!confirm(msg)) return;
-  const data = await apiPost('/api/sim/toggle');
-  if (data.ok) { armState.sim_mode = data.sim_mode; updateUI(); }
-  simRefresh();
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
+    const data = await apiPost('/api/sim/toggle');
+    if (data.ok) { armState.sim_mode = data.sim_mode; updateUI(); }
+    simRefresh();
+    return data;
+  }, armState.sim_mode ? 'Switched to LIVE' : 'Switched to SIM');
 }
 async function simRefresh() {
   const data = await apiCall('/api/sim/status');
@@ -4647,14 +4767,13 @@ function _getObjColor(label) {
 }
 
 async function objPanelToggle() {
-  try {
+  const btn = document.getElementById('objPanelEnable');
+  await withFeedback(btn, async () => {
     const resp = await fetch('/api/objects/toggle', { method: 'POST' });
     const data = await resp.json();
-    if (data.ok) {
-      _objPanelEnabled = data.enabled;
-      _objPanelUpdateUI();
-    }
-  } catch (e) { console.error('objPanelToggle:', e); }
+    if (data.ok) { _objPanelEnabled = data.enabled; _objPanelUpdateUI(); }
+    return data;
+  }, _objPanelEnabled ? 'Detection disabled' : 'Detection enabled');
 }
 
 async function objPanelRunDetect() {
@@ -4673,6 +4792,7 @@ async function objPanelRunDetect() {
       if (img) {
         img.src = URL.createObjectURL(blob);
         img.style.display = 'block';
+        img.onload = () => _objPanelDrawOverlay(_objPanelObjects);
       }
       if (placeholder) placeholder.style.display = 'none';
     }
@@ -4682,9 +4802,11 @@ async function objPanelRunDetect() {
     if (listResp.ok) {
       const data = await listResp.json();
       _objPanelObjects = data.objects || [];
-      _objPanelRenderList(_objPanelObjects);
-      _objPanelDrawWorkspace(_objPanelObjects);
+    } else {
+      _objPanelObjects = [];
     }
+    // Item 9: Atomic update of all UI elements
+    _objPanelUpdateAll(_objPanelObjects);
   } catch (e) {
     console.error('objPanelRunDetect:', e);
   } finally {
@@ -4692,23 +4814,70 @@ async function objPanelRunDetect() {
   }
 }
 
+// Item 9: Atomically update count badge, list, workspace, and overlay
+function _objPanelUpdateAll(objects) {
+  _objPanelRenderList(objects);
+  _objPanelDrawWorkspace(objects);
+  _objPanelDrawOverlay(objects);
+  const badge = document.getElementById('objPanelCountBadge');
+  if (badge) {
+    badge.textContent = objects.length;
+    badge.style.background = objects.length > 0 ? '#27ae60' : '#333';
+    badge.style.color = objects.length > 0 ? '#fff' : '#aaa';
+  }
+}
+
+// Item 7: Draw canvas overlay with color-coded bounding boxes and labels
+function _objPanelDrawOverlay(objects) {
+  const canvas = document.getElementById('objDetectOverlayCanvas');
+  const img = document.getElementById('objDetectCamImg');
+  if (!canvas || !img || img.style.display === 'none') return;
+  canvas.width = img.naturalWidth || 640;
+  canvas.height = img.naturalHeight || 480;
+  canvas.style.display = 'block';
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!objects || objects.length === 0) return;
+  for (let i = 0; i < objects.length; i++) {
+    const o = objects[i];
+    const color = _getObjColor(o.label);
+    let px = o.pixel_x !== undefined ? o.pixel_x : canvas.width * 0.5 + (o.x_mm || 0) * 0.3;
+    let py = o.pixel_y !== undefined ? o.pixel_y : canvas.height * 0.5 - (o.y_mm || 0) * 0.3;
+    let bw = o.pixel_w !== undefined ? o.pixel_w : Math.max(40, (o.width_mm || 30) * 0.8);
+    let bh = o.pixel_h !== undefined ? o.pixel_h : Math.max(40, (o.depth_mm || 30) * 0.8);
+    ctx.strokeStyle = color; ctx.lineWidth = 2.5;
+    ctx.strokeRect(px - bw/2, py - bh/2, bw, bh);
+    ctx.fillStyle = color; ctx.globalAlpha = 0.12;
+    ctx.fillRect(px - bw/2, py - bh/2, bw, bh); ctx.globalAlpha = 1.0;
+    ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    const label = `${o.label} ${(o.confidence * 100).toFixed(0)}%`;
+    ctx.font = 'bold 13px monospace';
+    const tw = ctx.measureText(label).width;
+    const lx = px - bw/2, ly = py - bh/2 - 20;
+    ctx.fillStyle = color; ctx.globalAlpha = 0.85;
+    ctx.fillRect(lx, ly, tw + 10, 18); ctx.globalAlpha = 1.0;
+    ctx.fillStyle = '#000'; ctx.fillText(label, lx + 5, ly + 13);
+  }
+}
+
 async function objPanelClear() {
   try {
     await fetch('/api/objects/clear', { method: 'POST' });
     _objPanelObjects = [];
-    _objPanelRenderList([]);
-    _objPanelDrawWorkspace([]);
-    // Reset camera view
+    _objPanelUpdateAll([]);
     const img = document.getElementById('objDetectCamImg');
     const placeholder = document.getElementById('objDetectCamPlaceholder');
+    const overlay = document.getElementById('objDetectOverlayCanvas');
     if (img) img.style.display = 'none';
+    if (overlay) overlay.style.display = 'none';
     if (placeholder) placeholder.style.display = 'block';
   } catch (e) { console.error('objPanelClear:', e); }
 }
 
 async function objPanelSyncToSim() {
-  // Sync current detected objects to the 3D simulator
-  try {
+  const btn = event && event.target;
+  await withFeedback(btn, async () => {
     const resp = await fetch('/api/objects/list');
     const data = await resp.json();
     const objects = data.objects || [];
@@ -4716,10 +4885,73 @@ async function objPanelSyncToSim() {
       window._sim.updateDetectedObjects(objects);
       window._sim.toggleDetectedObjects(true);
     }
-    // Switch to the simulator panel
     const simNav = document.querySelector('[data-panel=simulator]');
     if (simNav) showPanel(simNav);
-  } catch (e) { console.error('objPanelSyncToSim:', e); }
+    return { ok: true, count: objects.length };
+  }, 'Objects synced to 3D simulator');
+}
+
+async function scanTable(btn) {
+  await withFeedback(btn, async () => {
+    // Enable detection if needed
+    if (!_objPanelEnabled) {
+      await fetch('/api/objects/toggle', { method: 'POST' });
+      _objPanelEnabled = true; _objPanelUpdateUI();
+    }
+    // Run detection with annotated snapshot
+    const snapResp = await fetch('/api/objects/detect/snapshot', { method: 'POST' });
+    if (snapResp.ok) {
+      const blob = await snapResp.blob();
+      const img = document.getElementById('objDetectCamImg');
+      const placeholder = document.getElementById('objDetectCamPlaceholder');
+      if (img) { img.src = URL.createObjectURL(blob); img.style.display = 'block'; }
+      if (placeholder) placeholder.style.display = 'none';
+      // Also show in review panel
+      const scanOverhead = document.getElementById('scanOverheadImg');
+      if (scanOverhead) scanOverhead.src = img.src;
+    }
+    // Fetch side cam snap for review
+    try {
+      const sideImg = document.getElementById('scanSideImg');
+      if (sideImg) sideImg.src = `http://${location.hostname}:8081/snap/0?t=${Date.now()}`;
+    } catch(e){}
+    // Fetch object list
+    const listResp = await fetch('/api/objects/list');
+    const data = await listResp.json();
+    _objPanelObjects = data.objects || [];
+    _objPanelRenderList(_objPanelObjects);
+    _objPanelDrawWorkspace(_objPanelObjects);
+    // Show review panel and accept button
+    document.getElementById('scanReviewPanel').style.display = '';
+    document.getElementById('btnAcceptDetections').style.display = '';
+    // Build scan object table
+    const tableEl = document.getElementById('scanObjectTable');
+    if (tableEl && _objPanelObjects.length) {
+      tableEl.innerHTML = _objPanelObjects.map(o =>
+        `<div style="padding:3px 0;border-bottom:1px solid #333;"><span style="color:${o.color_hex}">■</span> <b>${o.label}</b> — (${o.x_mm}, ${o.y_mm}, ${o.z_mm})mm — ${o.within_reach ? '✅ reachable' : '⚠ out of reach'}</div>`
+      ).join('');
+    }
+    // Log
+    const logEl = document.getElementById('detectionLog');
+    if (logEl) {
+      const ts = new Date().toLocaleTimeString();
+      logEl.innerHTML = `<div>[${ts}] Scanned: ${_objPanelObjects.length} objects found</div>` + logEl.innerHTML;
+    }
+    return { ok: true };
+  }, `Scan complete: ${_objPanelObjects.length} objects found`);
+}
+
+async function acceptDetections(btn) {
+  await withFeedback(btn, async () => {
+    // Sync to simulator
+    if (window._sim && _objPanelObjects.length) {
+      window._sim.updateDetectedObjects(_objPanelObjects);
+      window._sim.toggleDetectedObjects(true);
+    }
+    toast(`${_objPanelObjects.length} objects accepted and synced`, 'success');
+    document.getElementById('btnAcceptDetections').style.display = 'none';
+    return { ok: true };
+  }, 'Detections accepted');
 }
 
 function _objPanelUpdateUI() {
@@ -4746,23 +4978,92 @@ function _objPanelRenderList(objects) {
   if (reachEl) reachEl.textContent = reachable.length;
   if (listEl) {
     if (objects.length === 0) {
-      listEl.textContent = 'No objects detected';
+      listEl.innerHTML = '<span style="color:#556;">No objects detected</span>';
     } else {
-      listEl.innerHTML = objects.map(o => {
+      listEl.innerHTML = objects.map((o, idx) => {
+        const color = _getObjColor(o.label);
         const reach = o.within_reach
           ? '<span style="color:var(--success);font-weight:bold">REACHABLE</span>'
           : '<span style="color:var(--warning)">Out of reach</span>';
         const sel = _objPanelSelectedId === o.id;
-        const border = sel ? '3px solid #fff' : `3px solid ${o.within_reach ? 'var(--success)' : 'var(--warning)'}`;
-        const bg = sel ? 'rgba(74,144,217,0.15)' : 'transparent';
-        return `<div id="objListItem-${o.id}" data-obj-id="${o.id}" style="margin-bottom:6px;padding:4px;border-left:${border};background:${bg};cursor:pointer;transition:background 0.15s;" onclick="_objPanelSelectObj(${o.id})">` +
-          `<span style="color:${o.color_hex}">\u25A0</span> <strong>${o.label}</strong> — ${reach}<br>` +
-          `Pos: (${o.x_mm}, ${o.y_mm}, ${o.z_mm}) mm<br>` +
-          `Size: ${o.width_mm}x${o.depth_mm}x${o.height_mm} mm<br>` +
-          `Distance: ${o.distance_mm} mm | Conf: ${(o.confidence * 100).toFixed(0)}%</div>`;
+        const border = sel ? '3px solid #fff' : `4px solid ${color}`;
+        const bg = sel ? 'rgba(74,144,217,0.15)' : 'rgba(255,255,255,0.02)';
+        const reviewStatus = o._review_status || 'pending';
+        const statusBadge = reviewStatus === 'confirmed'
+          ? '<span style="color:#2ecc71;font-weight:bold;">✓ Confirmed</span>'
+          : reviewStatus === 'rejected'
+          ? '<span style="color:#e74c3c;font-weight:bold;">✗ Rejected</span>'
+          : reviewStatus === 'false_positive'
+          ? '<span style="color:#f39c12;font-weight:bold;">⚠ False Positive</span>'
+          : '<span style="color:#95a5a6;">⏳ Pending review</span>';
+        return `<div id="objListItem-${o.id}" data-obj-id="${o.id}" style="margin-bottom:8px;padding:8px;border-left:${border};background:${bg};cursor:pointer;border-radius:2px;" onclick="_objPanelSelectObj(${o.id})">` +
+          `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">` +
+            `<span style="color:${color};font-size:18px;">■</span>` +
+            `<input type="text" value="${o.label}" onclick="event.stopPropagation()" onchange="_objReviewLabel(${idx}, this.value)" ` +
+              `style="background:#1a1f2e;border:1px solid #333;color:#fff;padding:2px 6px;border-radius:3px;font-family:var(--mono);font-size:12px;width:120px;" title="Edit label">` +
+            `<span> — ${reach} | ${statusBadge}</span>` +
+          `</div>` +
+          `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">` +
+            `Pos: (${o.x_mm}, ${o.y_mm}, ${o.z_mm}) mm | Dist: ${o.distance_mm}mm | Conf: ${(o.confidence * 100).toFixed(0)}%` +
+          `</div>` +
+          `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;" onclick="event.stopPropagation()">` +
+            `<label style="font-size:10px;color:#aaa;">W:</label>` +
+            `<input type="number" value="${o.width_mm || 0}" id="objDim_w_${idx}" style="width:50px;background:#1a1f2e;border:1px solid #333;color:#fff;padding:1px 4px;font-size:11px;border-radius:2px;" title="Width mm">` +
+            `<label style="font-size:10px;color:#aaa;">H:</label>` +
+            `<input type="number" value="${o.height_mm || 0}" id="objDim_h_${idx}" style="width:50px;background:#1a1f2e;border:1px solid #333;color:#fff;padding:1px 4px;font-size:11px;border-radius:2px;" title="Height mm">` +
+            `<label style="font-size:10px;color:#aaa;">D:</label>` +
+            `<input type="number" value="${o.depth_mm || 0}" id="objDim_d_${idx}" style="width:50px;background:#1a1f2e;border:1px solid #333;color:#fff;padding:1px 4px;font-size:11px;border-radius:2px;" title="Depth mm">` +
+          `</div>` +
+          `<div class="btn-row" style="margin:0;gap:4px;" onclick="event.stopPropagation()">` +
+            `<button class="btn" onclick="_objReview(${idx},'confirmed')" style="background:#27ae60;color:#fff;padding:3px 10px;font-size:11px;">✓ Confirm</button>` +
+            `<button class="btn" onclick="_objReview(${idx},'rejected')" style="background:#e74c3c;color:#fff;padding:3px 10px;font-size:11px;">✗ Reject</button>` +
+            `<button class="btn" onclick="_objReview(${idx},'false_positive')" style="background:#f39c12;color:#fff;padding:3px 10px;font-size:11px;">⚠ False +</button>` +
+          `</div>` +
+        `</div>`;
       }).join('');
     }
   }
+}
+
+// Item 8: Send review to backend
+async function _objReview(idx, status) {
+  const o = _objPanelObjects[idx];
+  if (!o) return;
+  const dims = {
+    w: parseFloat(document.getElementById(`objDim_w_${idx}`)?.value) || o.width_mm || 0,
+    h: parseFloat(document.getElementById(`objDim_h_${idx}`)?.value) || o.height_mm || 0,
+    d: parseFloat(document.getElementById(`objDim_d_${idx}`)?.value) || o.depth_mm || 0
+  };
+  const objId = o.id !== undefined ? o.id : idx;
+  try {
+    const resp = await fetch(`/api/objects/${objId}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, label: o.label, dimensions: dims })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      o._review_status = status;
+      o.width_mm = dims.w; o.height_mm = dims.h; o.depth_mm = dims.d;
+      _objPanelRenderList(_objPanelObjects);
+    }
+  } catch (e) { console.error('_objReview:', e); }
+}
+
+// Item 8: Update label via inline edit
+async function _objReviewLabel(idx, newLabel) {
+  const o = _objPanelObjects[idx];
+  if (!o || !newLabel) return;
+  o.label = newLabel;
+  const objId = o.id !== undefined ? o.id : idx;
+  try {
+    await fetch(`/api/objects/${objId}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: o._review_status || 'confirmed', label: newLabel })
+    });
+  } catch (e) { console.error('_objReviewLabel:', e); }
+  _objPanelDrawOverlay(_objPanelObjects);
 }
 
 /** Shared selection handler — selects/deselects an object across map, list, and overlay */
@@ -4940,7 +5241,7 @@ function _objPanelDrawWorkspace(objects) {
     const objPy = cy - obj.y_mm * scale; // invert Y for screen coords
 
     const color = obj.within_reach ? '#44ff88' : '#ff8844';
-    const objColor = obj.color_hex || '#ff8800';
+    const objColor = _getObjColor(obj.label) || obj.color_hex || '#ff8800';
     const isSelected = (_objPanelSelectedId === obj.id);
 
     // Distance line from base to object
@@ -5015,6 +5316,40 @@ function _objPanelDrawWorkspace(objects) {
 
 // Draw initial empty workspace on load
 requestAnimationFrame(() => _objPanelDrawWorkspace([]));
+
+// Map click handler (item 12) — click objects on workspace map
+(function() {
+  const canvas = document.getElementById('objDetectWorkspaceCanvas');
+  if (canvas) {
+    canvas.style.cursor = 'crosshair';
+    canvas.addEventListener('click', function(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mx = (e.clientX - rect.left) * scaleX;
+      const my = (e.clientY - rect.top) * scaleY;
+      let hit = null;
+      for (const area of _objMapHitAreas) {
+        const dx = mx - area.x, dy = my - area.y;
+        if (dx * dx + dy * dy <= area.r * area.r) {
+          hit = area.id;
+          break;
+        }
+      }
+      if (hit !== null) {
+        _objPanelSelectObj(hit);
+      } else if (_objPanelSelectedId !== null) {
+        _objPanelSelectedId = null;
+        _objPanelRenderList(_objPanelObjects);
+        _objPanelDrawWorkspace(_objPanelObjects);
+        _objPanelHighlightOverlay();
+      }
+    });
+  }
+})();
+
+// Track arm state for EE position on workspace map (item 11)
+window._lastArmState = null;
 
 // Check status on page load
 fetch('/api/objects/status').then(r => r.json()).then(data => {

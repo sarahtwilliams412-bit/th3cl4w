@@ -302,6 +302,18 @@ async def get_objects():
     }
 
 
+class MapObjectsRequest(BaseModel):
+    objects: List[Dict[str, Any]]
+
+
+@app.post("/api/map/objects")
+async def post_objects(req: MapObjectsRequest):
+    """Receive detected objects from the main server and update the scene."""
+    await _on_objects(req.objects)
+    logger.info("Received %d objects via POST", len(req.objects))
+    return {"ok": True, "count": len(req.objects)}
+
+
 # --- Scan endpoints ---
 
 @app.post("/api/map/scan/start")
