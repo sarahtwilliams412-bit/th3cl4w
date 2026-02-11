@@ -136,7 +136,7 @@ class TestEnableHere:
         # Should send current position so arm holds still
         mock_arm.set_all_joints.assert_called()
         sent_angles = mock_arm.set_all_joints.call_args[0][0]
-        assert sent_angles == [45.0, 80.0, -60.0, 30.0, 70.0, -20.0]
+        assert sent_angles == [45.0, 80.0, -60.0, 30.0, 70.0, -20.0, 10.0]
 
     def test_enable_here_syncs_smoother_to_current(self, app_client):
         client, mock_arm, mock_smoother = app_client

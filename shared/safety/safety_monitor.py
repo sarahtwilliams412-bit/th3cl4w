@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -170,6 +171,10 @@ class SafetyMonitor:
         """Return False if value is NaN or Inf."""
         return not (math.isnan(val) or math.isinf(val))
 
+    def is_feedback_fresh(self, state: D1State, max_age: float = 0.5) -> bool:
+        """Return True if the state timestamp is recent enough."""
+        return (time.time() - state.timestamp) < max_age
+
     def validate_command(self, cmd: D1Command) -> SafetyResult:
         """Validate a command against all safety constraints."""
         violations: list[SafetyViolation] = []
@@ -257,6 +262,20 @@ class SafetyMonitor:
                         )
                     )
 
+        if cmd.joint_torques is not None:
+            for i in range(NUM_JOINTS):
+                val = float(cmd.joint_torques[i])
+                if abs(val) > lim.torque_max[i]:
+                    violations.append(
+                        SafetyViolation(
+                            violation_type=ViolationType.TORQUE_LIMIT,
+                            joint_index=i,
+                            message=f"Joint {i} torque {val:.4f} Nm exceeds limit +/-{lim.torque_max[i]:.4f} Nm",
+                            actual_value=val,
+                            limit_value=float(lim.torque_max[i]),
+                        )
+                    )
+
         if cmd.gripper_position is not None:
             if cmd.gripper_position < 0.0 or cmd.gripper_position > 1.0:
                 violations.append(
@@ -332,6 +351,19 @@ class SafetyMonitor:
                         message=f"Joint {i} velocity {val:.4f} rad/s exceeds limit +/-{lim.velocity_max[i]:.4f} rad/s",
                         actual_value=val,
                         limit_value=float(lim.velocity_max[i]),
+                    )
+                )
+
+        for i in range(NUM_JOINTS):
+            val = float(state.joint_torques[i])
+            if abs(val) > lim.torque_max[i]:
+                violations.append(
+                    SafetyViolation(
+                        violation_type=ViolationType.TORQUE_LIMIT,
+                        joint_index=i,
+                        message=f"Joint {i} torque {val:.4f} Nm exceeds limit +/-{lim.torque_max[i]:.4f} Nm",
+                        actual_value=val,
+                        limit_value=float(lim.torque_max[i]),
                     )
                 )
 

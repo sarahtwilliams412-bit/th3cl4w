@@ -42,15 +42,18 @@ class TestCameraConfig:
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("CAMERA_SERVER_URL", "http://myhost:9999")
-        # Re-import to pick up env var
+        # Re-import to pick up env var — must reload shared module first
+        import shared.config.camera_config as shared_mod
         import src.config.camera_config as mod
 
+        importlib.reload(shared_mod)
         importlib.reload(mod)
         assert mod.snap_url(0) == "http://myhost:9999/snap/0"
         assert mod.latest_url(1) == "http://myhost:9999/latest/1"
         assert mod.cameras_url() == "http://myhost:9999/cameras"
         # Restore
         monkeypatch.delenv("CAMERA_SERVER_URL", raising=False)
+        importlib.reload(shared_mod)
         importlib.reload(mod)
 
 
