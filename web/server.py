@@ -3692,66 +3692,58 @@ async def objects_detect_with_ai():
         else:
             gemini_verification = await _gemini_vision_call(annotated_jpeg, verification_prompt)
 
-        # 6. Merge Gemini labels/dimensions with CV objects
+        # 6. GEMINI-PRIMARY merge: start from Gemini inventory, match to CV detections
+        # Only objects Gemini says are on the table make it to the final list
         objects = object_detector.get_objects()
         merged_objects = []
         inventory_items = gemini_inventory if isinstance(gemini_inventory, list) else []
-        verification_detections = []
-        if isinstance(gemini_verification, dict):
-            verification_detections = gemini_verification.get("detections", [])
 
-        for i, o in enumerate(objects):
-            od = o.to_dict()
-            od["cv_label"] = o.label
-            od["gemini_label"] = None
-            od["gemini_dimensions"] = None
-            od["gemini_confidence"] = 0
-            od["review_status"] = "pending"
+        # Clear existing objects — we'll rebuild from Gemini's inventory
+        object_detector.clear()
 
-            # Match with inventory by proximity (pixel coords)
-            best_match = None
+        for inv_idx, inv in enumerate(inventory_items):
+            # Skip items Gemini isn't confident about
+            table_conf = inv.get("on_table_confidence", 0.8)
+            if table_conf < 0.3:
+                continue
+
+            inv_px = inv.get("pixel_x", 0)
+            inv_py = inv.get("pixel_y", 0)
+
+            # Try to find a matching CV detection for pixel coords / bbox
+            best_cv = None
             best_dist = 999999
-            for inv in inventory_items:
-                ix = inv.get("pixel_x", 0)
-                iy = inv.get("pixel_y", 0)
-                px = o.bbox_overhead[0] + o.bbox_overhead[2] // 2 if o.bbox_overhead[2] > 0 else 0
-                py = o.bbox_overhead[1] + o.bbox_overhead[3] // 2 if o.bbox_overhead[3] > 0 else 0
-                dist = ((ix - px) ** 2 + (iy - py) ** 2) ** 0.5
-                if dist < best_dist and dist < 150:  # within 150px
+            for o in objects:
+                px = o.bbox_overhead[0] + o.bbox_overhead[2] // 2 if hasattr(o, 'bbox_overhead') and o.bbox_overhead[2] > 0 else 0
+                py = o.bbox_overhead[1] + o.bbox_overhead[3] // 2 if hasattr(o, 'bbox_overhead') and o.bbox_overhead[3] > 0 else 0
+                dist = ((inv_px - px) ** 2 + (inv_py - py) ** 2) ** 0.5
+                if dist < best_dist and dist < 200:
                     best_dist = dist
-                    best_match = inv
+                    best_cv = o
 
-            if best_match:
-                od["gemini_label"] = best_match.get("name", "")
-                od["gemini_dimensions"] = {
-                    "width_mm": best_match.get("width_mm", 0),
-                    "height_mm": best_match.get("height_mm", 0),
-                    "depth_mm": best_match.get("depth_mm", 0),
-                }
-                od["gemini_confidence"] = 0.8
+            # Build the merged object dict
+            od = best_cv.to_dict() if best_cv else {
+                "id": 9000 + inv_idx,
+                "label": inv.get("name", "unknown"),
+                "x_mm": 0, "y_mm": 0, "z_mm": 0,
+                "width_mm": inv.get("width_mm", 0),
+                "height_mm": inv.get("height_mm", 0),
+                "depth_mm": inv.get("depth_mm", 0),
+                "distance_mm": 0, "within_reach": True,
+                "confidence": table_conf,
+                "bbox": [int(inv_px - 30), int(inv_py - 30), 60, 60],
+                "shape": "unknown", "category": inv.get("name", ""),
+            }
 
-            # Also check verification detections
-            if i < len(verification_detections):
-                vd = verification_detections[i]
-                if not od["gemini_label"] and vd.get("name"):
-                    od["gemini_label"] = vd["name"]
-                    od["gemini_confidence"] = 0.7
-                if vd.get("correct") is False:
-                    od["gemini_confidence"] = max(0, od["gemini_confidence"] - 0.3)
-                # Auto-flag items Gemini says aren't on the table
-                if vd.get("on_table") is False or vd.get("recommendation") == "remove":
-                    od["review_status"] = "auto-remove"
-                    od["gemini_confidence"] = max(0, od["gemini_confidence"] - 0.5)
-                    od["removal_reason"] = vd.get("notes", "Not on workspace table")
-                elif vd.get("on_table") is True and vd.get("recommendation") == "keep":
-                    od["review_status"] = "suggested-keep"
-
-            # Store gemini data on the actual object for persistence
-            o.category = od.get("gemini_label") or o.category
-            o._gemini_label = od.get("gemini_label")
-            o._gemini_dimensions = od.get("gemini_dimensions")
-            o._gemini_confidence = od.get("gemini_confidence", 0)
-            o._review_status = "pending"
+            od["cv_label"] = best_cv.label if best_cv else "ai-only"
+            od["gemini_label"] = inv.get("name", "")
+            od["gemini_dimensions"] = {
+                "width_mm": inv.get("width_mm", 0),
+                "height_mm": inv.get("height_mm", 0),
+                "depth_mm": inv.get("depth_mm", 0),
+            }
+            od["gemini_confidence"] = float(table_conf)
+            od["review_status"] = "suggested-keep"
 
             merged_objects.append(od)
 
