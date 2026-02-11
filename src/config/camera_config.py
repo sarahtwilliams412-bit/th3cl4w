@@ -1,22 +1,6 @@
-"""Camera service configuration — single source of truth."""
-import os
+"""Backward-compatible shim — canonical source is now shared.config.camera_config.
 
-CAMERA_SERVER_URL = os.getenv("CAMERA_SERVER_URL", "http://localhost:8081")
-
-
-def snap_url(cam_id: int) -> str:
-    return f"{CAMERA_SERVER_URL}/snap/{cam_id}"
-
-
-def latest_url(cam_id: int) -> str:
-    return f"{CAMERA_SERVER_URL}/latest/{cam_id}"
-
-
-def cameras_url() -> str:
-    return f"{CAMERA_SERVER_URL}/cameras"
-
-
-# Camera IDs
-CAM_SIDE = 0
-CAM_ARM = 1
-CAM_OVERHEAD = 2
+All imports from this module will continue to work.
+New code should import from shared.config.camera_config instead.
+"""
+from shared.config.camera_config import *  # noqa: F401,F403

@@ -1,0 +1,1 @@
+"""Scene and object analysis."""

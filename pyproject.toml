@@ -21,6 +21,7 @@ dependencies = [
     "requests>=2.28.0",
     "pyzmq>=25.0",
     "pyyaml>=6.0",
+    "redis>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +35,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*", "web*"]
+include = ["src*", "web*", "shared*", "services*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

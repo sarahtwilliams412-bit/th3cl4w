@@ -1,0 +1,193 @@
+version: "3.8"
+
+# th3cl4w Service Stack
+# Start all services: docker-compose up
+# Start specific service: docker-compose up control_plane camera
+# Development mode: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  # Message Bus
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # API Gateway (unified entry point)
+  gateway:
+    build:
+      context: ..
+      dockerfile: services/gateway/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - GATEWAY_PORT=8080
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Control Plane (manual arm control)
+  control_plane:
+    build:
+      context: ..
+      dockerfile: services/control_plane/Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      - CONTROL_PLANE_PORT=8090
+      - REDIS_URL=redis://redis:6379
+      - SIMULATE=true
+    depends_on:
+      redis:
+        condition: service_healthy
+    network_mode: host  # Required for DDS multicast in production
+
+  # Camera streaming
+  camera:
+    build:
+      context: ..
+      dockerfile: services/camera/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - CAMERA_PORT=8081
+      - REDIS_URL=redis://redis:6379
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/video4:/dev/video4
+      - /dev/video6:/dev/video6
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # World Model Builder
+  world_model:
+    build:
+      context: ..
+      dockerfile: services/world_model/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - WORLD_MODEL_PORT=8082
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Local Model (robot-local perception)
+  local_model:
+    build:
+      context: ..
+      dockerfile: services/local_model/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      - LOCAL_MODEL_PORT=8083
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Object Identification
+  object_id:
+    build:
+      context: ..
+      dockerfile: services/object_id/Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      - OBJECT_ID_PORT=8084
+      - REDIS_URL=redis://redis:6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Kinematics & Planning
+  kinematics:
+    build:
+      context: ..
+      dockerfile: services/kinematics_app/Dockerfile
+    ports:
+      - "8085:8085"
+    environment:
+      - KINEMATICS_PORT=8085
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Spatial Mapping
+  mapping:
+    build:
+      context: ..
+      dockerfile: services/mapping/Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      - MAPPING_PORT=8086
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Positioning & Sensor Fusion
+  positioning:
+    build:
+      context: ..
+      dockerfile: services/positioning/Dockerfile
+    ports:
+      - "8087:8087"
+    environment:
+      - POSITIONING_PORT=8087
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Task Queue
+  tasker:
+    build:
+      context: ..
+      dockerfile: services/tasker/Dockerfile
+    ports:
+      - "8088:8088"
+    environment:
+      - TASKER_PORT=8088
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Simulation
+  simulation:
+    build:
+      context: ..
+      dockerfile: services/simulation/Dockerfile
+    ports:
+      - "8089:8089"
+    environment:
+      - SIMULATION_PORT=8089
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Telemetry
+  telemetry:
+    build:
+      context: ..
+      dockerfile: services/telemetry/Dockerfile
+    ports:
+      - "8091:8091"
+    environment:
+      - TELEMETRY_PORT=8091
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy

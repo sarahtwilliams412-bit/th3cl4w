@@ -1,0 +1,45 @@
+version: "3.8"
+
+# Development overrides — use with:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Enables simulation mode, mounts source code for live reload,
+# and exposes all ports for local development.
+
+services:
+  control_plane:
+    environment:
+      - SIMULATE=true
+    volumes:
+      - ../:/app
+    command: python -m services.control_plane.server --simulate --debug
+
+  camera:
+    volumes:
+      - ../:/app
+    command: python -m services.camera.server --debug
+
+  world_model:
+    volumes:
+      - ../:/app
+    command: python -m services.world_model.server --debug
+
+  object_id:
+    volumes:
+      - ../:/app
+    command: python -m services.object_id.server --debug
+
+  kinematics:
+    volumes:
+      - ../:/app
+    command: python -m services.kinematics_app.server --debug
+
+  tasker:
+    volumes:
+      - ../:/app
+    command: python -m services.tasker.server --debug
+
+  simulation:
+    volumes:
+      - ../:/app
+    command: python -m services.simulation.server --debug
