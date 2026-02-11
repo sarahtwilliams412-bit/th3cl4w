@@ -7802,6 +7802,269 @@ async def virtual_grip_check(req: VirtualGripRequest = VirtualGripRequest()):
 
 
 # ---------------------------------------------------------------------------
+# Panoramic Scan — rotate J0, snap photos, stitch into panorama
+# ---------------------------------------------------------------------------
+
+import threading
+import cv2
+
+_panorama_scan_state: Dict[str, Any] = {
+    "running": False,
+    "progress": 0,       # 0-4 (which position we're at)
+    "total": 4,
+    "status": "idle",    # idle | scanning | stitching | done | error
+    "error": None,
+    "result": None,      # path to panorama when done
+    "timestamp": None,
+}
+_panorama_scan_lock = threading.Lock()
+
+
+def _do_panorama_scan():
+    """Background panorama scan — runs in a thread."""
+    import httpx
+    from datetime import datetime
+
+    global _panorama_scan_state
+
+    def _set_state(**kw):
+        with _panorama_scan_lock:
+            _panorama_scan_state.update(kw)
+
+    try:
+        _set_state(running=True, progress=0, status="scanning", error=None, result=None)
+
+        # Get current joint angles
+        state = get_arm_state()
+        if not state.get("connected"):
+            _set_state(running=False, status="error", error="Arm not connected")
+            return
+
+        joints = state["joints"]
+        j0_start = joints[0]
+
+        # Calculate 4 scan positions (current, +45, +90, +135)
+        offsets = [0, 45, 90, 135]
+        positions = [j0_start + off for off in offsets]
+
+        # Clamp to safe range
+        for p in positions:
+            if p < -90 or p > 90:
+                _set_state(running=False, status="error",
+                           error=f"J0 position {p:.1f}° out of safe range [-90, 90]")
+                return
+
+        # Create output directory
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        scan_dir = Path(_project_root) / "data" / "scans" / ts
+        scan_dir.mkdir(parents=True, exist_ok=True)
+
+        frames = []
+
+        with httpx.Client(timeout=10.0) as client:
+            for i, angle in enumerate(positions):
+                _set_state(progress=i)
+                action_log.add("PANORAMA", f"Moving J0 to {angle:.1f}° (position {i+1}/4)", "info")
+
+                # Move J0
+                if arm is None:
+                    _set_state(running=False, status="error", error="Arm disconnected during scan")
+                    return
+
+                if smoother and smoother._arm_enabled:
+                    smoother.set_joint(0, angle)
+                else:
+                    # Direct command fallback
+                    try:
+                        arm.set_joint_angle(0, angle)
+                    except Exception as e:
+                        _set_state(running=False, status="error", error=f"Failed to move J0: {e}")
+                        # Return to start
+                        try:
+                            if smoother and smoother._arm_enabled:
+                                smoother.set_joint(0, j0_start)
+                            else:
+                                arm.set_joint_angle(0, j0_start)
+                        except Exception:
+                            pass
+                        return
+
+                # Wait for arm to settle
+                time.sleep(2.0)
+
+                # Snap photo from cam1 (arm camera)
+                try:
+                    resp = client.get(f"{CAM_SERVER}/latest/1")
+                    if resp.status_code != 200:
+                        raise Exception(f"Camera returned {resp.status_code}")
+                    img_bytes = resp.content
+                    # Decode
+                    img_arr = np.frombuffer(img_bytes, dtype=np.uint8)
+                    img = cv2.imdecode(img_arr, cv2.IMREAD_COLOR)
+                    if img is None:
+                        raise Exception("Failed to decode image")
+                    frames.append(img)
+                    # Save individual frame
+                    cv2.imwrite(str(scan_dir / f"frame_{i}.jpg"), img)
+                    action_log.add("PANORAMA", f"Captured frame {i} at J0={angle:.1f}°", "info")
+                except Exception as e:
+                    action_log.add("PANORAMA", f"Camera snap failed at position {i}: {e}", "error")
+                    _set_state(running=False, status="error", error=f"Camera failed: {e}")
+                    # Return to start
+                    try:
+                        if smoother and smoother._arm_enabled:
+                            smoother.set_joint(0, j0_start)
+                        else:
+                            arm.set_joint_angle(0, j0_start)
+                    except Exception:
+                        pass
+                    return
+
+        _set_state(progress=4, status="stitching")
+        action_log.add("PANORAMA", "All frames captured, returning J0 to start", "info")
+
+        # Return J0 to original position
+        try:
+            if smoother and smoother._arm_enabled:
+                smoother.set_joint(0, j0_start)
+            else:
+                arm.set_joint_angle(0, j0_start)
+        except Exception as e:
+            action_log.add("PANORAMA", f"Warning: failed to return J0: {e}", "warning")
+
+        # Stitch panorama
+        action_log.add("PANORAMA", "Stitching panorama...", "info")
+        panorama_path = scan_dir / "panorama.jpg"
+
+        try:
+            stitcher = cv2.Stitcher.create(cv2.Stitcher_PANORAMA)
+            status_code, pano = stitcher.stitch(frames)
+            if status_code == cv2.Stitcher_OK:
+                cv2.imwrite(str(panorama_path), pano)
+                action_log.add("PANORAMA", f"Panorama stitched: {pano.shape[1]}x{pano.shape[0]}", "info")
+            else:
+                # Fallback: horizontal concatenation
+                action_log.add("PANORAMA", f"Stitcher failed (code {status_code}), using concat fallback", "warning")
+                # Resize all frames to same height
+                min_h = min(f.shape[0] for f in frames)
+                resized = []
+                for f in frames:
+                    if f.shape[0] != min_h:
+                        scale = min_h / f.shape[0]
+                        f = cv2.resize(f, (int(f.shape[1] * scale), min_h))
+                    resized.append(f)
+                pano = np.hstack(resized)
+                cv2.imwrite(str(panorama_path), pano)
+                action_log.add("PANORAMA", f"Concatenated panorama: {pano.shape[1]}x{pano.shape[0]}", "info")
+        except Exception as e:
+            # Last resort: just concat
+            action_log.add("PANORAMA", f"Stitch error ({e}), using raw concat", "warning")
+            pano = np.hstack(frames)
+            cv2.imwrite(str(panorama_path), pano)
+
+        _set_state(
+            running=False, status="done",
+            result=str(panorama_path), timestamp=ts,
+            progress=4
+        )
+        action_log.add("PANORAMA", f"Scan complete: data/scans/{ts}/", "info")
+
+    except Exception as e:
+        logger.exception("Panorama scan failed")
+        _set_state(running=False, status="error", error=str(e))
+        # Try to return J0
+        try:
+            if arm and smoother and smoother._arm_enabled:
+                state = get_arm_state()
+                smoother.set_joint(0, state["joints"][0])
+        except Exception:
+            pass
+
+
+@app.post("/api/scan/panorama/start")
+async def api_panorama_start():
+    """Start an async panoramic scan."""
+    with _panorama_scan_lock:
+        if _panorama_scan_state["running"]:
+            return JSONResponse({"ok": False, "error": "Scan already in progress"}, status_code=409)
+
+    if arm is None:
+        return JSONResponse({"ok": False, "error": "No arm connected"}, status_code=503)
+
+    thread = threading.Thread(target=_do_panorama_scan, daemon=True)
+    thread.start()
+    action_log.add("PANORAMA", "Panoramic scan started", "info")
+    return {"ok": True, "message": "Panoramic scan started"}
+
+
+@app.get("/api/scan/panorama/status")
+async def api_panorama_status():
+    """Return current panorama scan progress."""
+    with _panorama_scan_lock:
+        return dict(_panorama_scan_state)
+
+
+@app.get("/api/scan/panorama/latest")
+async def api_panorama_latest():
+    """Return the latest panorama image."""
+    # Find most recent scan
+    scans_dir = Path(_project_root) / "data" / "scans"
+    if not scans_dir.exists():
+        return JSONResponse({"ok": False, "error": "No scans found"}, status_code=404)
+
+    scan_dirs = sorted(scans_dir.iterdir(), reverse=True)
+    for sd in scan_dirs:
+        pano = sd / "panorama.jpg"
+        if pano.exists():
+            return Response(
+                content=pano.read_bytes(),
+                media_type="image/jpeg",
+                headers={"Content-Disposition": f"inline; filename=panorama_{sd.name}.jpg"}
+            )
+
+    return JSONResponse({"ok": False, "error": "No panorama found"}, status_code=404)
+
+
+@app.get("/api/scan/panorama/list")
+async def api_panorama_list():
+    """List all saved panoramic scans."""
+    scans_dir = Path(_project_root) / "data" / "scans"
+    if not scans_dir.exists():
+        return {"ok": True, "scans": []}
+
+    scans = []
+    for sd in sorted(scans_dir.iterdir(), reverse=True):
+        if not sd.is_dir():
+            continue
+        pano = sd / "panorama.jpg"
+        frames = list(sd.glob("frame_*.jpg"))
+        scans.append({
+            "timestamp": sd.name,
+            "has_panorama": pano.exists(),
+            "frame_count": len(frames),
+            "path": str(sd.relative_to(Path(_project_root))),
+        })
+
+    return {"ok": True, "scans": scans}
+
+
+@app.get("/api/scan/panorama/image/{timestamp}")
+async def api_panorama_image(timestamp: str):
+    """Return a specific panorama image by timestamp."""
+    import re
+    # Sanitize timestamp
+    if not re.match(r"^[\w-]+$", timestamp):
+        return JSONResponse({"ok": False, "error": "Invalid timestamp"}, status_code=400)
+    pano = Path(_project_root) / "data" / "scans" / timestamp / "panorama.jpg"
+    if not pano.exists():
+        return JSONResponse({"ok": False, "error": "Panorama not found"}, status_code=404)
+    return Response(
+        content=pano.read_bytes(),
+        media_type="image/jpeg",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 

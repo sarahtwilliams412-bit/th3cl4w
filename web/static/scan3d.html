@@ -63,9 +63,18 @@ canvas { display: block; }
     <button onclick="toggleObjects()" id="btn-obj" class="active">Objects</button>
     <button onclick="toggleCloud()" id="btn-cloud" class="active">Cloud</button>
     <button onclick="toggleVoxels()" id="btn-voxel">Voxels</button>
+    <button onclick="startPanorama()" id="btn-pano">🌐 Panorama</button>
     <button onclick="captureSnapshot()">📸 Snapshot</button>
     <button onclick="clearCloud()">🗑 Clear</button>
     <button onclick="resetView()">⟲ Reset</button>
+  </div>
+  <div id="pano-progress" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:rgba(0,0,0,0.85); border:1px solid #0f0; border-radius:8px; padding:20px 30px; text-align:center; z-index:10;">
+    <div style="color:#0f0; font-size:14px; margin-bottom:10px;" id="pano-label">Scanning...</div>
+    <div style="width:200px; height:8px; background:#222; border-radius:4px; overflow:hidden;">
+      <div id="pano-bar" style="width:0%; height:100%; background:#0f0; transition:width 0.3s;"></div>
+    </div>
+    <div style="color:#666; font-size:11px; margin-top:6px;" id="pano-detail">Position 0/4</div>
   </div>
   <div id="cam-views">
     <img id="cam0-img" src="" alt="cam0 (side)" title="cam0 — side camera">
@@ -428,6 +437,100 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// --- Panorama Scan ---
+let panoPolling = null;
+
+async function startPanorama() {
+  const btn = document.getElementById('btn-pano');
+  try {
+    const r = await fetch(`${MAIN_SERVER}/api/scan/panorama/start`, { method: 'POST' });
+    const data = await r.json();
+    if (!data.ok) { alert('Panorama: ' + (data.error || 'failed')); return; }
+    btn.classList.add('active');
+    document.getElementById('pano-progress').style.display = 'block';
+    // Poll status
+    if (panoPolling) clearInterval(panoPolling);
+    panoPolling = setInterval(pollPanoStatus, 1000);
+  } catch(e) { alert('Panorama error: ' + e); }
+}
+
+async function pollPanoStatus() {
+  try {
+    const r = await fetch(`${MAIN_SERVER}/api/scan/panorama/status`);
+    const s = await r.json();
+    const bar = document.getElementById('pano-bar');
+    const label = document.getElementById('pano-label');
+    const detail = document.getElementById('pano-detail');
+
+    const pct = (s.progress / s.total) * 100;
+    bar.style.width = pct + '%';
+
+    if (s.status === 'scanning') {
+      label.textContent = '🔄 Scanning...';
+      detail.textContent = `Position ${s.progress + 1}/4`;
+    } else if (s.status === 'stitching') {
+      label.textContent = '🧩 Stitching panorama...';
+      detail.textContent = 'Processing images';
+      bar.style.width = '90%';
+    } else if (s.status === 'done') {
+      label.textContent = '✅ Panorama complete!';
+      detail.textContent = s.timestamp || '';
+      bar.style.width = '100%';
+      clearInterval(panoPolling);
+      panoPolling = null;
+      document.getElementById('btn-pano').classList.remove('active');
+      // Load as skybox after short delay
+      setTimeout(() => {
+        document.getElementById('pano-progress').style.display = 'none';
+        loadPanoramaSkybox();
+      }, 1500);
+    } else if (s.status === 'error') {
+      label.textContent = '❌ Scan failed';
+      detail.textContent = s.error || 'Unknown error';
+      bar.style.width = '0%';
+      bar.style.background = '#f00';
+      clearInterval(panoPolling);
+      panoPolling = null;
+      document.getElementById('btn-pano').classList.remove('active');
+      setTimeout(() => {
+        document.getElementById('pano-progress').style.display = 'none';
+        bar.style.background = '#0f0';
+      }, 3000);
+    }
+  } catch(e) { /* ignore */ }
+}
+
+function loadPanoramaSkybox() {
+  const loader = new THREE.TextureLoader();
+  loader.load(`${MAIN_SERVER}/api/scan/panorama/latest?t=${Date.now()}`, (texture) => {
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    // Create a large sphere with the panorama mapped inside
+    const sphereGeo = new THREE.SphereGeometry(5, 64, 32);
+    sphereGeo.scale(-1, 1, 1); // Invert so texture faces inward
+    const sphereMat = new THREE.MeshBasicMaterial({ map: texture });
+    // Remove old skybox if any
+    const old = scene.getObjectByName('panorama-skybox');
+    if (old) scene.remove(old);
+    const skybox = new THREE.Mesh(sphereGeo, sphereMat);
+    skybox.name = 'panorama-skybox';
+    scene.add(skybox);
+    // Also lighten background
+    scene.background = null;
+    action_log_msg('Panorama loaded as skybox');
+  }, undefined, (err) => {
+    console.warn('Failed to load panorama skybox:', err);
+  });
+}
+
+function action_log_msg(msg) { console.log('[th3cl4w]', msg); }
+
+// Try loading latest panorama on startup
+setTimeout(() => {
+  fetch(`${MAIN_SERVER}/api/scan/panorama/status`).then(r => r.json()).then(s => {
+    if (s.status === 'done') loadPanoramaSkybox();
+  }).catch(() => {});
+}, 2000);
 
 // --- Init ---
 connectWS();
