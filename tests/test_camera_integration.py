@@ -15,22 +15,27 @@ if _root not in sys.path:
 
 # ── Camera config tests ─────────────────────────────────────────────────
 
+
 class TestCameraConfig:
     def test_snap_url(self):
         from src.config.camera_config import snap_url
+
         assert snap_url(0) == "http://localhost:8081/snap/0"
         assert snap_url(2) == "http://localhost:8081/snap/2"
 
     def test_latest_url(self):
         from src.config.camera_config import latest_url
+
         assert latest_url(1) == "http://localhost:8081/latest/1"
 
     def test_cameras_url(self):
         from src.config.camera_config import cameras_url
+
         assert cameras_url() == "http://localhost:8081/cameras"
 
     def test_camera_ids(self):
         from src.config.camera_config import CAM_OVERHEAD, CAM_ARM, CAM_SIDE
+
         assert CAM_SIDE == 0
         assert CAM_ARM == 1
         assert CAM_OVERHEAD == 2
@@ -39,6 +44,7 @@ class TestCameraConfig:
         monkeypatch.setenv("CAMERA_SERVER_URL", "http://myhost:9999")
         # Re-import to pick up env var
         import src.config.camera_config as mod
+
         importlib.reload(mod)
         assert mod.snap_url(0) == "http://myhost:9999/snap/0"
         assert mod.latest_url(1) == "http://myhost:9999/latest/1"
@@ -70,10 +76,12 @@ class TestConsumerImports:
         val = getattr(mod, attr)
         # Should match the camera_config default
         from src.config.camera_config import CAMERA_SERVER_URL
+
         assert val == CAMERA_SERVER_URL
 
 
 # ── cam_snap helper test ────────────────────────────────────────────────
+
 
 class TestCamSnap:
     @pytest.mark.asyncio
@@ -108,12 +116,30 @@ class TestCamSnap:
 # ── Camera registry test (mock camera_server) ──────────────────────────
 
 MOCK_REGISTRY = {
-    "0": {"id": 0, "device": "/dev/video0", "name": "overhead",
-           "role": "overhead", "mount": "ceiling", "resolution": [1920, 1080]},
-    "1": {"id": 1, "device": "/dev/video2", "name": "arm",
-           "role": "arm", "mount": "wrist", "resolution": [1920, 1080]},
-    "2": {"id": 2, "device": "/dev/video6", "name": "side",
-           "role": "side", "mount": "tripod", "resolution": [1920, 1080]},
+    "0": {
+        "id": 0,
+        "device": "/dev/video0",
+        "name": "overhead",
+        "role": "overhead",
+        "mount": "ceiling",
+        "resolution": [1920, 1080],
+    },
+    "1": {
+        "id": 1,
+        "device": "/dev/video2",
+        "name": "arm",
+        "role": "arm",
+        "mount": "wrist",
+        "resolution": [1920, 1080],
+    },
+    "2": {
+        "id": 2,
+        "device": "/dev/video6",
+        "name": "side",
+        "role": "side",
+        "mount": "tripod",
+        "resolution": [1920, 1080],
+    },
 }
 
 

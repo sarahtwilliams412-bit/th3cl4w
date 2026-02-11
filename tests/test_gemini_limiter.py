@@ -100,8 +100,13 @@ class TestStatus:
         limiter = GeminiRateLimiter()
         s = limiter.status
         expected_keys = {
-            "paused", "rate_limited", "backoff_remaining_s",
-            "consecutive_429s", "total_calls", "total_429s", "min_interval_s",
+            "paused",
+            "rate_limited",
+            "backoff_remaining_s",
+            "consecutive_429s",
+            "total_calls",
+            "total_429s",
+            "min_interval_s",
         }
         assert set(s.keys()) == expected_keys
 

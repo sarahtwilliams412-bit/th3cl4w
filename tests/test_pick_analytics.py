@@ -24,53 +24,73 @@ def empty_file(tmp_path):
 @pytest.fixture
 def single_episode(tmp_path):
     p = tmp_path / "episodes.jsonl"
-    _write_episodes(p, [{
-        "episode_id": "ep1",
-        "mode": "physical",
-        "target": "redbull",
-        "start_time": 1000.0,
-        "end_time": 1005.0,
-        "success": True,
-        "phases": [
-            {"name": "approach", "start_time": 1000.0, "end_time": 1002.0, "success": True},
-            {"name": "grip", "start_time": 1002.0, "end_time": 1003.5, "success": True},
-            {"name": "lift", "start_time": 1003.5, "end_time": 1005.0, "success": True},
+    _write_episodes(
+        p,
+        [
+            {
+                "episode_id": "ep1",
+                "mode": "physical",
+                "target": "redbull",
+                "start_time": 1000.0,
+                "end_time": 1005.0,
+                "success": True,
+                "phases": [
+                    {"name": "approach", "start_time": 1000.0, "end_time": 1002.0, "success": True},
+                    {"name": "grip", "start_time": 1002.0, "end_time": 1003.5, "success": True},
+                    {"name": "lift", "start_time": 1003.5, "end_time": 1005.0, "success": True},
+                ],
+            }
         ],
-    }])
+    )
     return p
 
 
 @pytest.fixture
 def multi_episodes(tmp_path):
     p = tmp_path / "episodes.jsonl"
-    _write_episodes(p, [
-        {
-            "episode_id": "ep1", "mode": "physical", "target": "redbull",
-            "start_time": 1000.0, "end_time": 1005.0, "success": True,
-            "phases": [
-                {"name": "approach", "start_time": 1000.0, "end_time": 1002.0, "success": True},
-                {"name": "grip", "start_time": 1002.0, "end_time": 1003.0, "success": True},
-            ],
-        },
-        {
-            "episode_id": "ep2", "mode": "simulation", "target": "redbull",
-            "start_time": 2000.0, "end_time": 2003.0, "success": False,
-            "failure_reason": "stall",
-            "phases": [
-                {"name": "approach", "start_time": 2000.0, "end_time": 2001.5, "success": True},
-                {"name": "grip", "start_time": 2001.5, "end_time": 2003.0, "success": False},
-            ],
-        },
-        {
-            "episode_id": "ep3", "mode": "simulation", "target": "blue",
-            "start_time": 3000.0, "end_time": 3004.0, "success": True,
-            "phases": [
-                {"name": "approach", "start_time": 3000.0, "end_time": 3001.0, "success": True},
-                {"name": "grip", "start_time": 3001.0, "end_time": 3002.0, "success": True},
-                {"name": "lift", "start_time": 3002.0, "end_time": 3004.0, "success": True},
-            ],
-        },
-    ])
+    _write_episodes(
+        p,
+        [
+            {
+                "episode_id": "ep1",
+                "mode": "physical",
+                "target": "redbull",
+                "start_time": 1000.0,
+                "end_time": 1005.0,
+                "success": True,
+                "phases": [
+                    {"name": "approach", "start_time": 1000.0, "end_time": 1002.0, "success": True},
+                    {"name": "grip", "start_time": 1002.0, "end_time": 1003.0, "success": True},
+                ],
+            },
+            {
+                "episode_id": "ep2",
+                "mode": "simulation",
+                "target": "redbull",
+                "start_time": 2000.0,
+                "end_time": 2003.0,
+                "success": False,
+                "failure_reason": "stall",
+                "phases": [
+                    {"name": "approach", "start_time": 2000.0, "end_time": 2001.5, "success": True},
+                    {"name": "grip", "start_time": 2001.5, "end_time": 2003.0, "success": False},
+                ],
+            },
+            {
+                "episode_id": "ep3",
+                "mode": "simulation",
+                "target": "blue",
+                "start_time": 3000.0,
+                "end_time": 3004.0,
+                "success": True,
+                "phases": [
+                    {"name": "approach", "start_time": 3000.0, "end_time": 3001.0, "success": True},
+                    {"name": "grip", "start_time": 3001.0, "end_time": 3002.0, "success": True},
+                    {"name": "lift", "start_time": 3002.0, "end_time": 3004.0, "success": True},
+                ],
+            },
+        ],
+    )
     return p
 
 
@@ -158,6 +178,19 @@ class TestMultipleEpisodes:
         assert len(a.episodes) == 3
         # Append another
         with open(multi_episodes, "a") as f:
-            f.write(json.dumps({"episode_id": "ep4", "success": True, "start_time": 4000, "end_time": 4001, "phases": [], "mode": "physical", "target": "green"}) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "episode_id": "ep4",
+                        "success": True,
+                        "start_time": 4000,
+                        "end_time": 4001,
+                        "phases": [],
+                        "mode": "physical",
+                        "target": "green",
+                    }
+                )
+                + "\n"
+            )
         a.reload()
         assert len(a.episodes) == 4

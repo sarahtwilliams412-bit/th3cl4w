@@ -77,16 +77,23 @@ class PickEpisodeRecorder:
             target=target,
             start_time=time.time(),
         )
-        logger.info("Pick episode started: %s (mode=%s, target=%s)",
-                     self._current.episode_id, mode, target)
+        logger.info(
+            "Pick episode started: %s (mode=%s, target=%s)", self._current.episode_id, mode, target
+        )
         return self._current
 
     @property
     def current(self) -> Optional[PickEpisode]:
         return self._current
 
-    def record_detection(self, method: str, position_px: tuple, position_mm: tuple,
-                         confidence: float = 0.0, camera: int = 0):
+    def record_detection(
+        self,
+        method: str,
+        position_px: tuple,
+        position_mm: tuple,
+        confidence: float = 0.0,
+        camera: int = 0,
+    ):
         if self._current:
             self._current.detection_method = method
             self._current.detected_position_px = position_px
@@ -94,8 +101,12 @@ class PickEpisodeRecorder:
             self._current.detection_confidence = confidence
             self._current.detection_camera = camera
 
-    def record_plan(self, joints: list[float], gripper_mm: float = 32.5,
-                    approach_joints: Optional[list[float]] = None):
+    def record_plan(
+        self,
+        joints: list[float],
+        gripper_mm: float = 32.5,
+        approach_joints: Optional[list[float]] = None,
+    ):
         if self._current:
             self._current.planned_joints = list(joints)
             self._current.planned_gripper_mm = gripper_mm
@@ -110,8 +121,13 @@ class PickEpisodeRecorder:
             gripper_at_start=gripper,
         )
 
-    def end_phase(self, success: bool = True, error: str = "",
-                  joints: list[float] = None, gripper: float = 0.0):
+    def end_phase(
+        self,
+        success: bool = True,
+        error: str = "",
+        joints: list[float] = None,
+        gripper: float = 0.0,
+    ):
         if self._current_phase and self._current:
             self._current_phase.end_time = time.time()
             self._current_phase.success = success
@@ -121,8 +137,13 @@ class PickEpisodeRecorder:
             self._current.phases.append(self._current_phase)
             self._current_phase = None
 
-    def record_result(self, success: bool, failure_reason: str = "",
-                      grip_verified: bool = False, gripped_object: str = ""):
+    def record_result(
+        self,
+        success: bool,
+        failure_reason: str = "",
+        grip_verified: bool = False,
+        gripped_object: str = "",
+    ):
         if self._current:
             self._current.success = success
             self._current.failure_reason = failure_reason
@@ -138,9 +159,12 @@ class PickEpisodeRecorder:
         self._save(episode)
         self._current = None
         self._current_phase = None
-        logger.info("Pick episode finished: %s (success=%s, %.1fs)",
-                     episode.episode_id, episode.success,
-                     episode.end_time - episode.start_time)
+        logger.info(
+            "Pick episode finished: %s (success=%s, %.1fs)",
+            episode.episode_id,
+            episode.success,
+            episode.end_time - episode.start_time,
+        )
         return episode
 
     def _save(self, episode: PickEpisode):

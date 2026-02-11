@@ -74,9 +74,14 @@ class PickAnalytics:
 
     def phase_breakdown(self) -> list[dict]:
         """Per-phase timing breakdown across all episodes."""
-        phase_stats: dict[str, dict] = defaultdict(lambda: {
-            "count": 0, "total_time_s": 0.0, "successes": 0, "failures": 0,
-        })
+        phase_stats: dict[str, dict] = defaultdict(
+            lambda: {
+                "count": 0,
+                "total_time_s": 0.0,
+                "successes": 0,
+                "failures": 0,
+            }
+        )
 
         for ep in self._episodes:
             for phase in ep.get("phases", []):
@@ -95,20 +100,28 @@ class PickAnalytics:
         result = []
         for name, stats in sorted(phase_stats.items()):
             avg = stats["total_time_s"] / stats["count"] if stats["count"] else 0.0
-            result.append({
-                "phase": name,
-                "count": stats["count"],
-                "avg_time_s": round(avg, 3),
-                "total_time_s": round(stats["total_time_s"], 3),
-                "success_rate": round(stats["successes"] / stats["count"], 4) if stats["count"] else 0.0,
-            })
+            result.append(
+                {
+                    "phase": name,
+                    "count": stats["count"],
+                    "avg_time_s": round(avg, 3),
+                    "total_time_s": round(stats["total_time_s"], 3),
+                    "success_rate": (
+                        round(stats["successes"] / stats["count"], 4) if stats["count"] else 0.0
+                    ),
+                }
+            )
         return result
 
     def by_target(self) -> dict[str, dict]:
         """Per-target success rate."""
-        target_stats: dict[str, dict] = defaultdict(lambda: {
-            "total": 0, "successes": 0, "durations": [],
-        })
+        target_stats: dict[str, dict] = defaultdict(
+            lambda: {
+                "total": 0,
+                "successes": 0,
+                "durations": [],
+            }
+        )
 
         for ep in self._episodes:
             target = ep.get("target", "unknown") or "unknown"
@@ -129,15 +142,23 @@ class PickAnalytics:
                 "successes": stats["successes"],
                 "failures": total - stats["successes"],
                 "success_rate": round(stats["successes"] / total, 4) if total else 0.0,
-                "avg_duration_s": round(sum(stats["durations"]) / len(stats["durations"]), 2) if stats["durations"] else 0.0,
+                "avg_duration_s": (
+                    round(sum(stats["durations"]) / len(stats["durations"]), 2)
+                    if stats["durations"]
+                    else 0.0
+                ),
             }
         return result
 
     def by_mode(self) -> dict[str, dict]:
         """Sim vs physical comparison."""
-        mode_stats: dict[str, dict] = defaultdict(lambda: {
-            "total": 0, "successes": 0, "durations": [],
-        })
+        mode_stats: dict[str, dict] = defaultdict(
+            lambda: {
+                "total": 0,
+                "successes": 0,
+                "durations": [],
+            }
+        )
 
         for ep in self._episodes:
             mode = ep.get("mode", "unknown") or "unknown"
@@ -158,6 +179,10 @@ class PickAnalytics:
                 "successes": stats["successes"],
                 "failures": total - stats["successes"],
                 "success_rate": round(stats["successes"] / total, 4) if total else 0.0,
-                "avg_duration_s": round(sum(stats["durations"]) / len(stats["durations"]), 2) if stats["durations"] else 0.0,
+                "avg_duration_s": (
+                    round(sum(stats["durations"]) / len(stats["durations"]), 2)
+                    if stats["durations"]
+                    else 0.0
+                ),
             }
         return result

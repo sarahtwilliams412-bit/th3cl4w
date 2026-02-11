@@ -14,6 +14,7 @@ class TestPlanPlaceJoints:
     def test_reuses_autopick_planner(self):
         """plan_place_joints should produce same result as AutoPick.plan_joints."""
         from src.planning.auto_pick import AutoPick
+
         for x, y in [(100, 0), (50, 50), (200, -100), (0, 150)]:
             assert AutoPlace.plan_place_joints(x, y) == AutoPick.plan_joints(x, y)
 
@@ -78,10 +79,16 @@ class TestAutoPlaceExecution:
     def mock_ap(self):
         ap = AutoPlace(server_url="http://fake:8080")
         ap.ops = MagicMock()
-        ap.ops.staged_reach = AsyncMock(return_value=MagicMock(success=True, final_joints=[0]*6, error=""))
+        ap.ops.staged_reach = AsyncMock(
+            return_value=MagicMock(success=True, final_joints=[0] * 6, error="")
+        )
         ap.ops._set_gripper = AsyncMock()
-        ap.ops.lift_from_pick = AsyncMock(return_value=MagicMock(success=True, final_joints=[0]*6, error=""))
-        ap.ops.retreat_home = AsyncMock(return_value=MagicMock(success=True, final_joints=[0]*6, error=""))
+        ap.ops.lift_from_pick = AsyncMock(
+            return_value=MagicMock(success=True, final_joints=[0] * 6, error="")
+        )
+        ap.ops.retreat_home = AsyncMock(
+            return_value=MagicMock(success=True, final_joints=[0] * 6, error="")
+        )
         return ap
 
     @pytest.mark.asyncio
@@ -115,7 +122,9 @@ class TestAutoPlaceExecution:
     @pytest.mark.asyncio
     async def test_transport_failure_raises(self, mock_ap):
         """If transport fails, should raise and record failure."""
-        mock_ap.ops.staged_reach = AsyncMock(return_value=MagicMock(success=False, error="overcurrent"))
+        mock_ap.ops.staged_reach = AsyncMock(
+            return_value=MagicMock(success=False, error="overcurrent")
+        )
         with pytest.raises(RuntimeError, match="Transport failed"):
             await mock_ap.execute(100.0, 0.0)
 
@@ -126,7 +135,7 @@ class TestAutoPlaceExecution:
 
         async def slow_reach(*a, **kw):
             mock_ap.stop()
-            return MagicMock(success=True, final_joints=[0]*6, error="")
+            return MagicMock(success=True, final_joints=[0] * 6, error="")
 
         mock_ap.ops.staged_reach = slow_reach
         result = await mock_ap._run(100.0, 0.0)

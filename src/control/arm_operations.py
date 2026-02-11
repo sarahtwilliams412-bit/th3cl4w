@@ -78,10 +78,17 @@ class ArmOps:
 
             logger.warning(
                 "J%d target=%.1f° actual=%.1f° (error=%.1f°, attempt %d/%d)",
-                joint_id, target_deg, actual, error, attempt + 1, max_retries,
+                joint_id,
+                target_deg,
+                actual,
+                error,
+                attempt + 1,
+                max_retries,
             )
 
-        logger.error("J%d failed to reach %.1f° after %d attempts", joint_id, target_deg, max_retries)
+        logger.error(
+            "J%d failed to reach %.1f° after %d attempts", joint_id, target_deg, max_retries
+        )
         return False
 
     # ------------------------------------------------------------------

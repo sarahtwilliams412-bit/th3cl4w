@@ -27,6 +27,7 @@ from src.vision.arm_camera_aligner import ArmCameraAligner
 logger = logging.getLogger(__name__)
 
 from src.config.camera_config import CAMERA_SERVER_URL as CAM_API
+
 ARM_API = "http://localhost:8080"
 
 # Phase timeouts in seconds
