@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 try:
-    from src.vision.detection_comparator import (  # TODO: Replace with HTTP call to object_id service
+    from services.object_id.detection.detection_cmp import (
         ComparisonReport,
         ComparisonResult,
         JointComparison,

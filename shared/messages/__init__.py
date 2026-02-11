@@ -9,3 +9,8 @@ from shared.messages.gripper import GripperCommandMessage, GripperStateMessage
 from shared.messages.safety import SafetyAlertMessage, SafetyViolationType
 from shared.messages.calibration import CalibrationResultMessage
 from shared.messages.health import ServiceHealthMessage
+from shared.messages.vision_scene import (
+    SceneDescription,
+    SceneObject as VisionSceneObject,
+    SpatialRelation,
+)

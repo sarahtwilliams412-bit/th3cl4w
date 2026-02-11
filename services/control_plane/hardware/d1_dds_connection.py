@@ -25,8 +25,7 @@ from cyclonedds.topic import Topic
 from .d1_connection import D1State, NUM_JOINTS
 
 try:
-    from src.telemetry import get_collector  # TODO: Replace get_collector with bus publish
-    from shared.messages.events import EventType
+    from shared.telemetry import get_collector, EventType
 
     _HAS_TELEMETRY = True
 except ImportError:

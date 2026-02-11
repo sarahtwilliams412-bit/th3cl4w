@@ -43,7 +43,7 @@ from .task_planner import (
     HOME_POSE,
     READY_POSE,
 )
-from src.vision.scene_analyzer import SceneDescription, SceneObject  # TODO: Replace with shared module or HTTP call when vision service is extracted
+from shared.messages.vision_scene import SceneDescription, SceneObject
 
 logger = logging.getLogger("th3cl4w.planning.vision_task_planner")
 

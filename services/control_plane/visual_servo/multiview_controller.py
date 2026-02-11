@@ -21,8 +21,8 @@ import cv2
 import numpy as np
 import httpx
 
-from src.vision.side_height_estimator import SideHeightEstimator  # TODO: Replace with HTTP call to local_model service
-from src.vision.arm_camera_aligner import ArmCameraAligner  # TODO: Replace with HTTP call to local_model service
+from services.local_model.side_height_est import SideHeightEstimator
+from services.local_model.arm_camera_aligner import ArmCameraAligner
 
 logger = logging.getLogger(__name__)
 

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from src.vision.pointcloud_generator import (  # TODO: Replace with HTTP call to positioning service
+from services.positioning.depth.pointcloud_gen import (
     backproject_depth,
     compute_camera_pose_from_joints,
     merge_point_clouds,
@@ -68,7 +68,7 @@ class EnvMap:
         if self._depth_available is not None:
             return self._depth_available
         try:
-            from src.vision import depth_estimator  # TODO: Replace with HTTP call to positioning service
+            from services.positioning.depth import depth_estimator
 
             self._depth_estimator = depth_estimator
             self._depth_available = depth_estimator.is_available()
@@ -197,7 +197,7 @@ class MapScanManager:
         get_state_fn=None,
         camera_url: str = None,
     ):
-        from src.vision.scan_manager import ScanManager, ScanStatus  # TODO: Replace with HTTP call to object_id service
+        from services.object_id.analysis.scan_manager import ScanManager, ScanStatus
         from shared.config.camera_config import CAMERA_SERVER_URL
         camera_url = camera_url or CAMERA_SERVER_URL
 
@@ -220,12 +220,12 @@ class MapScanManager:
 
     @staticmethod
     def list_scans() -> List[Dict[str, Any]]:
-        from src.vision.scan_manager import ScanManager  # TODO: Replace with HTTP call to object_id service
+        from services.object_id.analysis.scan_manager import ScanManager
 
         return ScanManager.list_scans()
 
     @staticmethod
     def get_scan_ply(scan_id: Optional[str] = None) -> Optional[str]:
-        from src.vision.scan_manager import ScanManager  # TODO: Replace with HTTP call to object_id service
+        from services.object_id.analysis.scan_manager import ScanManager
 
         return ScanManager.get_scan_ply(scan_id)

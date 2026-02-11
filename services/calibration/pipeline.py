@@ -15,12 +15,12 @@ from .results_reporter import (
     ComparisonResult,
     JointComparison,
 )
-from src.vision.joint_detector import JointDetector, DetectionSource, JOINT_NAMES  # TODO: Replace with HTTP call to local_model service
-from src.vision.arm_segmenter import ArmSegmenter  # TODO: Replace with HTTP call to local_model service
+from services.local_model.joint_detector import JointDetector, DetectionSource, JOINT_NAMES
+from services.local_model.arm_segmenter import ArmSegmenter
 from shared.kinematics.fk_engine import fk_positions, project_to_camera_pinhole
 
 try:
-    from src.vision.llm_detector import LLMJointDetector  # TODO: Replace with HTTP call to object_id service
+    from services.object_id.detection.llm_detector import LLMJointDetector
 except Exception:
     LLMJointDetector = None
 

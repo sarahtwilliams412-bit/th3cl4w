@@ -171,8 +171,8 @@ class ScanManager:
 
     async def _run_scan(self, poses: List[Dict[str, float]]):
         """Execute the scan sequence."""
-        from src.vision import depth_estimator  # TODO: move depth_estimator to shared or this service
-        from src.vision.pointcloud_generator import (  # TODO: move pointcloud_generator to shared or this service
+        from services.positioning.depth import depth_estimator
+        from services.positioning.depth.pointcloud_gen import (
             backproject_depth,
             compute_camera_pose_from_joints,
             merge_point_clouds,

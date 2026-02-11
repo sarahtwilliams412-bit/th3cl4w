@@ -22,22 +22,22 @@ project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 try:
-    from src.telemetry.camera_monitor import CameraHealthMonitor  # TODO: Replace with HTTP call to telemetry service
+    from services.telemetry.camera_monitor import CameraHealthMonitor
 
     _HAS_MONITOR = True
 except ImportError:
     _HAS_MONITOR = False
 
 try:
-    from src.telemetry import get_collector  # TODO: Replace with HTTP call to telemetry service
+    from shared.telemetry import get_collector
 
     _HAS_TELEMETRY = True
 except ImportError:
     _HAS_TELEMETRY = False
 
 try:
-    from src.vision.startup_scanner import StartupScanner  # TODO: Replace with HTTP call to local_model service
-    from src.vision.world_model import WorldModel  # TODO: Replace with HTTP call to introspection service
+    from services.local_model.startup_scanner import StartupScanner
+    from src.vision.world_model import WorldModel  # TODO: WorldModel not yet extracted to services
 
     _HAS_SCANNER = True
 except ImportError:
