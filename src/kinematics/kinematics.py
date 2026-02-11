@@ -5,3 +5,4 @@ New code should import from shared.kinematics.kinematics instead.
 """
 
 from shared.kinematics.kinematics import *  # noqa: F401,F403
+from shared.kinematics.kinematics import _D1_DH, _dh_transform  # noqa: F401
