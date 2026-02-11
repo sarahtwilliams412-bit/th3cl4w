@@ -15,7 +15,9 @@ from typing import Any, Dict, List, Optional
 import cv2
 import numpy as np
 
-from src.config.camera_config import CAMERA_SERVER_URL as _DEFAULT_CAMERA_URL
+import httpx
+
+from src.config.camera_config import CAM_OVERHEAD, CAMERA_SERVER_URL as _DEFAULT_CAMERA_URL
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +114,29 @@ class ScanManager:
         self._abort = False
         self._task: Optional[asyncio.Task] = None
 
+    async def _wait_for_position(
+        self, target_angles: List[float], tolerance: float = 2.0, timeout: float = 5.0
+    ) -> bool:
+        """Poll arm state until joints reach target angles (within tolerance degrees)."""
+        elapsed = 0.0
+        while elapsed < timeout:
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    resp = await client.get("http://localhost:8080/api/state")
+                    state = resp.json()
+                    current = state.get("joint_angles", [])
+                    if len(current) >= 6 and all(
+                        abs(current[i] - target_angles[i]) < tolerance
+                        for i in range(min(len(target_angles), 6))
+                    ):
+                        return True
+            except Exception:
+                pass  # connection error — retry
+            await asyncio.sleep(0.1)
+            elapsed += 0.1
+        logger.warning("Motion timeout after %.1fs — continuing scan", timeout)
+        return False
+
     async def start_scan(self) -> Dict[str, Any]:
         """Start a workspace scan. Returns immediately."""
         if self.status.running:
@@ -185,12 +210,12 @@ class ScanManager:
                         logger.warning("Arm move error at pose %d: %s", i, e)
                         continue
 
-                    # Wait for arm to settle
-                    await asyncio.sleep(0.5)
+                    # Wait for arm to reach target position
+                    await self._wait_for_position(angles)
 
-                # Capture frame
+                # Capture frame from overhead camera
                 self.status.phase = "capturing"
-                frame = await self._capture_frame()
+                frame = await self._capture_frame(camera_id=CAM_OVERHEAD)
                 if frame is None:
                     logger.warning("No frame at pose %d, skipping", i)
                     continue
@@ -246,9 +271,11 @@ class ScanManager:
                 metadata["poses"].append(
                     {
                         "index": i,
-                        "angles": angles,
+                        "target_angles": angles,
+                        "actual_angles": current_angles,
                         "points": len(cloud),
                         "camera_pose": camera_pose.tolist(),
+                        "timestamp": datetime.now().isoformat(),
                     }
                 )
 

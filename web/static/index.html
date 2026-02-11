@@ -1119,7 +1119,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
           <canvas id="objDetectOverlayCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;pointer-events:none;"></canvas>
         </div>
         <p style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:6px;line-height:1.4;">
-          Overhead camera (cam1) with bounding boxes, circles, and labels for each detected object.
+          Overhead camera with bounding boxes, circles, and labels for each detected object.
           Color coding matches the object list below.
         </p>
       </div>
@@ -1208,7 +1208,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); heig
         <h3 style="margin:0;">Simulator Integration</h3>
         <div class="btn-row" style="margin:0;">
           <button class="btn primary" id="btnSyncTo3D" onclick="objPanelSyncTo3D()">Sync to 3D</button>
-          <button class="btn" onclick="window.open('#simulator','_blank')">Open Simulator ↗</button>
+          <button class="btn" onclick="window.open('/ui/#simulator','_blank')">Open Simulator ↗</button>
           <button class="btn" id="btnToggleEmbedSim" onclick="toggleEmbeddedSim()">Toggle 3D View</button>
         </div>
         <span id="sync3DStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);"></span>
@@ -2156,6 +2156,7 @@ function showPanel(navItem, skipHash) {
   if (prevPanel === 'simulator' && typeof sim_deactivate === 'function') sim_deactivate();
   if (prevPanel === 'bifocal' && typeof wsCalibStopStreams === 'function') wsCalibStopStreams();
   if (prevPanel === 'cameras' && typeof stopCameraPanel === 'function') stopCameraPanel();
+  if (prevPanel === 'object-detect' && _objDetectPollInterval) { clearInterval(_objDetectPollInterval); _objDetectPollInterval = null; }
 
   // Update nav
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -2180,7 +2181,7 @@ function showPanel(navItem, skipHash) {
     if (panelId === 'cameras') refreshCameraPanel();
     if (panelId === 'safety') safetyLoad();
     if (panelId === 'debug' && debugOn) pollDebug();
-    if (panelId === 'object-detect') _objPanelDrawWorkspace(_objPanelObjects);
+    if (panelId === 'object-detect') { _objDetectSyncState(); _objPanelDrawWorkspace(_objPanelObjects); }
   }, 100);
 }
 
@@ -3566,9 +3567,10 @@ async function wsCalibPreview() {
 }
 
 // --- 3D Scan ---
-async function scan3dStart(btn) { await withFeedback(btn, async () => { const d = await apiPost('/api/scan/start'); showResult('scan3dResult', d); scan3dRefresh(); return d; }, 'Scan started'); }
-async function scan3dStop(btn) { await withFeedback(btn, async () => { const d = await apiPost('/api/scan/stop'); showResult('scan3dResult', d); scan3dRefresh(); return d; }, 'Scan stopped'); }
-async function scan3dRefresh() { const data = await apiCall('/api/scan/status'); const el = document.getElementById('scan3dStatus'); el.textContent = data.phase || 'idle'; el.className = 'status-indicator ' + (data.running ? 'running' : 'stopped'); }
+let _scan3dPollInterval = null;
+async function scan3dStart(btn) { await withFeedback(btn, async () => { const d = await apiPost('/api/scan/start'); showResult('scan3dResult', d); scan3dRefresh(); if (!_scan3dPollInterval) _scan3dPollInterval = setInterval(scan3dRefresh, 2000); return d; }, 'Scan started'); }
+async function scan3dStop(btn) { await withFeedback(btn, async () => { if (_scan3dPollInterval) { clearInterval(_scan3dPollInterval); _scan3dPollInterval = null; } const d = await apiPost('/api/scan/stop'); showResult('scan3dResult', d); scan3dRefresh(); return d; }, 'Scan stopped'); }
+async function scan3dRefresh() { const data = await apiCall('/api/scan/status'); const el = document.getElementById('scan3dStatus'); el.textContent = data.phase || 'idle'; el.className = 'status-indicator ' + (data.running ? 'running' : 'stopped'); if (!data.running && _scan3dPollInterval) { clearInterval(_scan3dPollInterval); _scan3dPollInterval = null; } }
 async function scan3dList(btn) { await withFeedback(btn, async () => { const d = await apiCall('/api/scan/list'); showResult('scan3dListResult', d); return d; }); }
 
 // --- Calibration Health & Simplified Workflow ---
@@ -4750,6 +4752,21 @@ async function pickCfgReset() {
 let _objPanelEnabled = false;
 let _objPanelObjects = [];
 let _objPanelSelectedId = null; // Shared selection state (item 12)
+let _objDetectPollInterval = null;
+
+async function _objDetectSyncState() {
+  try {
+    const resp = await fetch('/api/objects/status');
+    if (resp.ok) {
+      const data = await resp.json();
+      _objPanelEnabled = !!data.enabled;
+      _objPanelObjects = data.objects || [];
+      _objPanelUpdateUI();
+      _objPanelUpdateAll(_objPanelObjects);
+      _objPanelDrawWorkspace(_objPanelObjects);
+    }
+  } catch(e) { console.warn('objDetectSyncState:', e); }
+}
 
 // Item 7: Consistent color palette for object classes
 const _OBJ_COLORS = [
